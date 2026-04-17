@@ -1,2 +1,3 @@
 # Inventory-Management-System
-Inventory Management System  App
+
+This is about the dev branch
