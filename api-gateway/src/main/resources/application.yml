@@ -1,42 +1,89 @@
 server:
   port: ${PORT:8080}
 
-app:
-  jwt:
-    secret: ${JWT_SECRET}
-    expiration-ms: 3600000
-
 spring:
   application:
-    name: API-GATEWAY
+    name: api-gateway
 
   cloud:
     gateway:
       routes:
 
-        # ================= AUTH SERVICE =================
-        - id: auth
-          uri: ${AUTH_SERVICE_URL}
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
           predicates:
-            - Path=/auth/**
+            - Path=/api/v1/auth/**
+          filters:
+            - StripPrefix=2
+
+        - id: product-service
+          uri: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/products/**
+          filters:
+            - AuthenticationFilter
+
+        - id: warehouse-service
+          uri: ${WAREHOUSE_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/warehouses/**,/api/v1/stock/**
+          filters:
+            - AuthenticationFilter
+
+        - id: purchase-service
+          uri: ${PURCHASE_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/v1/purchase-orders/**
+          filters:
+            - AuthenticationFilter
+
+        - id: supplier-service
+          uri: ${SUPPLIER_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/api/v1/suppliers/**
+          filters:
+            - AuthenticationFilter
+
+        - id: movement-service
+          uri: ${MOVEMENT_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/api/v1/movements/**
+          filters:
+            - AuthenticationFilter
+
+        - id: alert-service
+          uri: ${ALERT_SERVICE_URL:http://localhost:8087}
+          predicates:
+            - Path=/api/v1/alerts/**
+          filters:
+            - AuthenticationFilter
+
+        - id: report-service
+          uri: ${REPORT_SERVICE_URL:http://localhost:8088}
+          predicates:
+            - Path=/api/v1/reports/**
+          filters:
+            - AuthenticationFilter
 
   boot:
     admin:
       client:
-        url: ${ADMIN_SERVER_URL}
+        url: ${ADMIN_SERVER_URL:http://localhost:9090}
 
 management:
   endpoints:
     web:
       exposure:
         include: "*"
-
   endpoint:
     health:
       show-details: always
 
-# OPTIONAL
+app:
+  jwt:
+    secret: ${JWT_SECRET:ThisIsASecretKeyForJwtTokenGenerationThatMustBeAtLeast32BytesLong12345}
+
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_URL}
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
