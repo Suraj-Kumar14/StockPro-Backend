@@ -10,21 +10,20 @@ import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
 @Service
-public class CustomUserDetailsService{
+public class CustomUserDetailsService {
 
     private final UserRepository repository;
 
-
-	public UserDetails loadUserByEmail(String email) {
-
+    public UserDetails loadUserByEmail(String email) {
         User user = repository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         return org.springframework.security.core.userdetails.User
                 .builder()
-                .username(user.getFullName())
+                .username(user.getEmail()) // use email, not fullName
                 .password(user.getPasswordHash())
-                .roles(user.getRole())
+                .authorities("ROLE_" + user.getRole()) // important
+                .disabled(!user.isActive())
                 .build();
     }
 }
