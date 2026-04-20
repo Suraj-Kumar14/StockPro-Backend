@@ -14,10 +14,10 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 
-import com.stockpro.security.CustomUserDetails;
-import com.stockpro.security.JwtService;
-import com.stockpro.user.entity.User;
-import com.stockpro.user.repository.UserRepository;
+import com.stockpro.entity.User;
+import com.stockpro.repository.UserRepository;
+import com.stockpro.service.JwtService;
+
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -104,7 +104,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             user = userRepository.save(user);
         }
 
-        String token = jwtService.generateToken(new CustomUserDetails(user));
+        String token = jwtService.generateToken(user.getEmail(), user.getUserId());
 
         response.sendRedirect(
                 frontendUrl + "/auth?token=" +
