@@ -13,12 +13,11 @@ import com.stockpro.dtos.LoginRequest;
 import com.stockpro.dtos.RegisterRequest;
 import com.stockpro.dtos.UpdateProfileRequest;
 import com.stockpro.dtos.UserResponseDTO;
+import com.stockpro.config.Roles;
 import com.stockpro.dtos.AuthResponse;
 import com.stockpro.entity.User;
 import com.stockpro.exception.BadRequestException;
 import com.stockpro.repository.UserRepository;
-import com.stockpro.service.JwtService;
-
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
@@ -56,7 +55,7 @@ public class UserServiceImp implements UserService{
             user = new User();
             user.setFullName(registerRequest.getFullName());
             user.setEmail(normalizedEmail);
-            user.setRole("USER");
+            user.setRole(Roles.WAREHOUSE_STAFF);
             user.setActive(false);
 			user.setDepartment(registerRequest.getDepartment());
             updateUserDetails(user, registerRequest);
@@ -136,6 +135,10 @@ public class UserServiceImp implements UserService{
 			throw new RuntimeException("Account is not verified. Please verify your email using the OTP sent during registration.");
 		}
 		
+		userdb.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(userdb);
+
+
 		/*
 		 * only Active user can login
 		 */
