@@ -1,6 +1,6 @@
 package com.stockpro.api_gateway.config;
 
-import java.util.List;
+import java.util.Arrays;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,16 +14,11 @@ public class GatewayCorsConfig {
     @Bean
     public CorsWebFilter corsWebFilter() {
         CorsConfiguration corsConfig = new CorsConfiguration();
-
-        corsConfig.setAllowedOrigins(List.of(
-                "http://localhost:4200"          
-             
-        ));
-        corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        corsConfig.setAllowedHeaders(List.of("*"));
-        corsConfig.setExposedHeaders(List.of("Authorization"));
-        corsConfig.setAllowCredentials(true);
+        corsConfig.setAllowedOrigins(Arrays.asList("http://localhost:4200"));
         corsConfig.setMaxAge(3600L);
+        corsConfig.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        corsConfig.setAllowedHeaders(Arrays.asList("*"));
+        corsConfig.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfig);

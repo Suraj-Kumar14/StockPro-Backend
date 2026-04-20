@@ -2,16 +2,15 @@ package com.stockpro.api_gateway.filter;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.server.ServerWebExchange;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stockpro.api_gateway.util.JwtService;
@@ -21,29 +20,16 @@ import reactor.core.publisher.Mono;
 @Component
 public class AuthenticationFilter extends AbstractGatewayFilterFactory<AuthenticationFilter.Config> {
 
-    private final JwtService jwtService;
-    private final ObjectMapper objectMapper;
+    @Autowired
+    private JwtService jwtService;
 
-    private static final List<String> PUBLIC_PATHS = List.of(
-            "/api/v1/auth/login",
-            "/api/v1/auth/register",
-            "/api/v1/auth/refresh",
-            "/oauth2/",
-            "/login/oauth2/",
-            "/swagger-ui/",
-            "/v3/api-docs",
-            "/actuator/",
-            "/error"
-    );
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public AuthenticationFilter(JwtService jwtService) {
+    public AuthenticationFilter() {
         super(Config.class);
-        this.jwtService = jwtService;
-        this.objectMapper = new ObjectMapper();
     }
 
-    public static class Config {
-    }
+    public static class Config {}
 
     @Override
     public GatewayFilter apply(Config config) {
@@ -51,51 +37,46 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
 
             String path = exchange.getRequest().getURI().getPath();
 
-            if (isPublicPath(path)) {
-                return chain.filter(exchange);
+            // 1. Check Authorization Header
+            if (!exchange.getRequest().getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {
+                return onError(exchange, "Missing Authorization Header", HttpStatus.UNAUTHORIZED, path);
             }
 
             String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
 
+            // 2. Validate Bearer Format
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return onError(exchange, "Missing or invalid Authorization header", HttpStatus.UNAUTHORIZED, path);
+                return onError(exchange, "Invalid Authorization Header Format", HttpStatus.UNAUTHORIZED, path);
             }
 
             String token = authHeader.substring(7);
 
             try {
-                if (!jwtService.validateToken(token)) {
-                    return onError(exchange, "Invalid or expired token", HttpStatus.UNAUTHORIZED, path);
+                // 3. Extract & Validate Token
+                String email = jwtService.extractEmail(token);
+
+                if (jwtService.isTokenExpired(token)) {
+                    return onError(exchange, "Token Expired", HttpStatus.UNAUTHORIZED, path);
                 }
 
-                String email = jwtService.extractEmail(token);
-                String role = jwtService.extractRole(token);
-                String department = jwtService.extractDepartment(token);
-
-                ServerWebExchange mutatedExchange = exchange.mutate()
+                // 4. Pass user info downstream
+                return chain.filter(exchange.mutate()
                         .request(exchange.getRequest().mutate()
-                                .header("X-User-Email", email != null ? email : "")
-                                .header("X-User-Role", role != null ? role : "")
-                                .header("X-User-Department", department != null ? department : "")
+                                .header("X-User-Email", email)
                                 .build())
-                        .build();
-
-                return chain.filter(mutatedExchange);
+                        .build());
 
             } catch (Exception e) {
-                return onError(exchange, "Invalid token", HttpStatus.UNAUTHORIZED, path);
+                return onError(exchange, "Invalid Token", HttpStatus.UNAUTHORIZED, path);
             }
         };
     }
 
-    private boolean isPublicPath(String path) {
-        return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
-    }
-
-    private Mono<Void> onError(ServerWebExchange exchange,
-                               String message,
-                               HttpStatus status,
-                               String path) {
+    // 🔥 Centralized Error Response Method
+    private Mono<Void> onError(org.springframework.web.server.ServerWebExchange exchange,
+                              String message,
+                              HttpStatus status,
+                              String path) {
 
         exchange.getResponse().setStatusCode(status);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
@@ -110,11 +91,10 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
 
             byte[] bytes = objectMapper.writeValueAsBytes(errorResponse);
 
-            return exchange.getResponse().writeWith(
-                    Mono.just(exchange.getResponse()
+            return exchange.getResponse()
+                    .writeWith(Mono.just(exchange.getResponse()
                             .bufferFactory()
-                            .wrap(bytes))
-            );
+                            .wrap(bytes)));
 
         } catch (Exception e) {
             return exchange.getResponse().setComplete();
