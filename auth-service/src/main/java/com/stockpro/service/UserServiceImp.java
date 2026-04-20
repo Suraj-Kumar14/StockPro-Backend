@@ -313,6 +313,7 @@ public class UserServiceImp implements UserService{
 	}
 
 	@Override
+	@Transactional
 	public void deactivateUser(Long id) {
 	    User user = userRepository.findById(id)
 	            .orElseThrow(() -> new RuntimeException("User not found"));
