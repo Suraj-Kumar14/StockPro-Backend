@@ -2,7 +2,9 @@ package com.stockpro.service;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -13,8 +15,9 @@ import com.stockpro.dtos.UpdateProfileRequest;
 import com.stockpro.dtos.UserResponseDTO;
 import com.stockpro.dtos.AuthResponse;
 import com.stockpro.entity.User;
-import com.stockpro.exception.UnauthorizedException;
+import com.stockpro.exception.BadRequestException;
 import com.stockpro.repository.UserRepository;
+import com.stockpro.service.JwtService;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -33,8 +36,9 @@ public class UserServiceImp implements UserService{
 	@Transactional
 	@Override
     public String registerRequest(RegisterRequest registerRequest) {
-        // 1. Check if user exists
-        Optional<User> userOptional = userRepository.findByEmail(registerRequest.getEmail());
+        // 1. Check if user exists - normalize email to lowercase
+        String normalizedEmail = normalizeEmail(registerRequest.getEmail());
+        Optional<User> userOptional = userRepository.findByEmail(normalizedEmail);
 
         User user;
         if (userOptional.isPresent()) {
@@ -51,7 +55,7 @@ public class UserServiceImp implements UserService{
             // Create a brand new user
             user = new User();
             user.setFullName(registerRequest.getFullName());
-            user.setEmail(registerRequest.getEmail());
+            user.setEmail(normalizedEmail);
             user.setRole("USER");
             user.setActive(false);
 			user.setDepartment(registerRequest.getDepartment());
@@ -81,20 +85,27 @@ public class UserServiceImp implements UserService{
 
     @Override
 	public AuthResponse registerUser(String email, String otp) {
-		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
+		email = normalizeEmail(email);
+		otp = normalizeOtp(otp);
+
+		if (email == null || email.isBlank() || otp == null || otp.isBlank()) {
+			throw new BadRequestException("Email and OTP are required.");
+		}
+
+		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
 
 		/*
 		 * Here First we validate the OTP with our DB
 		 */
 		if (userdb.getOtpCode() == null || !userdb.getOtpCode().equals(otp)) {
-			throw new RuntimeException("OTP Invalid! please try again.");
+			throw new BadRequestException("OTP Invalid! please try again.");
 		}
 
 		/*
 		 * here - Validatation of OTP is expire or not
 		 */
-		if (userdb.getOtpCode() == null || userdb.getOtpExpiry().isBefore(LocalDateTime.now())) {
-			throw new RuntimeException("OTP Expired! please try again.");
+		if (userdb.getOtpExpiry() == null || userdb.getOtpExpiry().isBefore(LocalDateTime.now())) {
+			throw new BadRequestException("OTP Expired! please try again.");
 		}
 
 		userdb.setActive(true);
@@ -108,9 +119,10 @@ public class UserServiceImp implements UserService{
 	@Override
 	public AuthResponse loginUser(LoginRequest loginRequest) {
 		/*
-		 * first we check email that exist in DB
+		 * first we check email that exist in DB - normalize email to lowercase
 		 */
-		User userdb = userRepository.findByEmail(loginRequest.getEmail())
+		String normalizedEmail = normalizeEmail(loginRequest.getEmail());
+		User userdb = userRepository.findByEmail(normalizedEmail)
 				.orElseThrow(() -> new RuntimeException("User not found!"));
 
 		if (!passwordEncoder.matches(loginRequest.getPassword(), userdb.getPasswordHash())) {
@@ -127,7 +139,7 @@ public class UserServiceImp implements UserService{
 		/*
 		 * only Active user can login
 		 */
-		String token = jwtService.generateToken(loginRequest.getEmail(), userdb.getUserId());
+		String token = jwtService.generateToken(normalizedEmail, userdb.getUserId());
 		return new AuthResponse(token, "Login Success");
 	}
 
@@ -138,7 +150,8 @@ public class UserServiceImp implements UserService{
 	 */
 	@Override
 	public String initiateForgetPassword(String email) {
-		User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
+		email = normalizeEmail(email);
+		User user = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
 
 		// 1. Generate 6-digit code
 		String otp = generateOtp();
@@ -160,20 +173,27 @@ public class UserServiceImp implements UserService{
 	 */
 	@Override
 	public String verifyOtp(String email, String otp) {
-		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
+		email = normalizeEmail(email);
+		otp = normalizeOtp(otp);
+
+		if (email == null || email.isBlank() || otp == null || otp.isBlank()) {
+			throw new BadRequestException("Email and OTP are required.");
+		}
+
+		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
 
 		/*
 		 * Here First we validate the OTP with our DB
 		 */
 		if (userdb.getOtpCode() == null || !userdb.getOtpCode().equals(otp)) {
-			throw new RuntimeException("OTP Invalid! please try again.");
+			throw new BadRequestException("OTP Invalid! please try again.");
 		}
 
 		/*
 		 * here - Validatation of OTP is expire or not
 		 */
-		if (userdb.getOtpCode() == null || !userdb.getOtpExpiry().isAfter(LocalDateTime.now())) {
-			throw new RuntimeException("OTP Expired! please try again.");
+		if (!userdb.getOtpExpiry().isAfter(LocalDateTime.now())) {
+			throw new BadRequestException("OTP Expired! please try again.");
 		}
 		return "OTP Verified. You may now reset your password.";
 	}
@@ -183,6 +203,7 @@ public class UserServiceImp implements UserService{
 	 */
 	@Override
 	public String resetPassword(String email, String newPassword) {
+		email = normalizeEmail(email);
 		User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
 
 		// Ensure you encode the password before saving!
@@ -201,28 +222,38 @@ public class UserServiceImp implements UserService{
 	    return String.valueOf(otp);
 	}
 
+	private String normalizeEmail(String email) {
+	    return email == null ? null : email.trim().toLowerCase();
+	}
+
+	private String normalizeOtp(String otp) {
+	    return otp == null ? null : otp.trim();
+	}
+
 	@Override
 	@Transactional
 	public UserResponseDTO updateProfile(String email, UpdateProfileRequest updateUser) {
+	    email = normalizeEmail(email);
 	    User userdb = userRepository.findByEmail(email)
 	            .orElseThrow(() -> new RuntimeException("User not found!"));
 
-	    boolean isEmailChanging = !userdb.getEmail().equalsIgnoreCase(updateUser.getEmail());
+	    String normalizedNewEmail = normalizeEmail(updateUser.getEmail());
+	    boolean isEmailChanging = !userdb.getEmail().equalsIgnoreCase(normalizedNewEmail);
 
 	    if (isEmailChanging) {
 	        // Check if the NEW email is already taken
-	        if (userRepository.findByEmail(updateUser.getEmail()).isPresent()) {
+	        if (userRepository.findByEmail(normalizedNewEmail).isPresent()) {
 	            throw new RuntimeException("Email already in use by another account!");
 	        }
 
 	        // Store the new email as PENDING, do not change the main email yet
-	        userdb.setPendingEmail(updateUser.getEmail());
+	        userdb.setPendingEmail(normalizedNewEmail);
 	        
 	        String otp = generateOtp();
 	        userdb.setOtpCode(otp);
 	        userdb.setOtpExpiry(LocalDateTime.now().plusMinutes(5));
 	        
-	        emailService.sendOtpEmail(updateUser.getEmail(), otp, "Email Update Verification", "UPDATE_EMAIL");
+	        emailService.sendOtpEmail(normalizedNewEmail, otp, "Email Update Verification", "UPDATE_EMAIL");
 	    }
 
 	    // Update other non-sensitive fields immediately
@@ -234,7 +265,7 @@ public class UserServiceImp implements UserService{
 	    return new UserResponseDTO(
 				userdb.getUserId(),
 	            userdb.getFullName(), 
-	            userdb.getEmail(), // Still returns the old email as active
+	            email,
 	            userdb.getPhone(), 
 	            userdb.getRole(), 
 	            userdb.isActive(), 
@@ -245,6 +276,7 @@ public class UserServiceImp implements UserService{
 	
 	@Transactional
 	public String verifyEmailUpdate(String currentEmail, String otp) {
+	    currentEmail = normalizeEmail(currentEmail);
 	    User user = userRepository.findByEmail(currentEmail)
 	            .orElseThrow(() -> new RuntimeException("User not found!"));
 
@@ -269,9 +301,29 @@ public class UserServiceImp implements UserService{
 	}
 
 	@Override
-	public UserResponseDTO getUserByEmail(String email) {
-		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
+	public UserResponseDTO getUserByEmail(String email) {		email = normalizeEmail(email);		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
 		return new UserResponseDTO(userdb.getUserId(), userdb.getFullName(), userdb.getEmail(), userdb.getPhone(), userdb.getRole(), userdb.isActive(),userdb.getDepartment());
+	}
+
+	@Override
+	public List<UserResponseDTO> getAllUsers() {
+		return userRepository.findAll().stream()
+			.map(user -> new UserResponseDTO(user.getUserId(), user.getFullName(), user.getEmail(), user.getPhone(), user.getRole(), user.isActive(), user.getDepartment()))
+			.collect(Collectors.toList());
+	}
+
+	@Override
+	public void deactivateUser(Long id) {
+	    User user = userRepository.findById(id)
+	            .orElseThrow(() -> new RuntimeException("User not found"));
+
+	    user.setActive(false); // or setEnabled(false)
+	    userRepository.save(user);
+	}
+
+	@Override
+	public void logout(String token) {
+	    // Do nothing - client should remove token
 	}
 
 }

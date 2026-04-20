@@ -1,5 +1,7 @@
 package com.stockpro.service;
 
+import java.util.List;
+
 import com.stockpro.dtos.AuthResponse;
 import com.stockpro.dtos.LoginRequest;
 import com.stockpro.dtos.RegisterRequest;
@@ -37,6 +39,7 @@ public interface UserService {
     public String verifyEmailUpdate(String currentEmail, String otp);
     
     public UserResponseDTO getUserByEmail(String email);
+    public List<UserResponseDTO> getAllUsers();
 
     void deactivateUser(Long id);
 
