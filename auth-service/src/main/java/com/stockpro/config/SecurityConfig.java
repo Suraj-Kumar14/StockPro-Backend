@@ -65,47 +65,28 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
 
             .authenticationProvider(authenticationProvider())
-            .authorizeHttpRequests(authz -> authz
-
-                // Public auth endpoints
-                .requestMatchers(
-                        "/auth/register",
-                        "/auth/login",
-                        "/auth/refresh"
-                ).permitAll()
-
-                // Google OAuth2 endpoints
-                .requestMatchers(
-                        "/oauth2/**",
-                        "/login/oauth2/**"
-                ).permitAll()
-
-                // Swagger / H2 / docs / error
-                .requestMatchers(
-                        "/swagger-ui/**",
-                        "/swagger-ui.html",
-                        "/v3/api-docs/**",
-                        "/swagger-resources/**",
-                        "/webjars/**",
-                        "/h2-console/**",
-                        "/error"
-                ).permitAll()
-
-                // Admin-only endpoints
-                .requestMatchers(HttpMethod.GET, "/auth/users").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.PUT, "/auth/deactivate/**").hasRole("ADMIN")
-
-                // Authenticated user endpoints
-                .requestMatchers(
-                        "/auth/profile",
-                        "/auth/profile/**",
-                        "/auth/password",
-                        "/auth/password/**",
-                        "/auth/logout"
-                ).authenticated()
-
-                .anyRequest().authenticated()
-            )
+            .authorizeHttpRequests(auth -> auth
+            		.requestMatchers(
+            			    "/api/v1/auth/register",
+            			    "/api/v1/auth/login",
+            			    "/api/v1/auth/refresh",
+            			    "/api/v1/auth/verify-registration-otp",
+            			    "/api/v1/auth/resend-registration-otp",
+            			    "/api/v1/auth/forgot-password",
+            			    "/api/v1/auth/reset-password",
+            			    "/oauth2/**",
+            			    "/login/oauth2/**",
+            			    "/swagger-ui/**",
+            			    "/swagger-ui.html",
+            			    "/v3/api-docs/**",
+            			    "/swagger-resources/**",
+            			    "/webjars/**",
+            			    "/error"
+            			).permitAll()
+            	    .requestMatchers("/api/v1/auth/users").hasRole("ADMIN")
+            	    .requestMatchers("/api/v1/auth/deactivate/**").hasRole("ADMIN")
+            	    .anyRequest().authenticated()
+            	)
             .oauth2Login(oauth -> oauth
                     .userInfoEndpoint(userInfo -> userInfo.userService(oAuth2UserService))
                     .successHandler(oAuth2LoginSuccessHandler)

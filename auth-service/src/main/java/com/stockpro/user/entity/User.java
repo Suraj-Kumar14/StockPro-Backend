@@ -22,7 +22,7 @@ public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int userId;
+    private Long userId;
 
     private String fullName;
     private String email;
@@ -31,7 +31,10 @@ public class User {
     private String role;
     private String department;
     private boolean isActive;
+    private boolean emailVerified;
     private LocalDateTime createdAt;
     private LocalDateTime lastLoginAt;
+
+    
 
 }

@@ -7,12 +7,9 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class LoginRequest {
+public class ResendOtpRequest {
 
     @Email
-    @NotBlank(message = "Email is required")
+    @NotBlank
     private String email;
-
-    @NotBlank(message = "Password is required")
-    private String password;
 }

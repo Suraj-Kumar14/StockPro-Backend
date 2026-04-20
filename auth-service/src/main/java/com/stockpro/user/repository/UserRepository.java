@@ -7,11 +7,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.stockpro.user.entity.User;
 
-public interface UserRepository extends JpaRepository<User, Integer>{
+public interface UserRepository extends JpaRepository<User, Long>{
 
     Optional<User> findByEmail(String email);
 
-    User findByUserId(int userId);
+    User findByUserId(Long userId);
 
     boolean existsByEmail(String email);
 
@@ -21,5 +21,5 @@ public interface UserRepository extends JpaRepository<User, Integer>{
 
     List<User> findByIsActive(boolean isActive);
 
-    void deleteByUserId(int userId);
+    void deleteByUserId(Long userId);
 }

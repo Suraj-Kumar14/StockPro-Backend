@@ -1,21 +1,30 @@
 package com.stockpro.user.dto;
 
-import jakarta.validation.constraints.NotNull;
-import lombok.Data;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import lombok.Getter;
+import lombok.Setter;
 
-@Data
+@Getter
+@Setter
 public class RegisterRequest {
-	
-	@NotNull(message = "Name null not allowed")
+
+    @NotBlank(message = "Full name is required")
     private String fullName;
-	@NotNull(message = "email null not allowed")
+
+    @Email
+    @NotBlank(message = "Email is required")
     private String email;
-	@NotNull(message = "password null not allowed")
-    private String passwordHash;
-	@NotNull(message = "phone null not allowed")
+
+    @NotBlank(message = "Password is required")
+    private String password;
+    
+    @NotBlank(message = "Phone is required")
     private String phone;
-	@NotNull(message = "must enter valid role")
+
+    @NotBlank(message = "Role is required")
     private String role;
-	@NotNull(message = "must enter valid department")
+
+    @NotBlank(message = "Department is required")
     private String department;
 }

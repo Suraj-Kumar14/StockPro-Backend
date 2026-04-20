@@ -20,6 +20,23 @@ spring:
       hibernate:
         format_sql: true
 
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS_ENABLE:true}
+            required: ${MAIL_SMTP_STARTTLS_REQUIRED:true}
+          connectiontimeout: ${MAIL_CONNECTION_TIMEOUT_MS:5000}
+          timeout: ${MAIL_TIMEOUT_MS:5000}
+          writetimeout: ${MAIL_WRITE_TIMEOUT_MS:5000}
+
   security:
     oauth2:
       client:
@@ -32,12 +49,6 @@ spring:
               - profile
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
             client-name: Google
-        provider:
-          google:
-            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
-            token-uri: https://oauth2.googleapis.com/token
-            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
-            user-name-attribute: sub
 
   h2:
     console:
@@ -61,6 +72,10 @@ springdoc:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:4200}
+  mail:
+    from: ${MAIL_FROM:no-reply@stockpro.local}
+  otp:
+    expiry-minutes: ${OTP_EXPIRY_MINUTES:10}
   jwt:
     secret: ${JWT_SECRET:ThisIsASecretKeyForJwtTokenGenerationThatMustBeAtLeast32BytesLong12345}
     expiration-ms: 28800000
