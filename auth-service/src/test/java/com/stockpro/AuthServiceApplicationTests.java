@@ -1,4 +1,4 @@
-package com.stockpro.auth;
+package com.stockpro;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
