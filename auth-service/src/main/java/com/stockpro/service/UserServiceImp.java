@@ -20,7 +20,33 @@ import com.stockpro.exception.BadRequestException;
 import com.stockpro.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+/**
+ * User Service Implementation
+ *
+ * ROLE ASSIGNMENT STRATEGY:
+ * ========================
+ * 1. Email/Password Registration: Users get WAREHOUSE_STAFF role by default
+ *    - Reason: WAREHOUSE_STAFF is the lowest privilege role for regular employees
+ *    - Admin can promote users to INVENTORY_MANAGER, PURCHASE_OFFICER, or ADMIN
+ *
+ * 2. Google OAuth2 Login: Users also get WAREHOUSE_STAFF role by default
+ *    - Ensures consistency with email registration
+ *    - Admin can assign different roles based on department
+ *
+ * 3. Role Promotion: Only ADMIN can change user roles (via Admin Service)
+ *    - This prevents privilege escalation
+ *    - Each role has specific permissions in SecurityConfig
+ *
+ * ROLES DEFINED:
+ * ==============
+ * - ADMIN: Full system access, can deactivate/manage users
+ * - INVENTORY_MANAGER: Access to inventory module
+ * - WAREHOUSE_STAFF: Access to warehouse operations (default)
+ * - PURCHASE_OFFICER: Access to purchase module
+ */
+@Slf4j
 @RequiredArgsConstructor
 @Service
 public class UserServiceImp implements UserService{
@@ -31,11 +57,16 @@ public class UserServiceImp implements UserService{
 	private final JwtService jwtService;
 	private final EmailService emailService;
 
-	// register request
+	/**
+	 * Step 1 of Registration: User submits their details and receives OTP
+	 * - Generates 6-digit OTP
+	 * - Sends OTP to email
+	 * - Creates or reactivates user account (but keeps it inactive until OTP is verified)
+	 */
 	@Transactional
 	@Override
     public String registerRequest(RegisterRequest registerRequest) {
-        // 1. Check if user exists - normalize email to lowercase
+        // Normalize email to lowercase for consistency
         String normalizedEmail = normalizeEmail(registerRequest.getEmail());
         Optional<User> userOptional = userRepository.findByEmail(normalizedEmail);
 
@@ -48,40 +79,47 @@ public class UserServiceImp implements UserService{
                 throw new RuntimeException("User already registered with this email!");
             }
 
-            // If user is inactive, update their info (in case they changed name/phone/pass)
+            // If user is inactive, update their info (in case they changed details)
             updateUserDetails(user, registerRequest);
         } else {
-            // Create a brand new user
+            // Create a brand new user with WAREHOUSE_STAFF role (default)
             user = new User();
             user.setFullName(registerRequest.getFullName());
             user.setEmail(normalizedEmail);
-            user.setRole(Roles.WAREHOUSE_STAFF);
-            user.setActive(false);
+            user.setRole(Roles.WAREHOUSE_STAFF); // Default role for new users
+            user.setActive(false); // Not active until OTP is verified
 			user.setDepartment(registerRequest.getDepartment());
             updateUserDetails(user, registerRequest);
         }
 
-        // 2. Generate and set OTP + Expiry (Refresh on every request)
+        // Generate 6-digit OTP and set expiry to 5 minutes
         String otp = generateOtp();
         user.setOtpCode(otp);
         user.setOtpExpiry(LocalDateTime.now().plusMinutes(5));
 
-        // 3. Save to Database
+        // Save user with pending status
         userRepository.save(user);
 
-        // 4. Send Email
+        // Send OTP email
         emailService.sendOtpEmail(user.getEmail(), otp, "Registration OTP", "REGISTER");
 
+        log.info("Registration request received for email: {}", normalizedEmail);
         return "OTP sent to your email for verification.";
     }
 
     private void updateUserDetails(User user, RegisterRequest request) {
         user.setFullName(request.getFullName());
         user.setPhone(request.getPhone());
-        // here I Hash the password immediately
+        // Hash password immediately using PasswordEncoder
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
     }
 
+    /**
+     * Step 2 of Registration: User verifies OTP and account is activated
+     * - Validates OTP matches and hasn't expired
+     * - Activates user account
+     * - Generates JWT token
+     */
     @Override
 	public AuthResponse registerUser(String email, String otp) {
 		email = normalizeEmail(email);
@@ -93,86 +131,90 @@ public class UserServiceImp implements UserService{
 
 		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
 
-		/*
-		 * Here First we validate the OTP with our DB
-		 */
+		// Validate OTP matches
 		if (userdb.getOtpCode() == null || !userdb.getOtpCode().equals(otp)) {
 			throw new BadRequestException("OTP Invalid! please try again.");
 		}
 
-		/*
-		 * here - Validatation of OTP is expire or not
-		 */
+		// Validate OTP hasn't expired
 		if (userdb.getOtpExpiry() == null || userdb.getOtpExpiry().isBefore(LocalDateTime.now())) {
 			throw new BadRequestException("OTP Expired! please try again.");
 		}
 
+		// Activate account
 		userdb.setActive(true);
 		userdb.setOtpCode(null);
 		userRepository.save(userdb);
+
 		String token = jwtService.generateToken(email, userdb.getUserId());
+		log.info("User registered successfully: {}", email);
 		return new AuthResponse(token, "User Register success");
 	}
 
-	// login
+	/**
+	 * Login with email and password
+	 * - Validates email exists
+	 * - Validates password
+	 * - Validates account is active
+	 * - Generates JWT token
+	 */
 	@Override
 	public AuthResponse loginUser(LoginRequest loginRequest) {
-		/*
-		 * first we check email that exist in DB - normalize email to lowercase
-		 */
+		// Normalize email to lowercase
 		String normalizedEmail = normalizeEmail(loginRequest.getEmail());
 		User userdb = userRepository.findByEmail(normalizedEmail)
 				.orElseThrow(() -> new RuntimeException("User not found!"));
 
+		// Validate password using encoder
 		if (!passwordEncoder.matches(loginRequest.getPassword(), userdb.getPasswordHash())) {
 			throw new RuntimeException("Invalid Password!");
 		}
 		
-		/*
-		 * here - CHECK ACTIVE STATUS
-		 */
+		// Check if account is active (email verified via OTP)
 		if(!userdb.isActive()) {
 			throw new RuntimeException("Account is not verified. Please verify your email using the OTP sent during registration.");
 		}
 		
+		// Update last login time
 		userdb.setLastLoginAt(LocalDateTime.now());
         userRepository.save(userdb);
 
-
-		/*
-		 * only Active user can login
-		 */
+		// Generate JWT token
 		String token = jwtService.generateToken(normalizedEmail, userdb.getUserId());
+		log.info("User login successful: {}", normalizedEmail);
 		return new AuthResponse(token, "Login Success");
 	}
 
-	/*
-	 * First We validate email- that exit in our database or not If email exist in
-	 * our database then I will send 6-digit verification code to email otherwise
-	 * stop
+	/**
+	 * Step 1 of Forgot Password: Send OTP to user's email
+	 * - Validates email exists in database
+	 * - Generates OTP
+	 * - Sends OTP to email
 	 */
 	@Override
 	public String initiateForgetPassword(String email) {
 		email = normalizeEmail(email);
 		User user = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
 
-		// 1. Generate 6-digit code
+		// Generate 6-digit OTP
 		String otp = generateOtp();
 
-		// 2. Save OTP and Expiry (e.g., 5 minutes from now) to DB
+		// Save OTP and expiry (valid for 5 minutes)
 		user.setOtpCode(otp);
 		user.setOtpExpiry(LocalDateTime.now().plusMinutes(5));
 		userRepository.save(user);
 
-		// 3. Here I will- Call to EmailService to send 'otp' to 'email' with subject,
-		// and purpose
+		// Send OTP email
 		emailService.sendOtpEmail(email, otp, "Forgot Password OTP", "FORGOT_PASSWORD");
 
+		log.info("Forgot password request for email: {}", email);
 		return "Verification code sent to your email.";
 	}
 
-	/*
-	 * Once user get OTP then we verify that in our DB -
+	/**
+	 * Step 2 of Forgot Password: Verify OTP is correct
+	 * - Validates OTP matches
+	 * - Validates OTP hasn't expired
 	 */
 	@Override
 	public String verifyOtp(String email, String otp) {
@@ -185,54 +227,65 @@ public class UserServiceImp implements UserService{
 
 		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
 
-		/*
-		 * Here First we validate the OTP with our DB
-		 */
+		// Validate OTP matches
 		if (userdb.getOtpCode() == null || !userdb.getOtpCode().equals(otp)) {
 			throw new BadRequestException("OTP Invalid! please try again.");
 		}
 
-		/*
-		 * here - Validatation of OTP is expire or not
-		 */
+		// Validate OTP hasn't expired
 		if (!userdb.getOtpExpiry().isAfter(LocalDateTime.now())) {
 			throw new BadRequestException("OTP Expired! please try again.");
 		}
+		log.info("OTP verified for email: {}", email);
 		return "OTP Verified. You may now reset your password.";
 	}
 
-	/*
-	 * Finally we update the password
+	/**
+	 * Step 3 of Forgot Password: Reset password to new value
+	 * - Encodes new password
+	 * - Clears OTP after use
 	 */
 	@Override
 	public String resetPassword(String email, String newPassword) {
 		email = normalizeEmail(email);
 		User user = userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found!"));
 
-		// Ensure you encode the password before saving!
+		// Encode new password before saving
 		user.setPasswordHash(passwordEncoder.encode(newPassword));
 		user.setOtpCode(null); // Clear OTP after use
 		userRepository.save(user);
 
+		log.info("Password reset for email: {}", email);
 		return "Password updated successfully.";
 	}
 	
-	/*
-	 * This function will generate OTP
+	/**
+	 * Generate random 6-digit OTP
 	 */
 	private String generateOtp() {
 	    int otp = 100000 + random.nextInt(900000);
 	    return String.valueOf(otp);
 	}
 
+	/**
+	 * Normalize email: trim whitespace and convert to lowercase
+	 */
 	private String normalizeEmail(String email) {
 	    return email == null ? null : email.trim().toLowerCase();
 	}
 
+	/**
+	 * Normalize OTP: trim whitespace
+	 */
 	private String normalizeOtp(String otp) {
 	    return otp == null ? null : otp.trim();
 	}
 
+	/**
+	 * Update user profile (fullName, phone, email)
+	 * - If email changes, sends OTP to new email for verification
+	 * - Sets account to inactive until new email is verified
+	 */
 	@Override
 	@Transactional
 	public UserResponseDTO updateProfile(String email, UpdateProfileRequest updateUser) {
@@ -244,14 +297,15 @@ public class UserServiceImp implements UserService{
 	    boolean isEmailChanging = !userdb.getEmail().equalsIgnoreCase(normalizedNewEmail);
 
 	    if (isEmailChanging) {
-	        // Check if the NEW email is already taken
+	        // Check if new email is already in use
 	        if (userRepository.findByEmail(normalizedNewEmail).isPresent()) {
 	            throw new RuntimeException("Email already in use by another account!");
 	        }
 
-	        // Store the new email as PENDING, do not change the main email yet
+	        // Store new email as PENDING until verified
 	        userdb.setPendingEmail(normalizedNewEmail);
 	        
+	        // Generate OTP for email verification
 	        String otp = generateOtp();
 	        userdb.setOtpCode(otp);
 	        userdb.setOtpExpiry(LocalDateTime.now().plusMinutes(5));
@@ -259,7 +313,7 @@ public class UserServiceImp implements UserService{
 	        emailService.sendOtpEmail(normalizedNewEmail, otp, "Email Update Verification", "UPDATE_EMAIL");
 	    }
 
-	    // Update other non-sensitive fields immediately
+	    // Update non-sensitive fields immediately
 	    userdb.setFullName(updateUser.getFullName());
 	    userdb.setPhone(updateUser.getPhone());
 
@@ -277,13 +331,18 @@ public class UserServiceImp implements UserService{
 	    );
 	}
 	
+	/**
+	 * Verify email change OTP
+	 * - Validates OTP
+	 * - Confirms new email (moves from pending to active)
+	 */
 	@Transactional
 	public String verifyEmailUpdate(String currentEmail, String otp) {
 	    currentEmail = normalizeEmail(currentEmail);
 	    User user = userRepository.findByEmail(currentEmail)
 	            .orElseThrow(() -> new RuntimeException("User not found!"));
 
-	    // 1. Validate OTP
+	    // Validate OTP
 	    if (user.getOtpCode() == null || !user.getOtpCode().equals(otp)) {
 	        throw new RuntimeException("Invalid OTP!");
 	    }
@@ -291,23 +350,32 @@ public class UserServiceImp implements UserService{
 	        throw new RuntimeException("OTP Expired!");
 	    }
 
-	    // 2. Perform the swap
+	    // Perform email swap from pending to active
 	    if (user.getPendingEmail() != null) {
 	        user.setEmail(user.getPendingEmail());
-	        user.setPendingEmail(null); // Clear the pending status
+	        user.setPendingEmail(null); // Clear pending status
 	        user.setOtpCode(null);
 	        userRepository.save(user);
+	        log.info("Email updated successfully for user: {}", user.getEmail());
 	        return "Email updated successfully to " + user.getEmail();
 	    }
 
 	    throw new RuntimeException("No pending email update found.");
 	}
 
+	/**
+	 * Get user details by email
+	 */
 	@Override
-	public UserResponseDTO getUserByEmail(String email) {		email = normalizeEmail(email);		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
+	public UserResponseDTO getUserByEmail(String email) {
+		email = normalizeEmail(email);
+		User userdb = userRepository.findByEmail(email).orElseThrow(() -> new BadRequestException("User not found!"));
 		return new UserResponseDTO(userdb.getUserId(), userdb.getFullName(), userdb.getEmail(), userdb.getPhone(), userdb.getRole(), userdb.isActive(),userdb.getDepartment());
 	}
 
+	/**
+	 * Get all users (debug endpoint)
+	 */
 	@Override
 	public List<UserResponseDTO> getAllUsers() {
 		return userRepository.findAll().stream()
@@ -315,19 +383,27 @@ public class UserServiceImp implements UserService{
 			.collect(Collectors.toList());
 	}
 
+	/**
+	 * Admin deactivates user account
+	 */
 	@Override
 	@Transactional
 	public void deactivateUser(Long id) {
 	    User user = userRepository.findById(id)
 	            .orElseThrow(() -> new RuntimeException("User not found"));
 
-	    user.setActive(false); // or setEnabled(false)
+	    user.setActive(false);
 	    userRepository.save(user);
+	    log.info("User deactivated by admin: {}", id);
 	}
 
+	/**
+	 * Logout endpoint (token invalidation handled by frontend)
+	 */
 	@Override
 	public void logout(String token) {
-	    // Do nothing - client should remove token
+	    // Token invalidation is handled on frontend side
+	    // Backend does not maintain token blacklist in this simple implementation
 	}
 
 }

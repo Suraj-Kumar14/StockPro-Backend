@@ -12,6 +12,15 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * User Entity
+ *
+ * ROLE VALUES (see config.Roles):
+ * - ADMIN: Full system access
+ * - INVENTORY_MANAGER: Manage inventory module
+ * - WAREHOUSE_STAFF: Manage warehouse operations (default role)
+ * - PURCHASE_OFFICER: Manage purchase module
+ */
 @Entity
 @Data
 @Table(name="users")
@@ -24,14 +33,15 @@ public class User {
     private String fullName;
     @Column(unique = true, nullable = false)
     private String email;
-    private String pendingEmail;
-    private String passwordHash;
+    private String pendingEmail; // Used when user changes email - stores new email until OTP verified
+    private String passwordHash; // Hashed password using BCrypt
     private String phone;
-    private String role;
-    private String department;
-    private boolean isActive;
-    private String otpCode;
-    private LocalDateTime otpExpiry;
-    private LocalDateTime lastLoginAt;
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private String role; // ADMIN, INVENTORY_MANAGER, WAREHOUSE_STAFF, PURCHASE_OFFICER
+    private String department; // Department assignment for access control
+    private boolean isActive; // Whether account is verified (OTP confirmed)
+    private String otpCode; // 6-digit OTP for email verification
+    private LocalDateTime otpExpiry; // OTP expiry time (5 minutes)
+    private LocalDateTime lastLoginAt; // Track last login time
+    private LocalDateTime createdAt = LocalDateTime.now(); // Account creation time
 }
+

@@ -50,8 +50,8 @@ spring:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID:}
-            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            client-id: ${GOOGLE_CLIENT_ID:1062076986351-o4evbpnfki5ksk0mq2qn93infg31jle1.apps.googleusercontent.com}
+            client-secret: ${GOOGLE_CLIENT_SECRET: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}
             redirect-uri: ${REDIRECT_URI:{baseUrl}/login/oauth2/code/{registrationId}}
             scope:
               - email
