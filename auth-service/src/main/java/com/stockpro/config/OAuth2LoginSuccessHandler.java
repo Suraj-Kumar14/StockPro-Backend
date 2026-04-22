@@ -140,8 +140,8 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             log.info("New user created via OAuth2: {}", normalizedEmail);
         }
 
-        // Generate JWT token for frontend
-        String token = jwtService.generateToken(user.getEmail(), user.getUserId());
+        // Generate JWT token for frontend WITH ROLE INCLUDED
+        String token = jwtService.generateToken(user.getEmail(), user.getUserId(), user.getRole());
 
         // Redirect to frontend with token and user information
         response.sendRedirect(
