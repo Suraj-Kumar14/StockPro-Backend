@@ -46,6 +46,7 @@ public class UserController {
                 "email":"ravi@gmail.com",
                 "password":"ravi1234",
                 "phone":"8970676956"
+                "department":"";
             }
             """;
 

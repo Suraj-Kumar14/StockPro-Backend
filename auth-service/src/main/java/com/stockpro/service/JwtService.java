@@ -30,9 +30,17 @@ public class JwtService {
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(String email, Long userId) {
+    /**
+     * Generate JWT token with email, userId, and role claims
+     * @param email User's email (stored as subject)
+     * @param userId User's ID (stored as claim)
+     * @param role User's role (stored as claim)
+     * @return JWT token
+     */
+    public String generateToken(String email, Long userId, String role) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
+        claims.put("role", role); // Include role in token
 
         return Jwts.builder()
                 .setClaims(claims)
@@ -43,6 +51,15 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Generate JWT token with email and userId only (backward compatibility)
+     * @deprecated Use generateToken(String email, Long userId, String role) instead
+     */
+    @Deprecated
+    public String generateToken(String email, Long userId) {
+        return generateToken(email, userId, "WAREHOUSE_STAFF");
+    }
+
     public String extractEmail(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(signingKey)
@@ -50,6 +67,20 @@ public class JwtService {
                 .parseClaimsJws(token)
                 .getBody()
                 .getSubject();
+    }
+
+    /**
+     * Extract role from JWT token
+     * @param token JWT token
+     * @return User's role
+     */
+    public String extractRole(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(signingKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody()
+                .get("role", String.class);
     }
 
     public boolean validateToken(String token, String email) {
