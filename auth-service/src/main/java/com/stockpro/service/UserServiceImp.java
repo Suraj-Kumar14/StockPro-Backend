@@ -59,6 +59,8 @@ public class UserServiceImp implements UserService{
 
 	/**
 	 * Step 1 of Registration: User submits their details and receives OTP
+	 * - Accepts role from client (optional, defaults to WAREHOUSE_STAFF)
+	 * - Validates role is one of: ADMIN, INVENTORY_MANAGER, WAREHOUSE_STAFF, PURCHASE_OFFICER
 	 * - Generates 6-digit OTP
 	 * - Sends OTP to email
 	 * - Creates or reactivates user account (but keeps it inactive until OTP is verified)
@@ -69,6 +71,15 @@ public class UserServiceImp implements UserService{
         // Normalize email to lowercase for consistency
         String normalizedEmail = normalizeEmail(registerRequest.getEmail());
         Optional<User> userOptional = userRepository.findByEmail(normalizedEmail);
+
+        // Get role from request, or use default
+        String roleToAssign = registerRequest.getRole();
+        if (roleToAssign == null || roleToAssign.isBlank()) {
+            roleToAssign = Roles.WAREHOUSE_STAFF; // Default role
+        } else {
+            // Validate role is one of the allowed roles
+            roleToAssign = validateAndNormalizeRole(roleToAssign);
+        }
 
         User user;
         if (userOptional.isPresent()) {
@@ -82,11 +93,11 @@ public class UserServiceImp implements UserService{
             // If user is inactive, update their info (in case they changed details)
             updateUserDetails(user, registerRequest);
         } else {
-            // Create a brand new user with WAREHOUSE_STAFF role (default)
+            // Create a brand new user with specified role
             user = new User();
             user.setFullName(registerRequest.getFullName());
             user.setEmail(normalizedEmail);
-            user.setRole(Roles.WAREHOUSE_STAFF); // Default role for new users
+            user.setRole(roleToAssign); // Assign role from request or default
             user.setActive(false); // Not active until OTP is verified
 			user.setDepartment(registerRequest.getDepartment());
             updateUserDetails(user, registerRequest);
@@ -103,7 +114,7 @@ public class UserServiceImp implements UserService{
         // Send OTP email
         emailService.sendOtpEmail(user.getEmail(), otp, "Registration OTP", "REGISTER");
 
-        log.info("Registration request received for email: {}", normalizedEmail);
+        log.info("Registration request received for email: {} with role: {}", normalizedEmail, roleToAssign);
         return "OTP sent to your email for verification.";
     }
 
@@ -118,7 +129,7 @@ public class UserServiceImp implements UserService{
      * Step 2 of Registration: User verifies OTP and account is activated
      * - Validates OTP matches and hasn't expired
      * - Activates user account
-     * - Generates JWT token
+     * - Generates JWT token with role included
      */
     @Override
 	public AuthResponse registerUser(String email, String otp) {
@@ -146,8 +157,9 @@ public class UserServiceImp implements UserService{
 		userdb.setOtpCode(null);
 		userRepository.save(userdb);
 
-		String token = jwtService.generateToken(email, userdb.getUserId());
-		log.info("User registered successfully: {}", email);
+		// Generate JWT token with role included
+		String token = jwtService.generateToken(email, userdb.getUserId(), userdb.getRole());
+		log.info("User registered successfully: {} with role: {}", email, userdb.getRole());
 		return new AuthResponse(token, "User Register success");
 	}
 
@@ -156,7 +168,7 @@ public class UserServiceImp implements UserService{
 	 * - Validates email exists
 	 * - Validates password
 	 * - Validates account is active
-	 * - Generates JWT token
+	 * - Generates JWT token with role included
 	 */
 	@Override
 	public AuthResponse loginUser(LoginRequest loginRequest) {
@@ -179,9 +191,9 @@ public class UserServiceImp implements UserService{
 		userdb.setLastLoginAt(LocalDateTime.now());
         userRepository.save(userdb);
 
-		// Generate JWT token
-		String token = jwtService.generateToken(normalizedEmail, userdb.getUserId());
-		log.info("User login successful: {}", normalizedEmail);
+		// Generate JWT token with role included
+		String token = jwtService.generateToken(normalizedEmail, userdb.getUserId(), userdb.getRole());
+		log.info("User login successful: {} with role: {}", normalizedEmail, userdb.getRole());
 		return new AuthResponse(token, "Login Success");
 	}
 
@@ -404,6 +416,36 @@ public class UserServiceImp implements UserService{
 	public void logout(String token) {
 	    // Token invalidation is handled on frontend side
 	    // Backend does not maintain token blacklist in this simple implementation
+	}
+
+	/**
+	 * Validate and normalize role from client request
+	 * - Ensures only valid roles are accepted
+	 * - Prevents unauthorized role assignment
+	 * @param role Role string from client
+	 * @return Validated role (uppercase)
+	 * @throws BadRequestException if role is invalid
+	 */
+	private String validateAndNormalizeRole(String role) {
+		if (role == null || role.isBlank()) {
+			return Roles.WAREHOUSE_STAFF; // Default
+		}
+
+		String normalizedRole = role.trim().toUpperCase();
+
+		// Check if role is valid (one of the 4 defined roles)
+		if (!normalizedRole.equals(Roles.ADMIN) &&
+			!normalizedRole.equals(Roles.INVENTORY_MANAGER) &&
+			!normalizedRole.equals(Roles.WAREHOUSE_STAFF) &&
+			!normalizedRole.equals(Roles.PURCHASE_OFFICER)) {
+			throw new BadRequestException(
+				"Invalid role: " + role + ". Allowed roles are: " +
+				"ADMIN, INVENTORY_MANAGER, WAREHOUSE_STAFF, PURCHASE_OFFICER"
+			);
+		}
+
+		log.info("Role validated and normalized: {} -> {}", role, normalizedRole);
+		return normalizedRole;
 	}
 
 }
