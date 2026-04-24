@@ -1,173 +1,126 @@
-# 🔐 Auth Service – StockPro
+# StockPro Inventory Management System
 
-A production-ready **Authentication & Authorization Microservice** built using **Spring Boot**, **JWT**, and **Email OTP verification**.
+This repository currently contains the core backend services built so far for the StockPro platform.
 
-This service is responsible for:
+## Services
 
-- User Registration with OTP verification
-- Secure Login using JWT
-- Forgot Password & Reset Password flow
-- Profile management with email verification
-- Role-based access foundation
+| Service | Default Port | Purpose |
+| --- | --- | --- |
+| `eureka-server` | `8761` | Service registry for discovery |
+| `Admin-server` | `9090` | Spring Boot Admin monitoring dashboard |
+| `auth-service` | `8081` | User registration, login, JWT, OTP, roles |
+| `product-service` | `8083` | Product master catalogue, barcode lookup, low-stock query |
+| `api-gateway` | `8080` | Single entry point for frontend clients |
 
----
+## How The Services Connect
 
-## 🚀 Tech Stack
+1. `eureka-server` starts first and acts as the discovery registry.
+2. `auth-service`, `product-service`, `api-gateway`, and `Admin-server` register with Eureka.
+3. `auth-service` handles registration, login, OTP verification, and issues JWT tokens.
+4. `api-gateway` validates JWT on protected routes and forwards requests to downstream services.
+5. `product-service` validates JWT again for method-level security and manages product master data.
+6. `product-service` is designed to call `warehouse-service` for live stock quantity when serving `getLowStockProducts()`.
+7. `Admin-server` monitors services that expose actuator endpoints and are configured as admin clients.
 
-| Technology        | Description                    |
-| ----------------- | ------------------------------ |
-| Java 17           | Core programming language      |
-| Spring Boot 3     | Backend framework              |
-| Spring Security   | Authentication & authorization |
-| JWT (JJWT)        | Token-based authentication     |
-| Spring Data JPA   | Database interaction           |
-| H2 Database       | In-memory database (dev)       |
-| MySql Database    | For Data Storing               |
-| Java Mail Sender  | Email OTP delivery             |
-| Lombok            | Boilerplate reduction          |
-| Swagger / OpenAPI | API documentation              |
+## Current Backend Scope
 
----
+Implemented services in this repository:
 
-## 📁 Project Structure
+- `auth-service`
+- `product-service`
+- `api-gateway`
+- `eureka-server`
+- `Admin-server`
 
-auth-service
-│
-├── config # Security, JWT filter, roles
-├── controller # REST controllers
-├── dtos # Request/Response DTOs
-├── entity # JPA entities
-├── exception # Custom exceptions & global handler
-├── repository # JPA repositories
-├── service # Business logic
-└── AuthServiceApplication.java
+Referenced but not yet present here as standalone modules:
 
----
+- `warehouse-service`
+- `purchase-service`
+- `supplier-service`
+- `movement-service`
+- `alert-service`
+- `report-service`
 
-## 🔑 Features
+## Recommended Startup Order
 
-### ✅ User Registration (OTP Based)
+1. `eureka-server`
+2. `Admin-server`
+3. `auth-service`
+4. `product-service`
+5. `api-gateway`
 
-- User submits registration details
-- OTP is sent to email
-- Account activated after OTP verification
+## Local Run Commands
 
-### ✅ Login
+From each service folder, run:
 
-- Email + password authentication
-- JWT token generated
-- Only active users can login
+```bash
+mvnw.cmd spring-boot:run
+```
 
-### ✅ Forgot Password Flow
+If you are not using the Maven wrapper:
 
-- OTP sent to email
-- OTP verification
-- Secure password reset
+```bash
+mvn spring-boot:run
+```
 
-### ✅ Profile Management
+## Useful URLs
 
-- Update name and phone
-- Email change requires OTP verification
+| Item | URL |
+| --- | --- |
+| Eureka Dashboard | `http://localhost:8761` |
+| Admin Server | `http://localhost:9090` |
+| API Gateway | `http://localhost:8080` |
+| Auth Swagger | `http://localhost:8081/swagger-ui/index.html` |
+| Auth H2 Console | `http://localhost:8081/h2-console` |
+| Product Swagger | `http://localhost:8083/swagger-ui/index.html` |
+| Product H2 Console | `http://localhost:8083/h2-console` |
 
-### ✅ Role Support (String-based)
+## Frontend Integration
 
-Supported roles:
+For frontend work, use the API Gateway as the public base URL:
+
+```text
+http://localhost:8080
+```
+
+Authentication flow:
+
+1. Frontend calls `POST /auth/user/login`
+2. `auth-service` returns a JWT
+3. Frontend stores the token
+4. Frontend sends `Authorization: Bearer <token>` on protected requests
+5. `api-gateway` validates the JWT and forwards the request
+6. Downstream service applies its own authorization rules
+
+## Role Model In Use
+
+Current role values issued by `auth-service`:
 
 - `ADMIN`
 - `INVENTORY_MANAGER`
 - `WAREHOUSE_STAFF`
 - `PURCHASE_OFFICER`
 
----
+Important note:
 
-## 🔐 Authentication Flow
+- `product-service` currently accepts manager-level writes using `MANAGER` at controller level, but its JWT filter also maps `INVENTORY_MANAGER` to `ROLE_MANAGER` for compatibility with the existing `auth-service` token format.
 
-1. User logs in → receives JWT token
-2. Client sends token in header:
+## Important Integration Notes
 
-3. JWT Filter validates token
-4. Spring Security authenticates user
+There are a few current alignment points in the codebase that should be kept in mind:
 
----
+1. `product-service` exposes endpoints under `/products/**`.
+2. `api-gateway` is currently configured for product routes under `/api/v1/products/**`.
+3. `api-gateway` also points `product-service` to default URL `http://localhost:8082`, while `product-service` currently runs on `8083`.
+4. `product-service` low-stock logic expects a warehouse endpoint for live quantities, but `warehouse-service` is not part of this repository yet.
+5. `auth-service` includes Spring Boot Admin client support, but the other services are not fully aligned yet for uniform admin monitoring.
 
-## 📌 API Endpoints
+If you want fully working end-to-end frontend integration through the gateway, align the gateway product route and target port with the current `product-service`.
 
-### 🔓 Public APIs
+## Service Docs
 
-| Method | Endpoint                             | Description           |
-| ------ | ------------------------------------ | --------------------- |
-| GET    | `/auth/user/welcome`                 | Health check          |
-| POST   | `/auth/user/register-request`        | Send OTP              |
-| POST   | `/auth/user/register-user`           | Verify OTP & register |
-| POST   | `/auth/user/login`                   | Login                 |
-| POST   | `/auth/user/forgot-password/request` | Send OTP              |
-| POST   | `/auth/user/forgot-password/verify`  | Verify OTP            |
-| POST   | `/auth/user/forgot-password/reset`   | Reset password        |
-
----
-
-### 🔒 Protected APIs
-
-| Method | Endpoint                            | Description         |
-| ------ | ----------------------------------- | ------------------- |
-| GET    | `/auth/user/{email}`                | Get user by email   |
-| GET    | `/auth/user/all`                    | Get all users       |
-| POST   | `/auth/user/update-profile/{email}` | Update profile      |
-| POST   | `/auth/user/verify-email-update`    | Verify email change |
-| DELETE | `/auth/user/deactivate/{id}`        | Deactivate user     |
-
----
-
-## ⚙️ Configuration
-
-### `application.yml`
-
-```yaml
-server:
-  port: ${PORT:8081}
-
-app:
-  jwt:
-    secret: ${JWT_SECRET}
-    expiration-ms: 3600000
-
-spring:
-  application:
-    name: AUTH-SERVICE
-
-  datasource:
-    url: jdbc:h2:mem:authservice
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
-
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
-
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-
-  mail:
-    host: smtp.gmail.com
-    port: 587
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-```
-
-📧 Email Setup (Gmail SMTP)
-
-1. Enable 2-Step Verification in Gmail
-2. Generate App Password
-3. Set environment variables:
-   MAIL_USERNAME=your_email@gmail.com
-   MAIL_PASSWORD=your_app_password
+- [Auth Service](./auth-service/README.md)
+- [Product Service](./product-service/README.md)
+- [API Gateway](./api-gateway/README.md)
+- [Eureka Server](./eureka-server/README.md)
+- [Admin Server](./Admin-server/README.md)
