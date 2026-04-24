@@ -1,8 +1,11 @@
 package com.stockpro.product.exception;
 
+import jakarta.persistence.OptimisticLockException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -10,32 +13,51 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-/**
- * Centralized exception handling so controller logic stays clean.
- */
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException exception,
-            HttpServletRequest request) {
+    @ExceptionHandler(ProductNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(ProductNotFoundException exception, HttpServletRequest request) {
         return buildResponse(HttpStatus.NOT_FOUND, exception.getMessage(), request);
     }
 
-    @ExceptionHandler(DuplicateResourceException.class)
-    public ResponseEntity<ErrorResponse> handleDuplicate(DuplicateResourceException exception,
-            HttpServletRequest request) {
-        return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request);
+    @ExceptionHandler({
+            DuplicateSkuException.class,
+            DuplicateBarcodeException.class,
+            OptimisticLockException.class,
+            OptimisticLockingFailureException.class
+    })
+    public ResponseEntity<ErrorResponse> handleConflict(Exception exception, HttpServletRequest request) {
+        String message = exception instanceof DuplicateSkuException || exception instanceof DuplicateBarcodeException
+                ? exception.getMessage()
+                : "The product record was updated by another request. Please retry the operation.";
+        return buildResponse(HttpStatus.CONFLICT, message, request);
     }
 
-    @ExceptionHandler({ BadRequestException.class, MethodArgumentNotValidException.class })
+    @ExceptionHandler({
+            InvalidProductRequestException.class,
+            MethodArgumentNotValidException.class,
+            ConstraintViolationException.class,
+            MethodArgumentTypeMismatchException.class
+    })
     public ResponseEntity<ErrorResponse> handleBadRequest(Exception exception, HttpServletRequest request) {
-        String message = exception instanceof MethodArgumentNotValidException validationException
-                ? validationException.getBindingResult().getFieldErrors().stream()
-                        .map(FieldError::getDefaultMessage)
-                        .collect(Collectors.joining(" "))
-                : exception.getMessage();
+        String message;
+        if (exception instanceof MethodArgumentNotValidException validationException) {
+            message = java.util.stream.Stream.concat(
+                            validationException.getBindingResult().getFieldErrors().stream()
+                                    .map(FieldError::getDefaultMessage),
+                            validationException.getBindingResult().getGlobalErrors().stream()
+                                    .map(error -> error.getDefaultMessage()))
+                    .collect(Collectors.joining(" "));
+        } else if (exception instanceof ConstraintViolationException constraintViolationException) {
+            message = constraintViolationException.getConstraintViolations().stream()
+                    .map(violation -> violation.getMessage())
+                    .collect(Collectors.joining(" "));
+        } else {
+            message = exception.getMessage();
+        }
 
         return buildResponse(HttpStatus.BAD_REQUEST, message, request);
     }
