@@ -1,0 +1,4 @@
+com\stockpro\movement\repository\MovementRepositoryTest.class
+com\stockpro\movement\service\MovementServiceImplTest.class
+com\stockpro\movement\controller\MovementControllerTest.class
+com\stockpro\movement\integration\MovementServiceIntegrationTest.class
