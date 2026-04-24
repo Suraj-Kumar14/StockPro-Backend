@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import jakarta.validation.Valid;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -34,53 +35,61 @@ public class UserServiceImp implements UserService{
 	// register request
 	@Transactional
 	@Override
-    public String registerRequest(RegisterRequest registerRequest) {
-        // 1. Check if user exists - normalize email to lowercase
-        String normalizedEmail = normalizeEmail(registerRequest.getEmail());
-        Optional<User> userOptional = userRepository.findByEmail(normalizedEmail);
+	public String registerRequest(RegisterRequest registerRequest) {
+		String normalizedEmail = normalizeEmail(registerRequest.getEmail());
 
-        User user;
-        if (userOptional.isPresent()) {
-            user = userOptional.get();
+		if (normalizedEmail == null || normalizedEmail.isBlank()) {
+			throw new BadRequestException("Email is required.");
+		}
 
-            // If user is already active, prevent re-registration
-            if (user.isActive()) {
-                throw new RuntimeException("User already registered with this email!");
-            }
+		Optional<User> userOptional = userRepository.findByEmail(normalizedEmail);
 
-            // If user is inactive, update their info (in case they changed name/phone/pass)
-            updateUserDetails(user, registerRequest);
-        } else {
-            // Create a brand new user
-            user = new User();
-            user.setFullName(registerRequest.getFullName());
-            user.setEmail(normalizedEmail);
-            user.setRole(Roles.WAREHOUSE_STAFF);
-            user.setActive(false);
+		User user;
+		if (userOptional.isPresent()) {
+			user = userOptional.get();
+
+			if (user.isActive()) {
+				throw new BadRequestException("User already registered with this email!");
+			}
+
+			updateUserDetails(user, registerRequest);
 			user.setDepartment(registerRequest.getDepartment());
-            updateUserDetails(user, registerRequest);
-        }
+		} else {
+			user = new User();
+			user.setFullName(registerRequest.getFullName());
+			user.setEmail(normalizedEmail);
+			user.setRole(Roles.WAREHOUSE_STAFF);
+			user.setActive(false);
+			user.setDepartment(registerRequest.getDepartment());
+			updateUserDetails(user, registerRequest);
+		}
 
-        // 2. Generate and set OTP + Expiry (Refresh on every request)
-        String otp = generateOtp();
-        user.setOtpCode(otp);
-        user.setOtpExpiry(LocalDateTime.now().plusMinutes(5));
+		String otp = generateOtp();
+		user.setOtpCode(otp);
+		user.setOtpExpiry(LocalDateTime.now().plusMinutes(5));
 
-        // 3. Save to Database
-        userRepository.save(user);
+		userRepository.save(user);
 
-        // 4. Send Email
-        emailService.sendOtpEmail(user.getEmail(), otp, "Registration OTP", "REGISTER");
+		emailService.sendOtpEmail(user.getEmail(), otp, "Registration OTP", "REGISTER");
 
-        return "OTP sent to your email for verification.";
-    }
+		return "OTP sent to your email for verification.";
+	}
 
-    private void updateUserDetails(User user, RegisterRequest request) {
-        user.setFullName(request.getFullName());
-        user.setPhone(request.getPhone());
-        // here I Hash the password immediately
-        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-    }
+	private void updateUserDetails(User user, RegisterRequest request) {
+		if (request.getFullName() == null || request.getFullName().isBlank()) {
+			throw new BadRequestException("Full name is required.");
+		}
+		if (request.getPassword() == null || request.getPassword().isBlank()) {
+			throw new BadRequestException("Password is required.");
+		}
+		if (request.getPhone() == null || request.getPhone().isBlank()) {
+			throw new BadRequestException("Phone is required.");
+		}
+
+		user.setFullName(request.getFullName().trim());
+		user.setPhone(request.getPhone().trim());
+		user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+	}
 
     @Override
 	public AuthResponse registerUser(String email, String otp) {
@@ -110,7 +119,7 @@ public class UserServiceImp implements UserService{
 		userdb.setActive(true);
 		userdb.setOtpCode(null);
 		userRepository.save(userdb);
-		String token = jwtService.generateToken(email, userdb.getUserId());
+		String token = jwtService.generateToken(email, userdb.getUserId(), userdb.getRole());
 		return new AuthResponse(token, "User Register success");
 	}
 
@@ -142,7 +151,7 @@ public class UserServiceImp implements UserService{
 		/*
 		 * only Active user can login
 		 */
-		String token = jwtService.generateToken(normalizedEmail, userdb.getUserId());
+		String token = jwtService.generateToken(normalizedEmail, userdb.getUserId(), userdb.getRole());
 		return new AuthResponse(token, "Login Success");
 	}
 
