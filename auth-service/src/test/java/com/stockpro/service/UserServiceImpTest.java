@@ -112,7 +112,7 @@ class UserServiceImpTest {
         user.setOtpExpiry(LocalDateTime.now().plusMinutes(5));
 
         when(userRepository.findByEmail("suraj@test.com")).thenReturn(Optional.of(user));
-        when(jwtService.generateToken("suraj@test.com", 1L)).thenReturn("jwt-token");
+        when(jwtService.generateToken("suraj@test.com", 1L, "WAREHOUSE_STAFF")).thenReturn("jwt-token");
 
         AuthResponse response = userService.registerUser("suraj@test.com", "123456");
 
@@ -150,7 +150,7 @@ class UserServiceImpTest {
     void loginUser_ShouldReturnToken_WhenCredentialsValid() {
         when(userRepository.findByEmail("suraj@test.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("Suraj@123", "encodedPassword")).thenReturn(true);
-        when(jwtService.generateToken("suraj@test.com", 1L)).thenReturn("jwt-token");
+        when(jwtService.generateToken("suraj@test.com", 1L, "WAREHOUSE_STAFF")).thenReturn("jwt-token");
 
         AuthResponse response = userService.loginUser(loginRequest);
 
