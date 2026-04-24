@@ -19,7 +19,6 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/swagger-ui/**",
             "/v3/api-docs/**",
-            "/h2-console/**",
             "/actuator/**"
     };
 
@@ -36,7 +35,6 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
-                .headers(headers -> headers.frameOptions(frame -> frame.disable()))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

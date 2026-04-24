@@ -28,7 +28,7 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("StockPro Product Service API")
-                        .description("Product master service used by Inventory, Warehouse and Purchase modules.")
+                        .description("Product master catalogue service used by inventory, warehouse, purchase and alert workflows.")
                         .version("1.0.0")
                         .contact(new Contact().name("StockPro Backend Team")))
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
