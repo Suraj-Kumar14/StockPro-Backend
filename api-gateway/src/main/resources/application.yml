@@ -11,15 +11,23 @@ spring:
     gateway:
       routes:
         - id: auth-service
-          uri: lb://AUTH-SERVICE
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
           predicates:
-            - Path=/auth/**
+            - Path=/auth/**,/oauth2/**,/login/oauth2/**
 
         - id: product-service
           uri: ${PRODUCT_SERVICE_URL:http://localhost:8082}
           predicates:
+            - Path=/products/**
+          filters:
+            - AuthenticationFilter
+
+        - id: product-service-legacy
+          uri: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+          predicates:
             - Path=/api/v1/products/**
           filters:
+            - StripPrefix=2
             - AuthenticationFilter
 
         - id: warehouse-service
@@ -64,15 +72,15 @@ spring:
           filters:
             - AuthenticationFilter
 
-eureka:
-  client:
-    service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
-
   boot:
     admin:
       client:
         url: ${ADMIN_SERVER_URL:http://localhost:9090}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
 
 management:
   endpoints:
@@ -85,5 +93,5 @@ management:
 
 app:
   jwt:
-    secret: ${JWT_SECRET:fQkDvvpY74YrbL2W6SWGb1gXda+rX45Os8kFxsGmX71XskWwl8bbw7DapNWv7H+C7W95ZXHlOsODczFeSbG48A==}
+    secret: ${JWT_SECRET:ThisIsASecretKeyForJwtTokenGenerationThatMustBeAtLeast32BytesLong12345}
     expiration-ms: 3600000
