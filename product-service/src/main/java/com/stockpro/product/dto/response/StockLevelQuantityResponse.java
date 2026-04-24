@@ -1,4 +1,4 @@
-package com.stockpro.product.dto;
+package com.stockpro.product.dto.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -6,15 +6,12 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/**
- * Response expected from warehouse-service for live stock levels.
- */
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class StockLevelResponse {
+public class StockLevelQuantityResponse {
 
     private Long productId;
     private Integer currentQuantity;
