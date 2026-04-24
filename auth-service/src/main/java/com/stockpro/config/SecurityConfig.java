@@ -20,34 +20,41 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/h2-console/**",
             "/v3/api-docs/**",
-            "/actuator/**"
+            "/actuator/**",
+
+            // add these
+            "/oauth2/**",
+            "/login/oauth2/**"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler
+    ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.oAuth2LoginSuccessHandler = oAuth2LoginSuccessHandler;
     }
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http.csrf(csrf -> csrf.disable())
+        http
+                .csrf(csrf -> csrf.disable())
+                .headers(headers -> headers.frameOptions(frame -> frame.disable()))
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-
-                        // admin-only APIs
                         .requestMatchers("/auth/admin/**").hasRole("ADMIN")
-
-                        // example role-based module paths
                         .requestMatchers("/inventory/**").hasAnyRole("ADMIN", "INVENTORY_MANAGER")
                         .requestMatchers("/warehouse/**").hasAnyRole("ADMIN", "WAREHOUSE_STAFF")
                         .requestMatchers("/purchase/**").hasAnyRole("ADMIN", "PURCHASE_OFFICER")
-
-                        // all auth/user APIs require login
                         .requestMatchers("/auth/user/**").authenticated()
-
-                        .anyRequest().authenticated())
-                .headers(headers -> headers.frameOptions(frame -> frame.disable()))
+                        .anyRequest().authenticated()
+                )
+                .oauth2Login(oauth2 -> oauth2
+                        .successHandler(oAuth2LoginSuccessHandler)
+                )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

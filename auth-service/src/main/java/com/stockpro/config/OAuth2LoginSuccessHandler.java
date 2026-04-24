@@ -15,6 +15,7 @@ import org.springframework.security.web.authentication.AuthenticationSuccessHand
 import org.springframework.stereotype.Component;
 
 import com.stockpro.entity.User;
+import com.stockpro.config.Roles;
 import com.stockpro.repository.UserRepository;
 import com.stockpro.service.JwtService;
 
@@ -74,7 +75,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             }
 
             if (user.getRole() == null || user.getRole().isBlank()) {
-                user.setRole("STAFF");
+                user.setRole(Roles.WAREHOUSE_STAFF);
             }
 
             if (user.getDepartment() == null || user.getDepartment().isBlank()) {
@@ -95,7 +96,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             user.setEmail(email);
             user.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
             user.setPhone(null);
-            user.setRole("STAFF");
+            user.setRole(Roles.WAREHOUSE_STAFF);
             user.setDepartment("GENERAL");
             user.setActive(true);
             user.setCreatedAt(LocalDateTime.now());
@@ -104,13 +105,13 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             user = userRepository.save(user);
         }
 
-        String token = jwtService.generateToken(user.getEmail(), user.getUserId());
+        String token = jwtService.generateToken(user.getEmail(), user.getUserId(), user.getRole());
 
         response.sendRedirect(
-                frontendUrl + "/auth?token=" +
-                URLEncoder.encode(token, StandardCharsets.UTF_8) +
-                "&oauth2=google" +
-                "&role=" + URLEncoder.encode(user.getRole(), StandardCharsets.UTF_8)
+                frontendUrl + "/oauth-callback?token=" +
+                        URLEncoder.encode(token, StandardCharsets.UTF_8) +
+                        "&oauth2=google" +
+                        "&role=" + URLEncoder.encode(user.getRole(), StandardCharsets.UTF_8)
         );
     }
 
