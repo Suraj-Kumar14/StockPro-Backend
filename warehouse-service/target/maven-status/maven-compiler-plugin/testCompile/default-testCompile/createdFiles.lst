@@ -1,0 +1,6 @@
+com\stockpro\warehouse\integration\WarehouseServiceIntegrationTest.class
+com\stockpro\warehouse\service\WarehouseServiceImplTest.class
+com\stockpro\warehouse\controller\WarehouseControllerTest.class
+com\stockpro\warehouse\repository\WarehouseRepositoryTest.class
+com\stockpro\warehouse\repository\StockLevelRepositoryTest.class
+com\stockpro\warehouse\controller\StockControllerTest.class
