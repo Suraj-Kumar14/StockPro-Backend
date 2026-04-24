@@ -30,9 +30,10 @@ public class JwtService {
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(String email, Long userId) {
+    public String generateToken(String email, Long userId, String role) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
+        claims.put("role", role);
 
         return Jwts.builder()
                 .setClaims(claims)
