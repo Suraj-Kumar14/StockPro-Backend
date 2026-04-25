@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Products | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Products','Search, review, and maintain the product master catalogue.','Add Product', @{/inventory/products/new})}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: filterCard('Search Products', ~{::productFilters})}"></th:block>
+    <form th:fragment="productFilters" th:action="@{/inventory/products}" method="get" class="filter-form">
+        <div class="filter-grid">
+            <label class="field">
+                <span>Search</span>
+                <input type="text" name="query" th:value="${filters.name}" placeholder="Name, SKU, or brand">
+            </label>
+            <label class="field">
+                <span>Category</span>
+                <input type="text" name="category" th:value="${filters.category}" placeholder="Category">
+            </label>
+            <label class="field">
+                <span>Status</span>
+                <select name="active">
+                    <option value="">All</option>
+                    <option value="true" th:selected="${filters.active == true}">Active</option>
+                    <option value="false" th:selected="${filters.active == false}">Inactive</option>
+                </select>
+            </label>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="primary-button">Apply Filters</button>
+            <a th:href="@{/inventory/products}" class="ghost-button">Reset</a>
+        </div>
+    </form>
+
+    <th:block th:replace="~{fragments/components :: tableCard('Product Catalogue','Pricing, status, and lifecycle controls.', ~{::productsTable})}"></th:block>
+    <table th:fragment="productsTable" class="data-table" th:if="${!productsPage.empty()}">
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>SKU</th>
+            <th>Category</th>
+            <th>Price</th>
+            <th>Status</th>
+            <th class="text-right">Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="product : ${productsPage.items()}">
+            <td>
+                <strong th:text="${product.name}">Product</strong>
+                <small class="table-subtext" th:text="${product.brand}">Brand</small>
+            </td>
+            <td th:text="${product.sku}">SKU</td>
+            <td th:text="${product.category}">Category</td>
+            <td th:text="${#numbers.formatDecimal(product.sellingPrice, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+            <td>
+                <span th:replace="~{fragments/components :: statusBadge(${product.active} ? 'Active' : 'Inactive', ${product.active} ? 'success' : 'warning')}"></span>
+            </td>
+            <td class="table-actions">
+                <a th:href="@{|/inventory/products/${product.productId}|}" class="text-link">View</a>
+                <a th:href="@{|/inventory/products/${product.productId}/edit|}" class="text-link"
+                   sec:authorize="hasAnyRole('ADMIN','INVENTORY_MANAGER')">Edit</a>
+                <form th:action="@{|/inventory/products/${product.productId}/deactivate|}" method="post"
+                      sec:authorize="hasAnyRole('ADMIN','INVENTORY_MANAGER')">
+                    <button type="submit" class="text-link text-link--danger"
+                            data-confirm="Deactivate this product?">Deactivate</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+    <div th:if="${productsPage.empty()}">
+        <th:block th:replace="~{fragments/components :: emptyState('No products found','Try broader search filters or add a new product.','Add Product', @{/inventory/products/new})}"></th:block>
+    </div>
+    <div th:replace="~{fragments/components :: pagination(${productsPage})}"></div>
+</section>
+</body>
+</html>

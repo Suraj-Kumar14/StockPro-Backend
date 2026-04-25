@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, 'none', ~{::section})}">
+<head>
+    <title>Error | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <div class="empty-state empty-state--danger">
+        <strong th:text="${errorTitle}">Integration Error</strong>
+        <p th:text="${errorMessage}">An error occurred.</p>
+        <p class="muted" th:text="'HTTP ' + ${statusCode} + ' • ' + ${requestPath}">HTTP 500</p>
+        <a th:href="@{/}" class="primary-button">Return to dashboard</a>
+    </div>
+</section>
+</body>
+</html>

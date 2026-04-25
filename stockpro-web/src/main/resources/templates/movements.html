@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Movements | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Stock Movements','Track immutable stock movement history by product, warehouse, and date range.', null, null)}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: filterCard('Movement Filters', ~{::movementFilters})}"></th:block>
+    <form th:fragment="movementFilters" th:action="@{/inventory/movements}" method="get" class="filter-form">
+        <div class="filter-grid">
+            <label class="field">
+                <span>Product</span>
+                <select name="productId">
+                    <option value="">All Products</option>
+                    <option th:each="product : ${productOptions}" th:value="${product.productId}"
+                            th:text="${product.name}" th:selected="${filters.productId == product.productId}">Product</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Warehouse</span>
+                <select name="warehouseId">
+                    <option value="">All Warehouses</option>
+                    <option th:each="warehouse : ${warehouseOptions}" th:value="${warehouse.warehouseId}"
+                            th:text="${warehouse.name}" th:selected="${filters.warehouseId == warehouse.warehouseId}">Warehouse</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Type</span>
+                <select name="movementType">
+                    <option value="">All Types</option>
+                    <option value="STOCK_IN" th:selected="${filters.movementType?.name() == 'STOCK_IN'}">STOCK_IN</option>
+                    <option value="STOCK_OUT" th:selected="${filters.movementType?.name() == 'STOCK_OUT'}">STOCK_OUT</option>
+                    <option value="TRANSFER_IN" th:selected="${filters.movementType?.name() == 'TRANSFER_IN'}">TRANSFER_IN</option>
+                    <option value="TRANSFER_OUT" th:selected="${filters.movementType?.name() == 'TRANSFER_OUT'}">TRANSFER_OUT</option>
+                    <option value="ADJUSTMENT" th:selected="${filters.movementType?.name() == 'ADJUSTMENT'}">ADJUSTMENT</option>
+                    <option value="WRITE_OFF" th:selected="${filters.movementType?.name() == 'WRITE_OFF'}">WRITE_OFF</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>From</span>
+                <input type="datetime-local" name="startDate" th:value="${filters.startDate}">
+            </label>
+            <label class="field">
+                <span>To</span>
+                <input type="datetime-local" name="endDate" th:value="${filters.endDate}">
+            </label>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="primary-button">Apply Filters</button>
+            <a th:href="@{/inventory/movements}" class="ghost-button">Reset</a>
+        </div>
+    </form>
+
+    <th:block th:replace="~{fragments/components :: tableCard('Movement Log','Operational stock in/out and transfer trace.', ~{::movementTable})}"></th:block>
+    <table th:fragment="movementTable" class="data-table" th:if="${!movementsPage.empty()}">
+        <thead>
+        <tr>
+            <th>Type</th>
+            <th>Product</th>
+            <th>Warehouse</th>
+            <th>Quantity</th>
+            <th>Date</th>
+            <th>Reference</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${movementsPage.items()}">
+            <td th:text="${row.movementType}">TYPE</td>
+            <td th:text="${row.productId}">101</td>
+            <td th:text="${row.warehouseId}">1</td>
+            <td th:text="${row.quantity}">0</td>
+            <td th:text="${#temporals.format(row.movementDate, 'dd MMM yyyy HH:mm')}">Date</td>
+            <td th:text="${row.referenceType} + ' #' + ${row.referenceId}">Reference</td>
+        </tr>
+        </tbody>
+    </table>
+    <div th:if="${movementsPage.empty()}">
+        <th:block th:replace="~{fragments/components :: emptyState('No movements found','No movement records matched the selected filters.', null, null)}"></th:block>
+    </div>
+    <div th:replace="~{fragments/components :: pagination(${movementsPage})}"></div>
+</section>
+</body>
+</html>

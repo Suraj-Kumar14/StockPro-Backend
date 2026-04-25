@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Suppliers | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Suppliers','Search suppliers by name, city, or country and monitor their active status.','Add Supplier', @{/purchase/suppliers/new})}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: filterCard('Supplier Search', ~{::supplierFilters})}"></th:block>
+    <form th:fragment="supplierFilters" th:action="@{/purchase/suppliers}" method="get" class="filter-form">
+        <div class="filter-grid">
+            <label class="field">
+                <span>Search</span>
+                <input type="text" name="search" th:value="${search}" placeholder="Name, city, or country">
+            </label>
+            <label class="field">
+                <span>City</span>
+                <input type="text" name="city" th:value="${city}" placeholder="City">
+            </label>
+            <label class="field">
+                <span>Country</span>
+                <input type="text" name="country" th:value="${country}" placeholder="Country">
+            </label>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="primary-button">Search</button>
+            <a th:href="@{/purchase/suppliers}" class="ghost-button">Reset</a>
+        </div>
+    </form>
+
+    <th:block th:replace="~{fragments/components :: tableCard('Supplier Registry','Vendor master data for procurement operations.', ~{::supplierTable})}"></th:block>
+    <table th:fragment="supplierTable" class="data-table" th:if="${!#lists.isEmpty(suppliers)}">
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Contact</th>
+            <th>City</th>
+            <th>Country</th>
+            <th>Status</th>
+            <th class="text-right">Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="supplier : ${suppliers}">
+            <td><a th:href="@{|/purchase/suppliers/${supplier.supplierId}|}" th:text="${supplier.name}">Supplier</a></td>
+            <td>
+                <strong th:text="${supplier.contactPerson}">Contact</strong>
+                <small class="table-subtext" th:text="${supplier.email}">Email</small>
+            </td>
+            <td th:text="${supplier.city}">City</td>
+            <td th:text="${supplier.country}">Country</td>
+            <td>
+                <span th:replace="~{fragments/components :: statusBadge(${supplier.active} ? 'Active' : 'Inactive', ${supplier.active} ? 'success' : 'warning')}"></span>
+            </td>
+            <td class="table-actions">
+                <a th:href="@{|/purchase/suppliers/${supplier.supplierId}/edit|}" class="text-link">Edit</a>
+                <form th:action="@{|/purchase/suppliers/${supplier.supplierId}/deactivate|}" method="post">
+                    <button type="submit" class="text-link text-link--danger" data-confirm="Deactivate this supplier?">Deactivate</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+    <div th:if="${#lists.isEmpty(suppliers)}">
+        <th:block th:replace="~{fragments/components :: emptyState('No suppliers found','No suppliers matched your search filters.', 'Add Supplier', @{/purchase/suppliers/new})}"></th:block>
+    </div>
+</section>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Supplier Detail | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader(${supplier.name},'Supplier profile and procurement details.','Back to Suppliers', @{/purchase/suppliers})}"></th:block>
+
+    <article class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Supplier Information</h2>
+                <p>Vendor profile sourced directly from supplier-service.</p>
+            </div>
+        </div>
+        <dl class="detail-list">
+            <div><dt>Contact Person</dt><dd th:text="${supplier.contactPerson}">Contact</dd></div>
+            <div><dt>Email</dt><dd th:text="${supplier.email}">email@example.com</dd></div>
+            <div><dt>Phone</dt><dd th:text="${supplier.phone}">Phone</dd></div>
+            <div><dt>Location</dt><dd th:text="${supplier.city + ', ' + supplier.country}">City</dd></div>
+            <div><dt>Payment Terms</dt><dd th:text="${supplier.paymentTerms}">Terms</dd></div>
+            <div><dt>Lead Time Days</dt><dd th:text="${supplier.leadTimeDays}">0</dd></div>
+            <div><dt>Rating</dt><dd th:text="${supplier.rating}">0.0</dd></div>
+        </dl>
+    </article>
+</section>
+</body>
+</html>

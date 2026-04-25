@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Dead Stock Report | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Dead Stock Report','Surface products with extended inactivity so teams can disposition them.', null, null)}"></th:block>
+
+    <section class="panel warning-panel">
+        <div class="panel__header">
+            <div>
+                <h2>Dead Stock Listing</h2>
+                <p>Rows emphasize products with long periods without movement.</p>
+            </div>
+        </div>
+        <div class="table-wrap" th:if="${!reportPage.empty()}">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Warehouse</th>
+                    <th>Last Movement</th>
+                    <th>Days Without Movement</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="row : ${reportPage.items()}" class="table-row--warning">
+                    <td th:text="${row.productName}">Product</td>
+                    <td th:text="${row.warehouseId}">Warehouse</td>
+                    <td th:text="${#temporals.format(row.lastMovementDate, 'dd MMM yyyy HH:mm')}">Date</td>
+                    <td th:text="${row.daysWithoutMovement}">0</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <div th:if="${reportPage.empty()}">
+            <th:block th:replace="~{fragments/components :: emptyState('No dead stock rows','No dead stock records were returned for the selected scope.', null, null)}"></th:block>
+        </div>
+    </section>
+    <div th:replace="~{fragments/components :: pagination(${reportPage})}"></div>
+</section>
+</body>
+</html>

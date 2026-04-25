@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Reports | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Reports Dashboard','Navigate to analytical reports without leaving the server-rendered workspace.', null, null)}"></th:block>
+
+    <div class="action-grid">
+        <a th:each="card : ${reports.cards()}" th:href="${card.href()}" class="action-card">
+            <strong th:text="${card.title()}">Report</strong>
+            <p th:text="${card.description()}">Description</p>
+        </a>
+    </div>
+</section>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>PO Detail | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader(${ 'Purchase Order PO-' + detail.purchaseOrder().poId },'Supplier, warehouse, line items, and lifecycle actions.','Back to Orders', @{/purchase/orders})}"></th:block>
+
+    <div class="detail-grid">
+        <article class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>PO Summary</h2>
+                    <p>Data sourced from purchase-service and related microservices.</p>
+                </div>
+            </div>
+            <dl class="detail-list">
+                <div><dt>Supplier</dt><dd th:text="${detail.supplier().name}">Supplier</dd></div>
+                <div><dt>Warehouse</dt><dd th:text="${detail.warehouse().name}">Warehouse</dd></div>
+                <div><dt>Status</dt><dd>
+                    <span th:replace="~{fragments/components :: statusBadge(${detail.purchaseOrder().status}, ${detail.purchaseOrder().status?.name() == 'CANCELLED' ? 'critical' : (detail.purchaseOrder().status?.name() == 'PENDING_APPROVAL' ? 'warning' : 'success')})}"></span>
+                </dd></div>
+                <div><dt>Total Amount</dt><dd th:text="${#numbers.formatDecimal(detail.purchaseOrder().totalAmount,1,'COMMA',2,'POINT')}">0.00</dd></div>
+                <div><dt>Expected Date</dt><dd th:text="${detail.purchaseOrder().expectedDate}">2026-04-30</dd></div>
+                <div><dt>Reference</dt><dd th:text="${detail.purchaseOrder().referenceNumber}">REF-1</dd></div>
+            </dl>
+            <p class="muted" th:text="${detail.purchaseOrder().notes ?: 'No notes provided.'}">Notes</p>
+        </article>
+
+        <article class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Actions</h2>
+                    <p>Buttons are shown only to authorized roles.</p>
+                </div>
+            </div>
+            <div class="stack-form">
+                <a th:href="@{|/purchase/orders/${detail.purchaseOrder().poId}/edit|}" class="ghost-button">Review Edit Form</a>
+                <form th:action="@{|/purchase/orders/${detail.purchaseOrder().poId}/approve|}" method="post">
+                    <button type="submit" class="primary-button" data-confirm="Approve this purchase order?">Approve</button>
+                </form>
+                <form th:action="@{|/purchase/orders/${detail.purchaseOrder().poId}/cancel|}" method="post">
+                    <button type="submit" class="ghost-button" data-confirm="Cancel this purchase order?">Cancel</button>
+                </form>
+            </div>
+        </article>
+    </div>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Line Items</h2>
+                <p>Product, quantity, cost, and received quantity.</p>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Quantity</th>
+                    <th>Unit Cost</th>
+                    <th>Total Cost</th>
+                    <th>Received Qty</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="line : ${detail.purchaseOrder().lineItems}">
+                    <td th:text="${detail.productsById().containsKey(line.productId) ? detail.productsById().get(line.productId).name : 'Product #' + line.productId}">Product</td>
+                    <td th:text="${line.quantity}">0</td>
+                    <td th:text="${line.unitCost}">0.00</td>
+                    <td th:text="${line.totalCost}">0.00</td>
+                    <td th:text="${line.receivedQty}">0</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Receive Goods</h2>
+                <p>Warehouse staff can update received quantities for each line item.</p>
+            </div>
+        </div>
+        <form th:object="${receiveForm}" th:action="@{|/purchase/orders/${detail.purchaseOrder().poId}/receive|}" method="post" class="stack-form" data-loading="true">
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>Product ID</th>
+                        <th>Quantity</th>
+                        <th>Unit Cost</th>
+                        <th>Received Qty</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="line, stat : *{lineItems}">
+                        <td>
+                            <span th:text="${line.productId}">0</span>
+                            <input type="hidden" th:field="*{lineItems[__${stat.index}__].productId}">
+                            <input type="hidden" th:field="*{lineItems[__${stat.index}__].lineItemId}">
+                            <input type="hidden" th:field="*{lineItems[__${stat.index}__].quantity}">
+                            <input type="hidden" th:field="*{lineItems[__${stat.index}__].unitCost}">
+                            <input type="hidden" th:field="*{lineItems[__${stat.index}__].totalCost}">
+                        </td>
+                        <td th:text="${line.quantity}">0</td>
+                        <td th:text="${line.unitCost}">0.00</td>
+                        <td><input type="number" min="0" th:field="*{lineItems[__${stat.index}__].receivedQty}"></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary-button" data-confirm="Receive goods for this purchase order?">Receive Goods</button>
+            </div>
+        </form>
+    </section>
+</section>
+</body>
+</html>

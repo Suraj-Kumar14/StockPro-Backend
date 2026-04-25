@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<header th:fragment="header" class="topbar">
+    <div class="topbar__brand">
+        <a th:href="@{/}" class="brand-link">
+            <span class="brand-mark">SP</span>
+            <span class="brand-copy">
+                <strong th:text="${appName}">StockPro</strong>
+                <small>Enterprise Inventory Console</small>
+            </span>
+        </a>
+    </div>
+    <div class="topbar__actions">
+        <div class="alert-dropdown" th:if="${headerModel != null}">
+            <a class="icon-button" th:href="@{/inventory/alerts}" aria-label="Alerts">
+                <span>Alerts</span>
+                <span class="icon-button__badge"
+                      th:text="${headerModel.unreadCount()}"
+                      th:if="${headerModel.unreadCount() > 0}">0</span>
+            </a>
+            <div class="alert-dropdown__menu">
+                <div class="alert-dropdown__header">
+                    <strong>Unread Alerts</strong>
+                    <a th:href="@{/inventory/alerts}">Open alert center</a>
+                </div>
+                <div th:if="${#lists.isEmpty(headerModel.previewAlerts())}" class="mini-empty">
+                    No recent alerts.
+                </div>
+                <div th:each="alert : ${headerModel.previewAlerts()}" class="mini-alert"
+                     th:classappend="${alert.unread()} ? ' mini-alert--unread' : ''">
+                    <div class="mini-alert__meta">
+                        <span th:text="${alert.severity()}">INFO</span>
+                        <span th:text="${alert.createdAtLabel()}">Today</span>
+                    </div>
+                    <strong th:text="${alert.title()}">Alert title</strong>
+                    <p th:text="${alert.message()}">Alert preview</p>
+                </div>
+            </div>
+        </div>
+        <div class="user-chip" th:if="${headerModel != null}">
+            <div class="user-chip__identity">
+                <strong th:text="${headerModel.fullName()}">User</strong>
+                <small th:text="${headerModel.role()}">Role</small>
+            </div>
+            <form th:action="@{/logout}" method="post">
+                <button type="submit" class="ghost-button">Logout</button>
+            </form>
+        </div>
+    </div>
+</header>
+</body>
+</html>

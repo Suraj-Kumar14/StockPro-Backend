@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>User Form | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader(${pageMode == 'edit'} ? 'Edit User Profile' : 'Add User','Identity actions are delegated to auth-service endpoints.', null, null)}"></th:block>
+
+    <div class="flash flash--warning" th:if="${pageMode == 'create'}">
+        The current auth-service add-user flow triggers registration request / OTP delivery. Final verification remains owned by auth-service.
+    </div>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2 th:text="${pageMode == 'edit'} ? 'User Profile' : 'New User Invitation'">Form</h2>
+                <p>Use this screen to manage accessible profile fields.</p>
+            </div>
+        </div>
+
+        <form th:if="${pageMode == 'create'}"
+              th:object="${userForm}"
+              th:action="@{/admin/users/new}"
+              method="post"
+              class="entity-form"
+              data-loading="true">
+            <div class="form-grid form-grid--two">
+                <label class="field"><span>Full Name</span><input type="text" th:field="*{fullName}" required></label>
+                <label class="field"><span>Email</span><input type="email" th:field="*{email}" required></label>
+                <label class="field"><span>Password</span><input type="password" th:field="*{password}" required></label>
+                <label class="field"><span>Phone</span><input type="text" th:field="*{phone}" required></label>
+                <label class="field"><span>Department</span><input type="text" th:field="*{department}" required></label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary-button">Send Registration Request</button>
+                <a th:href="@{/admin/users}" class="ghost-button">Cancel</a>
+            </div>
+        </form>
+
+        <form th:if="${pageMode == 'edit'}"
+              th:object="${userForm}"
+              th:action="@{|/admin/users/${user.userId}/edit|}"
+              method="post"
+              class="entity-form"
+              data-loading="true">
+            <div class="form-grid form-grid--two">
+                <label class="field"><span>Full Name</span><input type="text" th:field="*{fullName}" required></label>
+                <label class="field"><span>Email</span><input type="email" th:field="*{email}" required></label>
+                <label class="field"><span>Phone</span><input type="text" th:field="*{phone}" required></label>
+                <label class="field"><span>Role</span><input type="text" th:value="${user.role}" readonly></label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary-button">Save User</button>
+                <a th:href="@{/admin/users}" class="ghost-button">Cancel</a>
+            </div>
+        </form>
+    </section>
+</section>
+</body>
+</html>

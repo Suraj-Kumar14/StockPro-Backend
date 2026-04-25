@@ -1,0 +1,25 @@
+server:
+  port: ${PORT:8090}
+
+spring:
+  application:
+    name: STOCKPRO-WEB
+  thymeleaf:
+    cache: false
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true
+
+api:
+  gateway:
+    base-url: ${API_GATEWAY_URL:http://localhost:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

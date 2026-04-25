@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="flashMessages" class="flash-stack">
+    <div class="flash flash--success" th:if="${successMessage}" th:text="${successMessage}">Success</div>
+    <div class="flash flash--error" th:if="${errorMessage}" th:text="${errorMessage}">Error</div>
+    <div class="flash flash--info" th:if="${infoMessage}" th:text="${infoMessage}">Info</div>
+    <div class="flash flash--warning" th:if="${warningMessage}" th:text="${warningMessage}">Warning</div>
+</div>
+
+<span th:fragment="statusBadge(label, tone)"
+      class="status-badge"
+      th:classappend="${tone != null} ? ' status-badge--' + ${tone} : ''"
+      th:text="${label}">Badge</span>
+
+<section th:fragment="sectionHeader(title, subtitle, actionLabel, actionHref)" class="page-hero">
+    <div>
+        <h1 th:text="${title}">Page Title</h1>
+        <p th:text="${subtitle}">Page subtitle.</p>
+    </div>
+    <a th:if="${actionLabel}" th:href="${actionHref}" class="primary-button" th:text="${actionLabel}">Action</a>
+</section>
+
+<section th:fragment="tableCard(title, subtitle, tableContent)" class="panel">
+    <div class="panel__header">
+        <div>
+            <h2 th:text="${title}">Table</h2>
+            <p th:text="${subtitle}">Subtitle</p>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <th:block th:replace="${tableContent}"></th:block>
+    </div>
+</section>
+
+<section th:fragment="formCard(title, subtitle, formContent)" class="panel">
+    <div class="panel__header">
+        <div>
+            <h2 th:text="${title}">Form</h2>
+            <p th:text="${subtitle}">Subtitle</p>
+        </div>
+    </div>
+    <th:block th:replace="${formContent}"></th:block>
+</section>
+
+<section th:fragment="filterCard(title, formContent)" class="panel panel--filters">
+    <div class="panel__header">
+        <div>
+            <h2 th:text="${title}">Filters</h2>
+            <p>Refine the current dataset without leaving the page.</p>
+        </div>
+    </div>
+    <th:block th:replace="${formContent}"></th:block>
+</section>
+
+<div th:fragment="emptyState(title, message, actionLabel, actionHref)" class="empty-state">
+    <strong th:text="${title}">Nothing here yet</strong>
+    <p th:text="${message}">No records available.</p>
+    <a th:if="${actionLabel}" th:href="${actionHref}" class="ghost-button" th:text="${actionLabel}">Action</a>
+</div>
+
+<nav th:fragment="pagination(pageModel)" class="pagination"
+     th:if="${pageModel != null and pageModel.totalElements() > 0}">
+    <button type="button" class="ghost-button" data-page-target="0" th:disabled="${pageModel.first()}">First</button>
+    <button type="button" class="ghost-button"
+            th:attr="data-page-target=${pageModel.page() - 1}"
+            th:disabled="${pageModel.first()}">Previous</button>
+    <span class="pagination__label"
+          th:text="'Page ' + ${pageModel.page() + 1} + ' of ' + ${pageModel.totalPages()} + ' • ' + ${pageModel.totalElements()} + ' items'">
+        Page
+    </span>
+    <button type="button" class="ghost-button"
+            th:attr="data-page-target=${pageModel.page() + 1}"
+            th:disabled="${pageModel.last()}">Next</button>
+    <button type="button" class="ghost-button"
+            th:attr="data-page-target=${pageModel.totalPages() - 1}"
+            th:disabled="${pageModel.last()}">Last</button>
+</nav>
+</body>
+</html>

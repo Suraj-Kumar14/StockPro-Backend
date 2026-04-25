@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<body>
+<aside th:fragment="sidebar(activeMenu)" class="sidebar">
+    <nav class="sidebar__nav">
+        <div class="nav-group">
+            <span class="nav-group__label">Inventory</span>
+            <a th:href="@{/inventory/dashboard}" class="nav-link"
+               th:classappend="${activeMenu == 'dashboard'} ? ' is-active' : ''"
+               sec:authorize="hasAnyRole('ADMIN','INVENTORY_MANAGER','WAREHOUSE_STAFF')">Dashboard</a>
+            <a th:href="@{/inventory/products}" class="nav-link"
+               th:classappend="${activeMenu == 'products'} ? ' is-active' : ''"
+               sec:authorize="hasAnyRole('ADMIN','INVENTORY_MANAGER','WAREHOUSE_STAFF')">Products</a>
+            <a th:href="@{/inventory/warehouses}" class="nav-link"
+               th:classappend="${activeMenu == 'warehouses'} ? ' is-active' : ''"
+               sec:authorize="hasAnyRole('ADMIN','INVENTORY_MANAGER','WAREHOUSE_STAFF')">Warehouses</a>
+            <a th:href="@{/inventory/stock}" class="nav-link"
+               th:classappend="${activeMenu == 'stock'} ? ' is-active' : ''"
+               sec:authorize="hasAnyRole('ADMIN','INVENTORY_MANAGER','WAREHOUSE_STAFF')">Stock</a>
+            <a th:href="@{/inventory/movements}" class="nav-link"
+               th:classappend="${activeMenu == 'movements'} ? ' is-active' : ''"
+               sec:authorize="hasAnyRole('ADMIN','INVENTORY_MANAGER','WAREHOUSE_STAFF')">Movements</a>
+        </div>
+
+        <div class="nav-group">
+            <span class="nav-group__label">Purchase</span>
+            <a th:href="@{/purchase/orders}" class="nav-link"
+               th:classappend="${activeMenu == 'purchase-orders'} ? ' is-active' : ''"
+               sec:authorize="hasAnyRole('ADMIN','PURCHASE_OFFICER','INVENTORY_MANAGER','WAREHOUSE_STAFF')">Purchase Orders</a>
+            <a th:href="@{/purchase/suppliers}" class="nav-link"
+               th:classappend="${activeMenu == 'suppliers'} ? ' is-active' : ''"
+               sec:authorize="hasAnyRole('ADMIN','PURCHASE_OFFICER','INVENTORY_MANAGER','WAREHOUSE_STAFF')">Suppliers</a>
+        </div>
+
+        <div class="nav-group" sec:authorize="hasAnyRole('ADMIN','INVENTORY_MANAGER')">
+            <span class="nav-group__label">Reports</span>
+            <a th:href="@{/inventory/reports}" class="nav-link"
+               th:classappend="${activeMenu == 'reports'} ? ' is-active' : ''">Reports Dashboard</a>
+            <a th:href="@{/inventory/reports/low-stock}" class="nav-link">Low Stock</a>
+            <a th:href="@{/inventory/reports/top-moving}" class="nav-link">Top Moving</a>
+            <a th:href="@{/inventory/reports/dead-stock}" class="nav-link">Dead Stock</a>
+        </div>
+
+        <div class="nav-group">
+            <span class="nav-group__label">Alerts</span>
+            <a th:href="@{/inventory/alerts}" class="nav-link"
+               th:classappend="${activeMenu == 'alerts'} ? ' is-active' : ''">Alert Center</a>
+        </div>
+
+        <div class="nav-group" sec:authorize="hasRole('ADMIN')">
+            <span class="nav-group__label">Admin</span>
+            <a th:href="@{/admin/dashboard}" class="nav-link"
+               th:classappend="${activeMenu == 'admin-dashboard'} ? ' is-active' : ''">Admin Dashboard</a>
+            <a th:href="@{/admin/users}" class="nav-link"
+               th:classappend="${activeMenu == 'users'} ? ' is-active' : ''">Users</a>
+            <a th:href="@{/admin/warehouses}" class="nav-link"
+               th:classappend="${activeMenu == 'warehouses-admin'} ? ' is-active' : ''">Warehouses</a>
+            <a th:href="@{/admin/reports}" class="nav-link"
+               th:classappend="${activeMenu == 'reports-admin'} ? ' is-active' : ''">Reports</a>
+            <a th:href="@{/admin/alerts/send}" class="nav-link"
+               th:classappend="${activeMenu == 'alerts-admin'} ? ' is-active' : ''">System Alerts</a>
+            <a th:href="@{/admin/audit-logs}" class="nav-link"
+               th:classappend="${activeMenu == 'audit-logs'} ? ' is-active' : ''">Audit Logs</a>
+        </div>
+    </nav>
+</aside>
+</body>
+</html>

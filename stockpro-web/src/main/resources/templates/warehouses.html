@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Warehouses | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Warehouses','Review capacity, utilization, and warehouse master records.', null, null)}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: tableCard('Warehouse List','Capacity monitoring for each operating location.', ~{::warehouseTable})}"></th:block>
+    <table th:fragment="warehouseTable" class="data-table" th:if="${!warehousesPage.empty()}">
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Location</th>
+            <th>Capacity</th>
+            <th>Used Capacity</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="warehouse : ${warehousesPage.items()}">
+            <td><a th:href="@{|/inventory/warehouses/${warehouse.warehouseId}|}" th:text="${warehouse.name}">Warehouse</a></td>
+            <td th:text="${warehouse.location}">Location</td>
+            <td th:text="${warehouse.capacity}">0</td>
+            <td th:text="${warehouse.usedCapacity}">0</td>
+            <td>
+                <span th:replace="~{fragments/components :: statusBadge(${warehouse.active} ? 'Active' : 'Inactive', ${warehouse.active} ? 'success' : 'warning')}"></span>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+    <div th:if="${warehousesPage.empty()}">
+        <th:block th:replace="~{fragments/components :: emptyState('No warehouses available','No warehouse records were returned by warehouse-service.', null, null)}"></th:block>
+    </div>
+    <div th:replace="~{fragments/components :: pagination(${warehousesPage})}"></div>
+</section>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Alerts | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Alert Center','Review unread alerts, acknowledge operational issues, and keep the queue clean.', null, null)}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: filterCard('Alert Filters', ~{::alertFilters})}"></th:block>
+    <form th:fragment="alertFilters" th:action="@{/inventory/alerts}" method="get" class="filter-form">
+        <div class="filter-grid">
+            <label class="field">
+                <span>Severity</span>
+                <select name="severity">
+                    <option value="">All</option>
+                    <option value="INFO" th:selected="${filters.severity?.name() == 'INFO'}">INFO</option>
+                    <option value="WARNING" th:selected="${filters.severity?.name() == 'WARNING'}">WARNING</option>
+                    <option value="CRITICAL" th:selected="${filters.severity?.name() == 'CRITICAL'}">CRITICAL</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Status</span>
+                <select name="read">
+                    <option value="">All</option>
+                    <option value="false" th:selected="${filters.read == false}">Unread</option>
+                    <option value="true" th:selected="${filters.read == true}">Read</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Acknowledged</span>
+                <select name="acknowledged">
+                    <option value="">All</option>
+                    <option value="false" th:selected="${filters.acknowledged == false}">Pending</option>
+                    <option value="true" th:selected="${filters.acknowledged == true}">Acknowledged</option>
+                </select>
+            </label>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="primary-button">Apply Filters</button>
+            <a th:href="@{/inventory/alerts}" class="ghost-button">Reset</a>
+        </div>
+    </form>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Alerts</h2>
+                <p>Unread alerts are highlighted for fast triage.</p>
+            </div>
+        </div>
+        <div class="alert-list" th:if="${!alertsPage.empty()}">
+            <article class="alert-row" th:each="alert : ${alertsPage.items()}"
+                     th:classappend="${!alert.read} ? ' alert-row--unread' : ''">
+                <div class="alert-row__main">
+                    <div class="alert-row__meta">
+                        <span th:replace="~{fragments/components :: statusBadge(${alert.severity}, ${alert.severity?.name() == 'CRITICAL' ? 'critical' : (alert.severity?.name() == 'WARNING' ? 'warning' : 'success')})}"></span>
+                        <span th:text="${#temporals.format(alert.createdAt, 'dd MMM yyyy HH:mm')}">Now</span>
+                    </div>
+                    <strong th:text="${alert.title}">Alert title</strong>
+                    <p th:text="${alert.message}">Message</p>
+                </div>
+                <div class="alert-row__actions">
+                    <form th:action="@{|/inventory/alerts/${alert.alertId}/read|}" method="post">
+                        <button type="submit" class="ghost-button" th:disabled="${alert.read}">Mark Read</button>
+                    </form>
+                    <form th:action="@{|/inventory/alerts/${alert.alertId}/acknowledge|}" method="post">
+                        <button type="submit" class="primary-button" th:disabled="${alert.acknowledged}">Acknowledge</button>
+                    </form>
+                </div>
+            </article>
+        </div>
+        <div th:if="${alertsPage.empty()}">
+            <th:block th:replace="~{fragments/components :: emptyState('Alert queue is clear','No alerts matched the selected filters.', null, null)}"></th:block>
+        </div>
+    </section>
+    <div th:replace="~{fragments/components :: pagination(${alertsPage})}"></div>
+</section>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | StockPro</title>
+    <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+<body class="login-page">
+<div class="login-shell">
+    <section class="login-card">
+        <div class="login-card__copy">
+            <span class="eyebrow">STOCKPRO-WEB</span>
+            <h1>Internal operations dashboard</h1>
+            <p>Authenticate through the shared auth-service and continue into the StockPro enterprise workspace.</p>
+        </div>
+
+        <form th:action="@{/login}" method="post" class="stack-form" data-loading="true">
+            <div class="flash flash--error" th:if="${param.error}">
+                Invalid credentials or inactive account.
+            </div>
+            <div class="flash flash--success" th:if="${param.logout}">
+                You have been logged out successfully.
+            </div>
+
+            <label class="field">
+                <span>Email</span>
+                <input type="email" name="username" placeholder="name@stockpro.com" required>
+            </label>
+
+            <label class="field">
+                <span>Password</span>
+                <input type="password" name="password" placeholder="Enter your password" required>
+            </label>
+
+            <button type="submit" class="primary-button">Sign In</button>
+        </form>
+    </section>
+</div>
+<script th:src="@{/js/app.js}"></script>
+</body>
+</html>

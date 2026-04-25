@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Dashboard | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Operations Dashboard','Live inventory, movement, and purchasing overview for warehouse teams.','Open Reports', @{/inventory/reports})}"></th:block>
+
+    <div class="metric-grid">
+        <article class="metric-card" th:each="metric : ${dashboard.metrics()}">
+            <span class="metric-card__title" th:text="${metric.title()}">Metric</span>
+            <strong class="metric-card__value" th:text="${metric.value()}">0</strong>
+            <p class="metric-card__helper" th:text="${metric.helperText()}">Helper</p>
+            <a th:href="${metric.href()}" class="metric-card__link">Open</a>
+        </article>
+    </div>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Quick Navigation</h2>
+                <p>Common tasks surfaced for internal operations teams.</p>
+            </div>
+        </div>
+        <div class="action-grid">
+            <a th:each="action : ${dashboard.quickActions()}" th:href="${action.href()}" class="action-card">
+                <strong th:text="${action.title()}">Action</strong>
+                <p th:text="${action.description()}">Description</p>
+            </a>
+        </div>
+    </section>
+</section>
+</body>
+</html>

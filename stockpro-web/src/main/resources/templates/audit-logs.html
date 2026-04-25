@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Audit Logs | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Audit Logs','Combined event feed assembled from available movement and alert services.', null, null)}"></th:block>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Event Timeline</h2>
+                <p>This view remains integration-driven and does not invent standalone audit persistence.</p>
+            </div>
+        </div>
+        <div class="timeline" th:if="${!#lists.isEmpty(auditEntries)}">
+            <article class="timeline-entry" th:each="entry : ${auditEntries}">
+                <div class="timeline-entry__main">
+                    <strong th:text="${entry.title()}">Title</strong>
+                    <p th:text="${entry.detail()}">Detail</p>
+                </div>
+                <div class="timeline-entry__meta">
+                    <span th:text="${entry.source()}">Source</span>
+                    <span th:text="${#temporals.format(entry.timestamp(), 'dd MMM yyyy HH:mm')}">Time</span>
+                </div>
+            </article>
+        </div>
+        <div th:if="${#lists.isEmpty(auditEntries)}">
+            <th:block th:replace="~{fragments/components :: emptyState('No audit events available','No movement or alert events were available to assemble the timeline.', null, null)}"></th:block>
+        </div>
+    </section>
+</section>
+</body>
+</html>

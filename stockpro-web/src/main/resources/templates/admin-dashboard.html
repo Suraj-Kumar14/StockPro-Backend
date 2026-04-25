@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Admin Dashboard | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Admin Dashboard','Cross-service visibility for users, warehouses, risk, and governance actions.', null, null)}"></th:block>
+
+    <div class="metric-grid">
+        <article class="metric-card" th:each="metric : ${dashboard.metrics()}">
+            <span class="metric-card__title" th:text="${metric.title()}">Metric</span>
+            <strong class="metric-card__value" th:text="${metric.value()}">0</strong>
+            <p class="metric-card__helper" th:text="${metric.helperText()}">Helper</p>
+            <a th:href="${metric.href()}" class="metric-card__link">Open</a>
+        </article>
+    </div>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Quick Actions</h2>
+                <p>Admin-only operational shortcuts.</p>
+            </div>
+        </div>
+        <div class="action-grid">
+            <a th:each="action : ${dashboard.quickActions()}" th:href="${action.href()}" class="action-card">
+                <strong th:text="${action.title()}">Action</strong>
+                <p th:text="${action.description()}">Description</p>
+            </a>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Recent Platform Events</h2>
+                <p>Combined alert and movement events used as an audit-style timeline.</p>
+            </div>
+        </div>
+        <div class="timeline">
+            <article class="timeline-entry" th:each="entry : ${dashboard.recentEvents()}">
+                <div class="timeline-entry__main">
+                    <strong th:text="${entry.title()}">Title</strong>
+                    <p th:text="${entry.detail()}">Detail</p>
+                </div>
+                <div class="timeline-entry__meta">
+                    <span th:text="${entry.source()}">Source</span>
+                    <span th:text="${#temporals.format(entry.timestamp(), 'dd MMM yyyy HH:mm')}">Time</span>
+                </div>
+            </article>
+        </div>
+    </section>
+</section>
+</body>
+</html>

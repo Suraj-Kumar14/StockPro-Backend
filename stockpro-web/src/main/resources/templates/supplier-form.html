@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Supplier Form | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader(${pageMode == 'edit'} ? 'Edit Supplier' : 'Add Supplier','Maintain supplier registry records in a thin UI adapter.', null, null)}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: formCard('Supplier Details','Fields align to supplier-service entity contract.', ~{::supplierFormShell})}"></th:block>
+    <form th:fragment="supplierFormShell"
+          th:object="${supplierForm}"
+          th:action="${pageMode == 'edit'} ? @{|/purchase/suppliers/${supplierForm.supplierId}/edit|} : @{/purchase/suppliers/new}"
+          method="post"
+          class="entity-form"
+          data-loading="true">
+        <div class="form-grid form-grid--two">
+            <label class="field">
+                <span>Name</span>
+                <input type="text" th:field="*{name}" required>
+            </label>
+            <label class="field">
+                <span>Contact Person</span>
+                <input type="text" th:field="*{contactPerson}" required>
+            </label>
+            <label class="field">
+                <span>Email</span>
+                <input type="email" th:field="*{email}" required>
+            </label>
+            <label class="field">
+                <span>Phone</span>
+                <input type="text" th:field="*{phone}">
+            </label>
+            <label class="field">
+                <span>City</span>
+                <input type="text" th:field="*{city}" required>
+            </label>
+            <label class="field">
+                <span>Country</span>
+                <input type="text" th:field="*{country}" required>
+            </label>
+            <label class="field">
+                <span>Tax ID</span>
+                <input type="text" th:field="*{taxId}" required>
+            </label>
+            <label class="field">
+                <span>Payment Terms</span>
+                <input type="text" th:field="*{paymentTerms}" required>
+            </label>
+            <label class="field">
+                <span>Lead Time Days</span>
+                <input type="number" th:field="*{leadTimeDays}" required>
+            </label>
+            <label class="field">
+                <span>Rating</span>
+                <input type="number" step="0.1" th:field="*{rating}">
+            </label>
+            <label class="field field--wide">
+                <span>Address</span>
+                <textarea th:field="*{address}" rows="4"></textarea>
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="primary-button" th:text="${pageMode == 'edit'} ? 'Save Supplier' : 'Create Supplier'">Save</button>
+            <a th:href="@{/purchase/suppliers}" class="ghost-button">Cancel</a>
+        </div>
+    </form>
+</section>
+</body>
+</html>

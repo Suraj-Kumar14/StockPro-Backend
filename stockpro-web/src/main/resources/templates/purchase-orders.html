@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Purchase Orders | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Purchase Orders','Monitor PO lifecycle status, spend, and receiving actions.','Create PO', @{/purchase/orders/new})}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: filterCard('PO Filters', ~{::poFilters})}"></th:block>
+    <form th:fragment="poFilters" th:action="@{/purchase/orders}" method="get" class="filter-form">
+        <div class="filter-grid">
+            <label class="field">
+                <span>Supplier</span>
+                <select name="supplierId">
+                    <option value="">All Suppliers</option>
+                    <option th:each="supplier : ${supplierOptions}" th:value="${supplier.supplierId}"
+                            th:text="${supplier.name}" th:selected="${filters.supplierId == supplier.supplierId}">Supplier</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Status</span>
+                <select name="status">
+                    <option value="">All</option>
+                    <option value="DRAFT" th:selected="${filters.status?.name() == 'DRAFT'}">DRAFT</option>
+                    <option value="PENDING_APPROVAL" th:selected="${filters.status?.name() == 'PENDING_APPROVAL'}">PENDING_APPROVAL</option>
+                    <option value="APPROVED" th:selected="${filters.status?.name() == 'APPROVED'}">APPROVED</option>
+                    <option value="PARTIALLY_RECEIVED" th:selected="${filters.status?.name() == 'PARTIALLY_RECEIVED'}">PARTIALLY_RECEIVED</option>
+                    <option value="FULLY_RECEIVED" th:selected="${filters.status?.name() == 'FULLY_RECEIVED'}">FULLY_RECEIVED</option>
+                    <option value="CANCELLED" th:selected="${filters.status?.name() == 'CANCELLED'}">CANCELLED</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>From</span>
+                <input type="date" name="fromDate" th:value="${filters.fromDate}">
+            </label>
+            <label class="field">
+                <span>To</span>
+                <input type="date" name="toDate" th:value="${filters.toDate}">
+            </label>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="primary-button">Apply Filters</button>
+            <a th:href="@{/purchase/orders}" class="ghost-button">Reset</a>
+        </div>
+    </form>
+
+    <th:block th:replace="~{fragments/components :: tableCard('Purchase Order Queue','Supplier, status, and amount overview.', ~{::poTable})}"></th:block>
+    <table th:fragment="poTable" class="data-table" th:if="${!ordersPage.empty()}">
+        <thead>
+        <tr>
+            <th>PO Number</th>
+            <th>Supplier</th>
+            <th>Status</th>
+            <th>Amount</th>
+            <th>Order Date</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="po : ${ordersPage.items()}">
+            <td><a th:href="@{|/purchase/orders/${po.poId}|}" th:text="${'PO-' + po.poId}">PO-1</a></td>
+            <td th:text="${po.supplierId}">Supplier</td>
+            <td>
+                <span th:replace="~{fragments/components :: statusBadge(${po.status}, ${po.status?.name() == 'CANCELLED' ? 'critical' : (po.status?.name() == 'PENDING_APPROVAL' ? 'warning' : 'success')})}"></span>
+            </td>
+            <td th:text="${#numbers.formatDecimal(po.totalAmount,1,'COMMA',2,'POINT')}">0.00</td>
+            <td th:text="${po.orderDate}">2026-04-25</td>
+        </tr>
+        </tbody>
+    </table>
+    <div th:if="${ordersPage.empty()}">
+        <th:block th:replace="~{fragments/components :: emptyState('No purchase orders found','No purchase orders matched the selected filters.', 'Create PO', @{/purchase/orders/new})}"></th:block>
+    </div>
+    <div th:replace="~{fragments/components :: pagination(${ordersPage})}"></div>
+</section>
+</body>
+</html>

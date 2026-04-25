@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Admin Warehouses | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Warehouse Management','Create, edit, and deactivate warehouse master records.','Add Warehouse', @{/admin/warehouses/new})}"></th:block>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Warehouse Registry</h2>
+                <p>Admin maintenance view backed by warehouse-service.</p>
+            </div>
+        </div>
+        <div class="table-wrap" th:if="${!warehousesPage.empty()}">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Location</th>
+                    <th>Capacity</th>
+                    <th>Used Capacity</th>
+                    <th>Status</th>
+                    <th class="text-right">Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="warehouse : ${warehousesPage.items()}">
+                    <td th:text="${warehouse.name}">Warehouse</td>
+                    <td th:text="${warehouse.location}">Location</td>
+                    <td th:text="${warehouse.capacity}">0</td>
+                    <td th:text="${warehouse.usedCapacity}">0</td>
+                    <td>
+                        <span th:replace="~{fragments/components :: statusBadge(${warehouse.active} ? 'Active' : 'Inactive', ${warehouse.active} ? 'success' : 'warning')}"></span>
+                    </td>
+                    <td class="table-actions">
+                        <a th:href="@{|/admin/warehouses/${warehouse.warehouseId}/edit|}" class="text-link">Edit</a>
+                        <form th:action="@{|/admin/warehouses/${warehouse.warehouseId}/deactivate|}" method="post">
+                            <button type="submit" class="text-link text-link--danger" data-confirm="Deactivate this warehouse?">Deactivate</button>
+                        </form>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <div th:if="${warehousesPage.empty()}">
+            <th:block th:replace="~{fragments/components :: emptyState('No warehouses available','No warehouses were returned by warehouse-service.', 'Add Warehouse', @{/admin/warehouses/new})}"></th:block>
+        </div>
+    </section>
+</section>
+</body>
+</html>

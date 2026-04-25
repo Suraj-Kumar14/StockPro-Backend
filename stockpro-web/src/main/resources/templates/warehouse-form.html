@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Warehouse Form | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader(${pageMode == 'edit'} ? 'Edit Warehouse' : 'Add Warehouse','Warehouse master data remains owned by warehouse-service.', null, null)}"></th:block>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Warehouse Details</h2>
+                <p>Update physical location and capacity metadata.</p>
+            </div>
+        </div>
+        <form th:object="${warehouseForm}"
+              th:action="${pageMode == 'edit'} ? @{|/admin/warehouses/${warehouseForm.warehouseId}/edit|} : @{/admin/warehouses/new}"
+              method="post"
+              class="entity-form"
+              data-loading="true">
+            <div class="form-grid form-grid--two">
+                <label class="field"><span>Name</span><input type="text" th:field="*{name}" required></label>
+                <label class="field"><span>Location</span><input type="text" th:field="*{location}" required></label>
+                <label class="field field--wide"><span>Address</span><textarea th:field="*{address}" rows="4" required></textarea></label>
+                <label class="field"><span>Manager ID</span><input type="number" th:field="*{managerId}" required></label>
+                <label class="field"><span>Capacity</span><input type="number" th:field="*{capacity}" required></label>
+                <label class="field"><span>Phone</span><input type="text" th:field="*{phone}"></label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary-button" th:text="${pageMode == 'edit'} ? 'Save Warehouse' : 'Create Warehouse'">Save</button>
+                <a th:href="@{/admin/warehouses}" class="ghost-button">Cancel</a>
+            </div>
+        </form>
+    </section>
+</section>
+</body>
+</html>

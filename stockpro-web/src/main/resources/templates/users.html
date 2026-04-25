@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Users | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('User Management','Manage users through auth-service without duplicating identity logic.','Add User', @{/admin/users/new})}"></th:block>
+
+    <div class="flash flash--info">
+        Role values are displayed from auth-service. The current backend contract does not expose a dedicated role-update endpoint, so role management is read-only here.
+    </div>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>User Directory</h2>
+                <p>Identity listing, activation state, and profile maintenance.</p>
+            </div>
+        </div>
+        <div class="table-wrap" th:if="${!#lists.isEmpty(users)}">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Department</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th class="text-right">Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="user : ${users}">
+                    <td th:text="${user.fullName}">Name</td>
+                    <td th:text="${user.email}">Email</td>
+                    <td th:text="${user.department}">Department</td>
+                    <td th:text="${user.role}">Role</td>
+                    <td>
+                        <span th:replace="~{fragments/components :: statusBadge(${user.active} ? 'Active' : 'Inactive', ${user.active} ? 'success' : 'warning')}"></span>
+                    </td>
+                    <td class="table-actions">
+                        <a th:href="@{|/admin/users/${user.userId}/edit|}" class="text-link">Edit</a>
+                        <form th:action="@{|/admin/users/${user.userId}/deactivate|}" method="post">
+                            <button type="submit" class="text-link text-link--danger" data-confirm="Deactivate this user?">Deactivate</button>
+                        </form>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <div th:if="${#lists.isEmpty(users)}">
+            <th:block th:replace="~{fragments/components :: emptyState('No users available','Auth-service returned an empty user directory.', 'Add User', @{/admin/users/new})}"></th:block>
+        </div>
+    </section>
+</section>
+</body>
+</html>

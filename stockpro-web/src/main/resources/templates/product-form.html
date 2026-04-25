@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title th:text="${pageMode == 'edit'} ? 'Edit Product | StockPro' : 'Add Product | StockPro'">Product Form</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader(${pageMode == 'edit'} ? 'Edit Product' : 'Add Product','Maintain product master attributes without duplicating business rules.', null, null)}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: formCard('Product Information','Fields map directly to product-service contract.', ~{::productFormShell})}"></th:block>
+    <form th:fragment="productFormShell"
+          th:object="${productForm}"
+          th:action="${pageMode == 'edit'} ? @{|/inventory/products/${productForm.productId}/edit|} : @{/inventory/products/new}"
+          method="post"
+          class="entity-form"
+          data-loading="true">
+        <div class="form-grid form-grid--two">
+            <label class="field">
+                <span>SKU</span>
+                <input type="text" th:field="*{sku}" th:readonly="${pageMode == 'edit'}" required>
+                <small class="field-error" th:errors="*{sku}" th:if="${#fields.hasErrors('sku')}">Error</small>
+            </label>
+            <label class="field">
+                <span>Name</span>
+                <input type="text" th:field="*{name}" required>
+                <small class="field-error" th:errors="*{name}" th:if="${#fields.hasErrors('name')}">Error</small>
+            </label>
+            <label class="field field--wide">
+                <span>Description</span>
+                <textarea th:field="*{description}" rows="4"></textarea>
+            </label>
+            <label class="field">
+                <span>Category</span>
+                <input type="text" th:field="*{category}" required>
+            </label>
+            <label class="field">
+                <span>Brand</span>
+                <input type="text" th:field="*{brand}" required>
+            </label>
+            <label class="field">
+                <span>Unit Of Measure</span>
+                <input type="text" th:field="*{unitOfMeasure}" required>
+            </label>
+            <label class="field">
+                <span>Cost Price</span>
+                <input type="number" step="0.01" th:field="*{costPrice}" required>
+            </label>
+            <label class="field">
+                <span>Selling Price</span>
+                <input type="number" step="0.01" th:field="*{sellingPrice}" required>
+            </label>
+            <label class="field">
+                <span>Reorder Level</span>
+                <input type="number" step="0.01" th:field="*{reorderLevel}" required>
+            </label>
+            <label class="field">
+                <span>Max Stock Level</span>
+                <input type="number" step="0.01" th:field="*{maxStockLevel}" required>
+            </label>
+            <label class="field">
+                <span>Lead Time Days</span>
+                <input type="number" th:field="*{leadTimeDays}" required>
+            </label>
+            <label class="field">
+                <span>Barcode</span>
+                <input type="text" th:field="*{barcode}">
+            </label>
+            <label class="field field--wide">
+                <span>Image URL</span>
+                <input type="url" th:field="*{imageUrl}">
+            </label>
+            <label class="field field--inline">
+                <span>Active</span>
+                <input type="checkbox" th:field="*{active}">
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="primary-button" th:text="${pageMode == 'edit'} ? 'Save Changes' : 'Create Product'">Save</button>
+            <a th:href="@{/inventory/products}" class="ghost-button">Cancel</a>
+        </div>
+    </form>
+</section>
+</body>
+</html>

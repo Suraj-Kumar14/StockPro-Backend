@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Top Moving Products | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Top Moving Products','Rank products by movement quantity to guide replenishment and slotting.', null, null)}"></th:block>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Ranking Table</h2>
+                <p>Sorted descending by movement quantity.</p>
+            </div>
+        </div>
+        <div class="table-wrap" th:if="${!reportPage.empty()}">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Product</th>
+                    <th>Total Movement Quantity</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="row : ${reportPage.items()}">
+                    <td th:text="${row.rank}">1</td>
+                    <td th:text="${row.productName}">Product</td>
+                    <td th:text="${row.totalMovementQuantity}">0</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <div th:if="${reportPage.empty()}">
+            <th:block th:replace="~{fragments/components :: emptyState('No rankings available','The top moving report returned no rows for the current filter set.', null, null)}"></th:block>
+        </div>
+    </section>
+    <div th:replace="~{fragments/components :: pagination(${reportPage})}"></div>
+</section>
+</body>
+</html>

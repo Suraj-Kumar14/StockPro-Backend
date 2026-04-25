@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Warehouse Detail | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader(${detail.warehouse().name()},'Warehouse profile, utilization, and live stock listing.','Back to Warehouses', @{/inventory/warehouses})}"></th:block>
+
+    <div class="detail-grid">
+        <article class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Warehouse Profile</h2>
+                    <p>Master data from warehouse-service.</p>
+                </div>
+            </div>
+            <dl class="detail-list">
+                <div><dt>Location</dt><dd th:text="${detail.warehouse().location}">Location</dd></div>
+                <div><dt>Manager ID</dt><dd th:text="${detail.warehouse().managerId}">0</dd></div>
+                <div><dt>Phone</dt><dd th:text="${detail.warehouse().phone}">Phone</dd></div>
+                <div><dt>Address</dt><dd th:text="${detail.warehouse().address}">Address</dd></div>
+            </dl>
+        </article>
+        <article class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Utilization</h2>
+                    <p>Capacity and used capacity snapshot.</p>
+                </div>
+            </div>
+            <strong class="metric-card__value" th:text="${detail.utilization().utilizationPercentage} + '%'">0%</strong>
+            <div class="progress-track">
+                <span class="progress-fill"
+                      th:style="'width:' + ${detail.utilization().utilizationPercentage} + '%'"></span>
+            </div>
+            <p class="muted" th:text="${detail.utilization().usedCapacity} + ' used out of ' + ${detail.utilization().capacity}">Used</p>
+        </article>
+    </div>
+
+    <th:block th:replace="~{fragments/components :: tableCard('Stock Listing','Product-wise stock currently assigned to this warehouse.', ~{::stockTable})}"></th:block>
+    <table th:fragment="stockTable" class="data-table" th:if="${!detail.stockLevels().empty()}">
+        <thead>
+        <tr>
+            <th>Product</th>
+            <th>Location</th>
+            <th>Quantity</th>
+            <th>Reserved</th>
+            <th>Available</th>
+            <th>Last Updated</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${detail.stockLevels().items()}">
+            <td th:text="${detail.productsById().containsKey(row.productId) ? detail.productsById().get(row.productId).name : 'Product #' + row.productId}">Product</td>
+            <td th:text="${row.location}">A-01</td>
+            <td th:text="${row.quantity}">0</td>
+            <td th:text="${row.reservedQuantity}">0</td>
+            <td th:text="${row.availableQuantity}">0</td>
+            <td th:text="${#temporals.format(row.lastUpdated, 'dd MMM yyyy HH:mm')}">Updated</td>
+        </tr>
+        </tbody>
+    </table>
+    <div th:if="${detail.stockLevels().empty()}">
+        <th:block th:replace="~{fragments/components :: emptyState('Warehouse is empty','No stock rows were returned for this warehouse.', null, null)}"></th:block>
+    </div>
+</section>
+</body>
+</html>

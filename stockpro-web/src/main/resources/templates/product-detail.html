@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Product Detail | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader(${detail.product().name()},'Product master details and live warehouse stock distribution.','Back to Products', @{/inventory/products})}"></th:block>
+
+    <div class="detail-grid">
+        <article class="panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Product Information</h2>
+                    <p>Core attributes from product-service.</p>
+                </div>
+            </div>
+            <dl class="detail-list">
+                <div><dt>SKU</dt><dd th:text="${detail.product().sku}">SKU</dd></div>
+                <div><dt>Category</dt><dd th:text="${detail.product().category}">Category</dd></div>
+                <div><dt>Brand</dt><dd th:text="${detail.product().brand}">Brand</dd></div>
+                <div><dt>Unit</dt><dd th:text="${detail.product().unitOfMeasure}">Piece</dd></div>
+                <div><dt>Selling Price</dt><dd th:text="${#numbers.formatDecimal(detail.product().sellingPrice,1,'COMMA',2,'POINT')}">0.00</dd></div>
+                <div><dt>Status</dt><dd>
+                    <span th:replace="~{fragments/components :: statusBadge(${detail.product().active} ? 'Active' : 'Inactive', ${detail.product().active} ? 'success' : 'warning')}"></span>
+                </dd></div>
+            </dl>
+            <p class="muted" th:text="${detail.product().description}">Description</p>
+        </article>
+
+        <article class="panel barcode-panel">
+            <div class="panel__header">
+                <div>
+                    <h2>Barcode</h2>
+                    <p>Displayed for warehouse scanning workflows.</p>
+                </div>
+            </div>
+            <div class="barcode-block" th:text="${detail.product().barcode ?: 'Barcode unavailable'}">1234567890</div>
+            <a th:href="@{|/inventory/products/${detail.product().productId}/edit|}" class="primary-button">Edit Product</a>
+        </article>
+    </div>
+
+    <th:block th:replace="~{fragments/components :: tableCard('Warehouse Stock','Current warehouse-level availability for this product.', ~{::stockTable})}"></th:block>
+    <table th:fragment="stockTable" class="data-table" th:if="${!detail.stockLevels().empty()}">
+        <thead>
+        <tr>
+            <th>Warehouse</th>
+            <th>Location</th>
+            <th>Quantity</th>
+            <th>Reserved</th>
+            <th>Available</th>
+            <th>Last Updated</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${detail.stockLevels().items()}">
+            <td th:text="${detail.warehousesById().containsKey(row.warehouseId) ? detail.warehousesById().get(row.warehouseId).name : 'Warehouse #' + row.warehouseId}">Warehouse</td>
+            <td th:text="${row.location}">A-01</td>
+            <td th:text="${row.quantity}">0</td>
+            <td th:text="${row.reservedQuantity}">0</td>
+            <td th:text="${row.availableQuantity}">0</td>
+            <td th:text="${#temporals.format(row.lastUpdated, 'dd MMM yyyy HH:mm')}">Today</td>
+        </tr>
+        </tbody>
+    </table>
+    <div th:if="${detail.stockLevels().empty()}">
+        <th:block th:replace="~{fragments/components :: emptyState('No stock found','This product is not currently stocked in any warehouse.', null, null)}"></th:block>
+    </div>
+</section>
+</body>
+</html>

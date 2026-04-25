@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Send Platform Alert | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Send Platform Alert','Create internal alerts through alert-service without embedding notification logic in the UI.', null, null)}"></th:block>
+
+    <section class="panel">
+        <div class="panel__header">
+            <div>
+                <h2>Alert Composer</h2>
+                <p>Broadcast system messages, warnings, or critical actions.</p>
+            </div>
+        </div>
+        <form th:object="${alertForm}" th:action="@{/admin/alerts/send}" method="post" class="entity-form" data-loading="true">
+            <div class="form-grid form-grid--two">
+                <label class="field">
+                    <span>Recipient</span>
+                    <select th:field="*{recipientId}">
+                        <option value="">Select recipient</option>
+                        <option th:each="user : ${users}" th:value="${user.userId}" th:text="${user.fullName + ' (' + user.role + ')'}">User</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Severity</span>
+                    <select th:field="*{severity}">
+                        <option value="INFO">INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="CRITICAL">CRITICAL</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Type</span>
+                    <select th:field="*{type}">
+                        <option value="SYSTEM">SYSTEM</option>
+                        <option value="LOW_STOCK">LOW_STOCK</option>
+                        <option value="PO_PENDING">PO_PENDING</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Channel</span>
+                    <select th:field="*{channel}">
+                        <option value="IN_APP">IN_APP</option>
+                        <option value="EMAIL">EMAIL</option>
+                        <option value="BOTH">BOTH</option>
+                    </select>
+                </label>
+                <label class="field field--wide">
+                    <span>Title</span>
+                    <input type="text" th:field="*{title}" required>
+                </label>
+                <label class="field field--wide">
+                    <span>Message</span>
+                    <textarea th:field="*{message}" rows="5" required></textarea>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary-button">Send Alert</button>
+                <a th:href="@{/admin/dashboard}" class="ghost-button">Cancel</a>
+            </div>
+        </form>
+    </section>
+</section>
+</body>
+</html>

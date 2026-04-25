@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout/base :: layout(~{::title}, ${activeMenu}, ~{::section})}">
+<head>
+    <title>Stock Levels | StockPro</title>
+</head>
+<body>
+<section class="page-section">
+    <th:block th:replace="~{fragments/components :: sectionHeader('Stock Levels','Filter stock positions by warehouse, product, or low stock condition.','Transfer Stock', @{/inventory/stock/transfer})}"></th:block>
+
+    <th:block th:replace="~{fragments/components :: filterCard('Stock Filters', ~{::stockFilters})}"></th:block>
+    <form th:fragment="stockFilters" th:action="@{/inventory/stock}" method="get" class="filter-form">
+        <div class="filter-grid">
+            <label class="field">
+                <span>Warehouse</span>
+                <select name="warehouseId">
+                    <option value="">All Warehouses</option>
+                    <option th:each="warehouse : ${warehouseOptions}" th:value="${warehouse.warehouseId}"
+                            th:text="${warehouse.name}" th:selected="${filters.warehouseId == warehouse.warehouseId}">Warehouse</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Product</span>
+                <select name="productId">
+                    <option value="">All Products</option>
+                    <option th:each="product : ${productOptions}" th:value="${product.productId}"
+                            th:text="${product.name}" th:selected="${filters.productId == product.productId}">Product</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Location</span>
+                <input type="text" name="location" th:value="${filters.location}" placeholder="A-01">
+            </label>
+            <label class="field field--inline">
+                <span>Low Stock Only</span>
+                <input type="checkbox" name="lowStockOnly" value="true" th:checked="${filters.lowStockOnly}">
+            </label>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="primary-button">Apply Filters</button>
+            <a th:href="@{/inventory/stock}" class="ghost-button">Reset</a>
+        </div>
+    </form>
+
+    <th:block th:replace="~{fragments/components :: tableCard('Stock Table','Warehouse and product stock positions.', ~{::stockTable})}"></th:block>
+    <table th:fragment="stockTable" class="data-table" th:if="${!stockPage.empty()}">
+        <thead>
+        <tr>
+            <th>Warehouse ID</th>
+            <th>Product ID</th>
+            <th>Location</th>
+            <th>Quantity</th>
+            <th>Reserved</th>
+            <th>Available</th>
+            <th>Last Updated</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${stockPage.items()}">
+            <td th:text="${row.warehouseId}">1</td>
+            <td th:text="${row.productId}">101</td>
+            <td th:text="${row.location}">A-01</td>
+            <td th:text="${row.quantity}">0</td>
+            <td th:text="${row.reservedQuantity}">0</td>
+            <td th:text="${row.availableQuantity}">0</td>
+            <td th:text="${#temporals.format(row.lastUpdated, 'dd MMM yyyy HH:mm')}">Updated</td>
+        </tr>
+        </tbody>
+    </table>
+    <div th:if="${stockPage.empty()}">
+        <th:block th:replace="~{fragments/components :: emptyState('No stock rows found','Adjust the warehouse or product filters and try again.', null, null)}"></th:block>
+    </div>
+    <div th:replace="~{fragments/components :: pagination(${stockPage})}"></div>
+</section>
+</body>
+</html>
