@@ -75,8 +75,8 @@ class WarehouseServiceIntegrationTest {
                 .productId(501L)
                 .sku("SKU-501")
                 .name("Industrial Drill")
-                .reorderLevel(10)
-                .maxStockLevel(100)
+                .reorderLevel(new BigDecimal("10.0000"))
+                .maxStockLevel(new BigDecimal("100.0000"))
                 .isActive(Boolean.TRUE)
                 .build());
     }

@@ -1,6 +1,7 @@
 package com.stockpro.warehouse.dto.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,11 +25,11 @@ public class ProductSummaryResponse {
     @Schema(example = "Industrial Drill")
     private String name;
 
-    @Schema(example = "15")
-    private Integer reorderLevel;
+    @Schema(example = "15.0000")
+    private BigDecimal reorderLevel;
 
-    @Schema(example = "500")
-    private Integer maxStockLevel;
+    @Schema(example = "500.0000")
+    private BigDecimal maxStockLevel;
 
     @Schema(example = "true")
     private Boolean isActive;

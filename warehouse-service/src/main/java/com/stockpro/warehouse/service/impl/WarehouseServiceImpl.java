@@ -2,6 +2,8 @@ package com.stockpro.warehouse.service.impl;
 
 import com.stockpro.warehouse.client.MovementServiceClient;
 import com.stockpro.warehouse.client.ProductServiceClient;
+import com.stockpro.warehouse.dto.event.LowStockEvent;
+import com.stockpro.warehouse.dto.event.OverstockEvent;
 import com.stockpro.warehouse.dto.request.CreateWarehouseRequest;
 import com.stockpro.warehouse.dto.request.RecordMovementRequest;
 import com.stockpro.warehouse.dto.request.ReleaseReservationRequest;
@@ -19,6 +21,7 @@ import com.stockpro.warehouse.dto.response.WarehouseResponse;
 import com.stockpro.warehouse.dto.response.WarehouseUtilizationResponse;
 import com.stockpro.warehouse.entity.StockLevel;
 import com.stockpro.warehouse.entity.Warehouse;
+import com.stockpro.warehouse.enums.AlertSeverity;
 import com.stockpro.warehouse.exception.ExternalServiceException;
 import com.stockpro.warehouse.exception.InsufficientStockException;
 import com.stockpro.warehouse.exception.InvalidStockOperationException;
@@ -29,6 +32,7 @@ import com.stockpro.warehouse.exception.StockLevelNotFoundException;
 import com.stockpro.warehouse.exception.WarehouseNotFoundException;
 import com.stockpro.warehouse.mapper.StockLevelMapper;
 import com.stockpro.warehouse.mapper.WarehouseMapper;
+import com.stockpro.warehouse.publisher.AlertEventPublisher;
 import com.stockpro.warehouse.repository.StockLevelRepository;
 import com.stockpro.warehouse.repository.StockLevelSpecifications;
 import com.stockpro.warehouse.repository.WarehouseQuantityProjection;
@@ -60,6 +64,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 @Service
@@ -95,6 +101,7 @@ public class WarehouseServiceImpl implements WarehouseService {
     private final StockLevelMapper stockLevelMapper;
     private final ProductServiceClient productServiceClient;
     private final MovementServiceClient movementServiceClient;
+    private final AlertEventPublisher alertEventPublisher;
     private final SecurityUtils securityUtils;
     private final boolean productValidationEnabled;
     private final String applicationName;
@@ -105,6 +112,7 @@ public class WarehouseServiceImpl implements WarehouseService {
             StockLevelMapper stockLevelMapper,
             ProductServiceClient productServiceClient,
             MovementServiceClient movementServiceClient,
+            AlertEventPublisher alertEventPublisher,
             SecurityUtils securityUtils,
             @Value("${warehouse.validation.product-enabled:true}") boolean productValidationEnabled,
             @Value("${spring.application.name:WAREHOUSE-SERVICE}") String applicationName) {
@@ -114,6 +122,7 @@ public class WarehouseServiceImpl implements WarehouseService {
         this.stockLevelMapper = stockLevelMapper;
         this.productServiceClient = productServiceClient;
         this.movementServiceClient = movementServiceClient;
+        this.alertEventPublisher = alertEventPublisher;
         this.securityUtils = securityUtils;
         this.productValidationEnabled = productValidationEnabled;
         this.applicationName = applicationName;
@@ -189,7 +198,7 @@ public class WarehouseServiceImpl implements WarehouseService {
     @Override
     public StockLevelResponse updateStock(UpdateStockRequest request) {
         Warehouse warehouse = getActiveWarehouseEntity(request.getWarehouseId());
-        validateProductExists(request.getProductId());
+        ProductSummaryResponse product = validateProductExists(request.getProductId());
         AuthenticatedUser currentUser = securityUtils.getCurrentUser();
 
         BigDecimal quantityChange = normalizeQuantity(request.getQuantity());
@@ -199,6 +208,7 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .orElseGet(() -> newStockLevel(request.getWarehouseId(), request.getProductId(), request.getLocation()));
 
         BigDecimal previousQuantity = safeDecimal(stockLevel.getQuantity());
+        BigDecimal previousReservedQuantity = safeDecimal(stockLevel.getReservedQuantity());
         BigDecimal newQuantity = previousQuantity.add(quantityChange);
         BigDecimal reservedQuantity = safeDecimal(stockLevel.getReservedQuantity());
 
@@ -227,48 +237,77 @@ public class WarehouseServiceImpl implements WarehouseService {
                 savedStockLevel.getProductId(),
                 quantityChange,
                 savedStockLevel.getQuantity());
+        publishThresholdAlertsAfterCommit(
+                warehouse,
+                product,
+                currentUser.userId(),
+                previousQuantity,
+                previousReservedQuantity,
+                savedStockLevel);
 
         return stockLevelMapper.toResponse(savedStockLevel);
     }
 
     @Override
     public StockLevelResponse reserveStock(ReserveStockRequest request) {
-        getActiveWarehouseEntity(request.getWarehouseId());
+        Warehouse warehouse = getActiveWarehouseEntity(request.getWarehouseId());
+        AuthenticatedUser currentUser = securityUtils.getCurrentUser();
         BigDecimal reserveQuantity = normalizePositiveQuantity(request.getQuantity(), "Reservation quantity must be greater than zero.");
 
         StockLevel stockLevel = getRequiredStockLevel(request.getWarehouseId(), request.getProductId());
+        BigDecimal previousQuantity = safeDecimal(stockLevel.getQuantity());
+        BigDecimal previousReservedQuantity = safeDecimal(stockLevel.getReservedQuantity());
         if (stockLevel.getAvailableQuantity().compareTo(reserveQuantity) < 0) {
             throw new InsufficientStockException("Insufficient available stock to reserve.");
         }
 
         stockLevel.setReservedQuantity(safeDecimal(stockLevel.getReservedQuantity()).add(reserveQuantity));
         StockLevel savedStockLevel = stockLevelRepository.saveAndFlush(stockLevel);
+        ProductSummaryResponse product = resolveProductSummaryForAlert(savedStockLevel.getProductId());
 
         LOGGER.info("Reserved stock warehouseId={} productId={} quantity={}",
                 savedStockLevel.getWarehouseId(),
                 savedStockLevel.getProductId(),
                 reserveQuantity);
+        publishThresholdAlertsAfterCommit(
+                warehouse,
+                product,
+                currentUser.userId(),
+                previousQuantity,
+                previousReservedQuantity,
+                savedStockLevel);
 
         return stockLevelMapper.toResponse(savedStockLevel);
     }
 
     @Override
     public StockLevelResponse releaseReservation(ReleaseReservationRequest request) {
-        getActiveWarehouseEntity(request.getWarehouseId());
+        Warehouse warehouse = getActiveWarehouseEntity(request.getWarehouseId());
+        AuthenticatedUser currentUser = securityUtils.getCurrentUser();
         BigDecimal releaseQuantity = normalizePositiveQuantity(request.getQuantity(), "Release quantity must be greater than zero.");
 
         StockLevel stockLevel = getRequiredStockLevel(request.getWarehouseId(), request.getProductId());
+        BigDecimal previousQuantity = safeDecimal(stockLevel.getQuantity());
+        BigDecimal previousReservedQuantity = safeDecimal(stockLevel.getReservedQuantity());
         if (safeDecimal(stockLevel.getReservedQuantity()).compareTo(releaseQuantity) < 0) {
             throw new InvalidStockOperationException("Cannot release more stock than is currently reserved.");
         }
 
         stockLevel.setReservedQuantity(safeDecimal(stockLevel.getReservedQuantity()).subtract(releaseQuantity));
         StockLevel savedStockLevel = stockLevelRepository.saveAndFlush(stockLevel);
+        ProductSummaryResponse product = resolveProductSummaryForAlert(savedStockLevel.getProductId());
 
         LOGGER.info("Released reservation warehouseId={} productId={} quantity={}",
                 savedStockLevel.getWarehouseId(),
                 savedStockLevel.getProductId(),
                 releaseQuantity);
+        publishThresholdAlertsAfterCommit(
+                warehouse,
+                product,
+                currentUser.userId(),
+                previousQuantity,
+                previousReservedQuantity,
+                savedStockLevel);
 
         return stockLevelMapper.toResponse(savedStockLevel);
     }
@@ -281,7 +320,7 @@ public class WarehouseServiceImpl implements WarehouseService {
 
         Warehouse sourceWarehouse = getActiveWarehouseEntity(request.getSourceWarehouseId());
         Warehouse destinationWarehouse = getActiveWarehouseEntity(request.getDestinationWarehouseId());
-        validateProductExists(request.getProductId());
+        ProductSummaryResponse product = validateProductExists(request.getProductId());
         AuthenticatedUser currentUser = securityUtils.getCurrentUser();
 
         BigDecimal transferQuantity = normalizePositiveQuantity(request.getQuantity(), "Transfer quantity must be greater than zero.");
@@ -297,11 +336,13 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .orElseGet(() -> newStockLevel(request.getDestinationWarehouseId(), request.getProductId(), null));
 
         BigDecimal sourcePreviousQuantity = safeDecimal(sourceStockLevel.getQuantity());
+        BigDecimal sourcePreviousReservedQuantity = safeDecimal(sourceStockLevel.getReservedQuantity());
         BigDecimal sourceNewQuantity = sourcePreviousQuantity.subtract(transferQuantity);
         validateStockState(sourceNewQuantity, safeDecimal(sourceStockLevel.getReservedQuantity()));
         validateWarehouseCapacity(sourceWarehouse, sourcePreviousQuantity, sourceNewQuantity);
 
         BigDecimal destinationPreviousQuantity = safeDecimal(destinationStockLevel.getQuantity());
+        BigDecimal destinationPreviousReservedQuantity = safeDecimal(destinationStockLevel.getReservedQuantity());
         BigDecimal destinationNewQuantity = destinationPreviousQuantity.add(transferQuantity);
         validateStockState(destinationNewQuantity, safeDecimal(destinationStockLevel.getReservedQuantity()));
         validateWarehouseCapacity(destinationWarehouse, destinationPreviousQuantity, destinationNewQuantity);
@@ -337,6 +378,20 @@ public class WarehouseServiceImpl implements WarehouseService {
                 request.getSourceWarehouseId(),
                 request.getDestinationWarehouseId(),
                 transferQuantity);
+        publishThresholdAlertsAfterCommit(
+                sourceWarehouse,
+                product,
+                currentUser.userId(),
+                sourcePreviousQuantity,
+                sourcePreviousReservedQuantity,
+                savedSourceStock);
+        publishThresholdAlertsAfterCommit(
+                destinationWarehouse,
+                product,
+                currentUser.userId(),
+                destinationPreviousQuantity,
+                destinationPreviousReservedQuantity,
+                savedDestinationStock);
 
         return TransferStockResponse.builder()
                 .productId(request.getProductId())
@@ -498,12 +553,12 @@ public class WarehouseServiceImpl implements WarehouseService {
         warehouse.setPhone(normalizeOptionalText(warehouse.getPhone()));
     }
 
-    private void validateProductExists(Long productId) {
+    private ProductSummaryResponse validateProductExists(Long productId) {
         if (productId == null || productId <= 0) {
             throw new InvalidStockOperationException("productId is required.");
         }
         if (!productValidationEnabled) {
-            return;
+            return resolveProductSummaryForAlert(productId);
         }
 
         try {
@@ -511,12 +566,22 @@ public class WarehouseServiceImpl implements WarehouseService {
             if (product.getIsActive() != null && !product.getIsActive()) {
                 throw new ProductValidationException("Product is inactive: " + productId);
             }
+            return product;
         } catch (FeignException.NotFound exception) {
             throw new ProductValidationException("Product not found with id: " + productId);
         } catch (ProductValidationException exception) {
             throw exception;
         } catch (FeignException exception) {
             throw new ExternalServiceException("Unable to validate product using product-service.", exception);
+        }
+    }
+
+    private ProductSummaryResponse resolveProductSummaryForAlert(Long productId) {
+        try {
+            return productServiceClient.getProductById(productId);
+        } catch (Exception exception) {
+            LOGGER.warn("Unable to fetch product metadata for alert publication productId={}: {}", productId, exception.getMessage());
+            return null;
         }
     }
 
@@ -656,7 +721,126 @@ public class WarehouseServiceImpl implements WarehouseService {
     private boolean isLowStock(StockLevel stockLevel, ProductSummaryResponse product) {
         return product != null
                 && product.getReorderLevel() != null
-                && stockLevel.getAvailableQuantity().compareTo(BigDecimal.valueOf(product.getReorderLevel())) <= 0;
+                && stockLevel.getAvailableQuantity().compareTo(product.getReorderLevel()) <= 0;
+    }
+
+    private void publishThresholdAlertsAfterCommit(Warehouse warehouse,
+            ProductSummaryResponse product,
+            Long fallbackRecipientId,
+            BigDecimal previousQuantity,
+            BigDecimal previousReservedQuantity,
+            StockLevel currentStockLevel) {
+        if (product == null) {
+            return;
+        }
+
+        runAfterCommit(() -> publishThresholdAlerts(
+                warehouse,
+                product,
+                fallbackRecipientId,
+                previousQuantity,
+                previousReservedQuantity,
+                currentStockLevel));
+    }
+
+    private void publishThresholdAlerts(Warehouse warehouse,
+            ProductSummaryResponse product,
+            Long fallbackRecipientId,
+            BigDecimal previousQuantity,
+            BigDecimal previousReservedQuantity,
+            StockLevel currentStockLevel) {
+        Long recipientId = resolveAlertRecipient(warehouse, fallbackRecipientId);
+        if (recipientId == null) {
+            LOGGER.warn("Skipping threshold alert publication because no recipient could be resolved for warehouseId={}",
+                    warehouse.getWarehouseId());
+            return;
+        }
+
+        BigDecimal priorQuantity = safeDecimal(previousQuantity);
+        BigDecimal priorReservedQuantity = safeDecimal(previousReservedQuantity);
+        BigDecimal priorAvailableQuantity = priorQuantity.subtract(priorReservedQuantity);
+        BigDecimal currentQuantity = safeDecimal(currentStockLevel.getQuantity());
+        BigDecimal currentAvailableQuantity = currentStockLevel.getAvailableQuantity();
+
+        if (crossedIntoLowStock(priorAvailableQuantity, currentAvailableQuantity, product.getReorderLevel())) {
+            alertEventPublisher.publishLowStockEvent(LowStockEvent.builder()
+                    .recipientId(recipientId)
+                    .productId(currentStockLevel.getProductId())
+                    .warehouseId(currentStockLevel.getWarehouseId())
+                    .productName(product.getName())
+                    .warehouseName(warehouse.getName())
+                    .availableQuantity(currentAvailableQuantity)
+                    .reorderLevel(product.getReorderLevel())
+                    .severity(resolveLowStockSeverity(currentAvailableQuantity, product.getReorderLevel()))
+                    .eventTime(LocalDateTime.now())
+                    .build());
+        }
+
+        if (crossedIntoOverstock(priorQuantity, currentQuantity, product.getMaxStockLevel())) {
+            alertEventPublisher.publishOverstockEvent(OverstockEvent.builder()
+                    .recipientId(recipientId)
+                    .productId(currentStockLevel.getProductId())
+                    .warehouseId(currentStockLevel.getWarehouseId())
+                    .productName(product.getName())
+                    .warehouseName(warehouse.getName())
+                    .quantity(currentQuantity)
+                    .maxStockLevel(product.getMaxStockLevel())
+                    .severity(resolveOverstockSeverity(currentQuantity, product.getMaxStockLevel()))
+                    .eventTime(LocalDateTime.now())
+                    .build());
+        }
+    }
+
+    private boolean crossedIntoLowStock(BigDecimal previousAvailableQuantity,
+            BigDecimal currentAvailableQuantity,
+            BigDecimal reorderLevel) {
+        return reorderLevel != null
+                && previousAvailableQuantity.compareTo(reorderLevel) > 0
+                && currentAvailableQuantity.compareTo(reorderLevel) <= 0;
+    }
+
+    private boolean crossedIntoOverstock(BigDecimal previousQuantity,
+            BigDecimal currentQuantity,
+            BigDecimal maxStockLevel) {
+        return maxStockLevel != null
+                && previousQuantity.compareTo(maxStockLevel) <= 0
+                && currentQuantity.compareTo(maxStockLevel) > 0;
+    }
+
+    private AlertSeverity resolveLowStockSeverity(BigDecimal availableQuantity, BigDecimal reorderLevel) {
+        if (availableQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            return AlertSeverity.CRITICAL;
+        }
+
+        BigDecimal criticalThreshold = reorderLevel
+                .divide(BigDecimal.valueOf(2), SCALE, RoundingMode.HALF_UP);
+        return availableQuantity.compareTo(criticalThreshold) <= 0 ? AlertSeverity.CRITICAL : AlertSeverity.WARNING;
+    }
+
+    private AlertSeverity resolveOverstockSeverity(BigDecimal quantity, BigDecimal maxStockLevel) {
+        BigDecimal criticalThreshold = maxStockLevel.multiply(new BigDecimal("1.25"));
+        return quantity.compareTo(criticalThreshold) > 0 ? AlertSeverity.CRITICAL : AlertSeverity.WARNING;
+    }
+
+    private Long resolveAlertRecipient(Warehouse warehouse, Long fallbackRecipientId) {
+        if (warehouse.getManagerId() != null && warehouse.getManagerId() > 0) {
+            return warehouse.getManagerId();
+        }
+        return fallbackRecipientId;
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+            return;
+        }
+
+        action.run();
     }
 
     private Comparator<StockLevel> lowStockComparator() {

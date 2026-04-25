@@ -11,6 +11,8 @@ import static org.mockito.Mockito.when;
 
 import com.stockpro.warehouse.client.MovementServiceClient;
 import com.stockpro.warehouse.client.ProductServiceClient;
+import com.stockpro.warehouse.dto.event.LowStockEvent;
+import com.stockpro.warehouse.dto.event.OverstockEvent;
 import com.stockpro.warehouse.dto.request.ReserveStockRequest;
 import com.stockpro.warehouse.dto.request.TransferStockRequest;
 import com.stockpro.warehouse.dto.request.UpdateStockRequest;
@@ -22,6 +24,7 @@ import com.stockpro.warehouse.entity.Warehouse;
 import com.stockpro.warehouse.exception.InsufficientStockException;
 import com.stockpro.warehouse.mapper.StockLevelMapper;
 import com.stockpro.warehouse.mapper.WarehouseMapper;
+import com.stockpro.warehouse.publisher.AlertEventPublisher;
 import com.stockpro.warehouse.repository.StockLevelRepository;
 import com.stockpro.warehouse.repository.WarehouseRepository;
 import com.stockpro.warehouse.security.AuthenticatedUser;
@@ -54,6 +57,9 @@ class WarehouseServiceImplTest {
     private MovementServiceClient movementServiceClient;
 
     @Mock
+    private AlertEventPublisher alertEventPublisher;
+
+    @Mock
     private SecurityUtils securityUtils;
 
     private WarehouseServiceImpl warehouseService;
@@ -67,6 +73,7 @@ class WarehouseServiceImplTest {
                 new StockLevelMapper(),
                 productServiceClient,
                 movementServiceClient,
+                alertEventPublisher,
                 securityUtils,
                 true,
                 "WAREHOUSE-SERVICE");
@@ -182,6 +189,70 @@ class WarehouseServiceImplTest {
         verify(movementServiceClient, times(2)).recordMovement(any(), eq("WAREHOUSE-SERVICE"));
     }
 
+    @Test
+    void updateStockShouldPublishLowStockEventWhenThresholdIsCrossed() {
+        Warehouse warehouse = activeWarehouse(1L, 100);
+        StockLevel stockLevel = StockLevel.builder()
+                .stockId(10L)
+                .warehouseId(1L)
+                .productId(501L)
+                .quantity(new BigDecimal("15.0000"))
+                .reservedQuantity(new BigDecimal("0.0000"))
+                .location("A-01")
+                .build();
+        UpdateStockRequest request = UpdateStockRequest.builder()
+                .warehouseId(1L)
+                .productId(501L)
+                .quantity(new BigDecimal("-6.0000"))
+                .referenceType("MANUAL_ADJUSTMENT")
+                .build();
+
+        when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse));
+        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.of(stockLevel));
+        when(stockLevelRepository.sumQuantityByWarehouseId(1L)).thenReturn(new BigDecimal("15.0000"));
+        when(productServiceClient.getProductById(501L)).thenReturn(activeProduct(501L));
+        when(securityUtils.getCurrentUser()).thenReturn(authenticatedUser());
+        when(stockLevelRepository.saveAndFlush(any(StockLevel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(warehouseRepository.saveAndFlush(any(Warehouse.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doNothing().when(movementServiceClient).recordMovement(any(), eq("WAREHOUSE-SERVICE"));
+
+        warehouseService.updateStock(request);
+
+        verify(alertEventPublisher).publishLowStockEvent(any(LowStockEvent.class));
+    }
+
+    @Test
+    void updateStockShouldPublishOverstockEventWhenThresholdIsCrossed() {
+        Warehouse warehouse = activeWarehouse(1L, 200);
+        StockLevel stockLevel = StockLevel.builder()
+                .stockId(10L)
+                .warehouseId(1L)
+                .productId(501L)
+                .quantity(new BigDecimal("95.0000"))
+                .reservedQuantity(new BigDecimal("0.0000"))
+                .location("A-01")
+                .build();
+        UpdateStockRequest request = UpdateStockRequest.builder()
+                .warehouseId(1L)
+                .productId(501L)
+                .quantity(new BigDecimal("15.0000"))
+                .referenceType("PURCHASE_ORDER")
+                .build();
+
+        when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse));
+        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.of(stockLevel));
+        when(stockLevelRepository.sumQuantityByWarehouseId(1L)).thenReturn(new BigDecimal("95.0000"));
+        when(productServiceClient.getProductById(501L)).thenReturn(activeProduct(501L));
+        when(securityUtils.getCurrentUser()).thenReturn(authenticatedUser());
+        when(stockLevelRepository.saveAndFlush(any(StockLevel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(warehouseRepository.saveAndFlush(any(Warehouse.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doNothing().when(movementServiceClient).recordMovement(any(), eq("WAREHOUSE-SERVICE"));
+
+        warehouseService.updateStock(request);
+
+        verify(alertEventPublisher).publishOverstockEvent(any(OverstockEvent.class));
+    }
+
     private Warehouse activeWarehouse(Long warehouseId, int capacity) {
         return Warehouse.builder()
                 .warehouseId(warehouseId)
@@ -200,8 +271,8 @@ class WarehouseServiceImplTest {
                 .productId(productId)
                 .sku("SKU-" + productId)
                 .name("Product " + productId)
-                .reorderLevel(10)
-                .maxStockLevel(100)
+                .reorderLevel(new BigDecimal("10.0000"))
+                .maxStockLevel(new BigDecimal("100.0000"))
                 .isActive(Boolean.TRUE)
                 .build();
     }
