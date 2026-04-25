@@ -53,6 +53,9 @@ eureka:
     enabled: false
 
 management:
+  health:
+    rabbit:
+      enabled: false
   endpoints:
     web:
       exposure:
