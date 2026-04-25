@@ -30,6 +30,11 @@ logging:
     com.stockpro.alert: WARN
 
 management:
+  health:
+    mail:
+      enabled: false
+    rabbit:
+      enabled: false
   endpoints:
     web:
       exposure:

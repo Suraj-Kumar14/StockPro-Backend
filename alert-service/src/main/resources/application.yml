@@ -3,7 +3,7 @@ server:
 
 app:
   jwt:
-    secret: ${JWT_SECRET}
+    secret: ${JWT_SECRET:ThisIsASecretKeyForJwtTokenGenerationThatMustBeAtLeast32BytesLong12345}
 
 integration:
   service-token: ${INTEGRATION_SERVICE_TOKEN:}
@@ -47,9 +47,9 @@ spring:
     name: ALERT-SERVICE
 
   datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: ${DB_URL:jdbc:mysql://localhost:3306/alert_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:Suraj@123}
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
 
   jpa:
@@ -71,9 +71,11 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    dynamic: ${RABBIT_DYNAMIC:false}
     listener:
       simple:
         default-requeue-rejected: false
+        auto-startup: ${RABBIT_LISTENER_AUTO_STARTUP:false}
 
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
@@ -98,6 +100,11 @@ eureka:
     prefer-ip-address: true
 
 management:
+  health:
+    mail:
+      enabled: ${MAIL_HEALTH_ENABLED:false}
+    rabbit:
+      enabled: ${RABBIT_HEALTH_ENABLED:false}
   endpoints:
     web:
       exposure:
