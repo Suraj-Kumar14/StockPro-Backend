@@ -5,20 +5,25 @@ import com.stockpro.purchase.client.SupplierClient;
 import com.stockpro.purchase.client.WarehouseClient;
 import com.stockpro.purchase.dto.ProductSummaryResponse;
 import com.stockpro.purchase.dto.SupplierSummaryResponse;
+import com.stockpro.purchase.dto.WarehouseSummaryResponse;
 import com.stockpro.purchase.dto.WarehouseStockUpdateRequest;
+import com.stockpro.purchase.dto.event.PoPendingApprovalEvent;
 import com.stockpro.purchase.entity.POLineItem;
 import com.stockpro.purchase.entity.PurchaseOrder;
 import com.stockpro.purchase.entity.PurchaseOrderStatus;
+import com.stockpro.purchase.enums.AlertSeverity;
 import com.stockpro.purchase.exception.BadRequestException;
 import com.stockpro.purchase.exception.ConflictException;
 import com.stockpro.purchase.exception.ExternalServiceException;
 import com.stockpro.purchase.exception.ResourceNotFoundException;
+import com.stockpro.purchase.publisher.AlertEventPublisher;
 import com.stockpro.purchase.repository.PurchaseRepository;
 import com.stockpro.purchase.security.JwtService;
 import com.stockpro.purchase.service.PurchaseService;
 import feign.FeignException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,6 +35,8 @@ import java.util.Set;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -43,17 +50,20 @@ public class PurchaseServiceImpl implements PurchaseService {
     private final ProductClient productClient;
     private final SupplierClient supplierClient;
     private final WarehouseClient warehouseClient;
+    private final AlertEventPublisher alertEventPublisher;
     private final JwtService jwtService;
 
     public PurchaseServiceImpl(PurchaseRepository purchaseRepository,
             ProductClient productClient,
             SupplierClient supplierClient,
             WarehouseClient warehouseClient,
+            AlertEventPublisher alertEventPublisher,
             JwtService jwtService) {
         this.purchaseRepository = purchaseRepository;
         this.productClient = productClient;
         this.supplierClient = supplierClient;
         this.warehouseClient = warehouseClient;
+        this.alertEventPublisher = alertEventPublisher;
         this.jwtService = jwtService;
     }
 
@@ -142,7 +152,9 @@ public class PurchaseServiceImpl implements PurchaseService {
         }
 
         persistentPurchaseOrder.setTotalAmount(totalAmount);
-        return purchaseRepository.save(persistentPurchaseOrder);
+        PurchaseOrder savedPurchaseOrder = purchaseRepository.save(persistentPurchaseOrder);
+        publishPoPendingAlertAfterCommit(savedPurchaseOrder);
+        return savedPurchaseOrder;
     }
 
     @Override
@@ -328,18 +340,42 @@ public class PurchaseServiceImpl implements PurchaseService {
 
     private void updateWarehouseStock(Long warehouseId, Long productId, Integer quantityChange, Long purchaseOrderId) {
         try {
-            warehouseClient.updateStock(warehouseId, productId, new WarehouseStockUpdateRequest(
-                    quantityChange,
-                    "STOCK_IN",
-                    purchaseOrderId,
-                    "PURCHASE_ORDER",
-                    "Goods received against approved purchase order " + purchaseOrderId + "."));
+            warehouseClient.updateStock(WarehouseStockUpdateRequest.builder()
+                    .warehouseId(warehouseId)
+                    .productId(productId)
+                    .quantity(BigDecimal.valueOf(quantityChange.longValue()))
+                    .referenceId(purchaseOrderId)
+                    .referenceType("PURCHASE_ORDER")
+                    .notes("Goods received against approved purchase order " + purchaseOrderId + ".")
+                    .build());
         } catch (FeignException.NotFound exception) {
             throw new ResourceNotFoundException(
                     "Warehouse stock update failed because warehouse or product was not found.");
         } catch (FeignException exception) {
             throw new ExternalServiceException("Unable to record stock-in movement using warehouse-service.", exception);
         }
+    }
+
+    private void publishPoPendingAlertAfterCommit(PurchaseOrder purchaseOrder) {
+        if (purchaseOrder.getStatus() != PurchaseOrderStatus.PENDING_APPROVAL) {
+            return;
+        }
+
+        Long recipientId = resolveAlertRecipient(purchaseOrder);
+        if (recipientId == null) {
+            return;
+        }
+
+        runAfterCommit(() -> alertEventPublisher.publishPoPendingApprovalEvent(PoPendingApprovalEvent.builder()
+                .recipientId(recipientId)
+                .purchaseOrderId(purchaseOrder.getPoId())
+                .supplierId(purchaseOrder.getSupplierId())
+                .warehouseId(purchaseOrder.getWarehouseId())
+                .poNumber(resolvePoNumber(purchaseOrder))
+                .totalAmount(purchaseOrder.getTotalAmount())
+                .severity(AlertSeverity.INFO)
+                .eventTime(LocalDateTime.now())
+                .build()));
     }
 
     private PurchaseOrderStatus resolveInitialStatus(PurchaseOrderStatus requestedStatus) {
@@ -364,6 +400,25 @@ public class PurchaseServiceImpl implements PurchaseService {
         } catch (IllegalArgumentException exception) {
             throw new BadRequestException("Unsupported purchase order status: " + status);
         }
+    }
+
+    private Long resolveAlertRecipient(PurchaseOrder purchaseOrder) {
+        try {
+            WarehouseSummaryResponse warehouse = warehouseClient.getWarehouseById(purchaseOrder.getWarehouseId());
+            if (warehouse != null && warehouse.getManagerId() != null && warehouse.getManagerId() > 0) {
+                return warehouse.getManagerId();
+            }
+        } catch (FeignException exception) {
+            // Fall back to creator when warehouse metadata is not available.
+        }
+
+        return purchaseOrder.getCreatedById();
+    }
+
+    private String resolvePoNumber(PurchaseOrder purchaseOrder) {
+        return StringUtils.hasText(purchaseOrder.getReferenceNumber())
+                ? purchaseOrder.getReferenceNumber().trim()
+                : "PO-" + purchaseOrder.getPoId();
     }
 
     private POLineItem resolveTargetLineItem(POLineItem receivedItem,
@@ -445,6 +500,20 @@ public class PurchaseServiceImpl implements PurchaseService {
 
     private String normalizeOptionalText(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+            return;
+        }
+
+        action.run();
     }
 
     private record StockReceiptInstruction(Long productId, Integer quantity) {

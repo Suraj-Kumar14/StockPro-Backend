@@ -21,5 +21,7 @@ public interface PurchaseRepository extends JpaRepository<PurchaseOrder, Long> {
 
     List<PurchaseOrder> findByCreatedById(Long createdById);
 
+    List<PurchaseOrder> findByStatusAndExpectedDateBeforeAndReceivedDateIsNull(PurchaseOrderStatus status, LocalDate expectedDate);
+
     long countByStatus(PurchaseOrderStatus status);
 }

@@ -18,6 +18,19 @@ warehouse:
   service:
     name: ${WAREHOUSE_SERVICE_NAME:WAREHOUSE-SERVICE}
 
+alert:
+  rabbitmq:
+    exchange: ${ALERT_EXCHANGE:stockpro.alert.exchange}
+    routing-keys:
+      po-pending: ${PO_PENDING_ROUTING_KEY:alert.po-pending}
+      overdue-receipt: ${OVERDUE_RECEIPT_ROUTING_KEY:alert.overdue-receipt}
+
+purchase:
+  alert:
+    overdue-receipt:
+      enabled: ${PURCHASE_OVERDUE_ALERT_ENABLED:false}
+      cron: ${PURCHASE_OVERDUE_ALERT_CRON:0 0 9 * * *}
+
 spring:
   application:
     name: PURCHASE-SERVICE
@@ -32,6 +45,12 @@ spring:
     console:
       enabled: true
       path: /h2-console
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
   jpa:
     hibernate:
