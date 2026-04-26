@@ -53,6 +53,11 @@ eureka:
   client:
     enabled: false
 
+management:
+  health:
+    rabbit:
+      enabled: false
+
 report:
   snapshot:
     cron: 0 0 0 * * *

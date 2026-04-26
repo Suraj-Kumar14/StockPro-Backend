@@ -71,9 +71,7 @@ mvn spring-boot:run
 | Admin Server | `http://localhost:9090` |
 | API Gateway | `http://localhost:8080` |
 | Auth Swagger | `http://localhost:8081/swagger-ui/index.html` |
-| Auth H2 Console | `http://localhost:8081/h2-console` |
 | Product Swagger | `http://localhost:8083/swagger-ui/index.html` |
-| Product H2 Console | `http://localhost:8083/h2-console` |
 
 ## Frontend Integration
 

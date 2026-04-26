@@ -19,7 +19,7 @@ This service is responsible for:
 - Spring Boot 3.2.2
 - Spring Security
 - Spring Data JPA
-- H2
+- MySQL
 - Java Mail
 - JWT (`jjwt`)
 - Swagger / OpenAPI
@@ -33,7 +33,6 @@ This service is responsible for:
 | Application Name | `AUTH-SERVICE` |
 | Port | `8081` |
 | Swagger | `http://localhost:8081/swagger-ui/index.html` |
-| H2 Console | `http://localhost:8081/h2-console` |
 
 ## Roles Issued By This Service
 

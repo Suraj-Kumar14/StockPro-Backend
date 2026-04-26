@@ -18,7 +18,6 @@ public class SecurityConfig {
             "/auth/user/login",
             "/auth/user/forgot-password/**",
             "/swagger-ui/**",
-            "/h2-console/**",
             "/v3/api-docs/**",
             "/actuator/**",
 

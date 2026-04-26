@@ -23,7 +23,7 @@ It does not own live stock quantity. Live quantity belongs to `warehouse-service
 - Spring Boot 3.2.2
 - Spring Data JPA
 - Spring Security
-- H2
+- MySQL
 - OpenFeign
 - JWT (`jjwt`)
 - Swagger / OpenAPI
@@ -36,7 +36,6 @@ It does not own live stock quantity. Live quantity belongs to `warehouse-service
 | Application Name | `PRODUCT-SERVICE` |
 | Port | `8083` |
 | Swagger | `http://localhost:8083/swagger-ui/index.html` |
-| H2 Console | `http://localhost:8083/h2-console` |
 
 ## Main Features
 
