@@ -1,85 +1,47 @@
 server:
-  port: ${PORT:8087}
-
-app:
-  jwt:
-    secret: ${JWT_SECRET}
-
-integration:
-  service-token: ${INTEGRATION_SERVICE_TOKEN:}
-
-auth:
-  service:
-    name: ${AUTH_SERVICE_NAME:AUTH-SERVICE}
-    path: ${AUTH_SERVICE_PATH:/auth/user}
-
-alert:
-  email:
-    lookup-enabled: ${ALERT_EMAIL_LOOKUP_ENABLED:true}
-    from: ${ALERT_MAIL_FROM:${spring.mail.username:}}
-  rabbitmq:
-    exchange: ${ALERT_EXCHANGE:stockpro.alert.exchange}
-    dlx: ${ALERT_DLX:stockpro.alert.dlx}
-    dead-queue: ${ALERT_DEAD_QUEUE:stockpro.alert.dead.queue}
-    dead-routing-key: ${ALERT_DEAD_ROUTING_KEY:alert.dead}
-    routing-keys:
-      low-stock: ${LOW_STOCK_ROUTING_KEY:alert.low-stock}
-      overstock: ${OVERSTOCK_ROUTING_KEY:alert.overstock}
-      po-pending: ${PO_PENDING_ROUTING_KEY:alert.po-pending}
-      overdue-receipt: ${OVERDUE_RECEIPT_ROUTING_KEY:alert.overdue-receipt}
-      system: ${SYSTEM_ALERT_ROUTING_KEY:alert.system}
-      email: ${EMAIL_ALERT_ROUTING_KEY:alert.email}
-    queues:
-      low-stock: ${LOW_STOCK_QUEUE:stockpro.alert.low-stock.queue}
-      overstock: ${OVERSTOCK_QUEUE:stockpro.alert.overstock.queue}
-      po-pending: ${PO_PENDING_QUEUE:stockpro.alert.po-pending.queue}
-      overdue-receipt: ${OVERDUE_RECEIPT_QUEUE:stockpro.alert.overdue-receipt.queue}
-      system: ${SYSTEM_ALERT_QUEUE:stockpro.alert.system.queue}
-      email: ${EMAIL_ALERT_QUEUE:stockpro.alert.email.queue}
-    retry:
-      max-attempts: ${ALERT_RABBIT_RETRY_MAX_ATTEMPTS:3}
-      initial-interval: ${ALERT_RABBIT_RETRY_INITIAL_INTERVAL:1000}
-      multiplier: ${ALERT_RABBIT_RETRY_MULTIPLIER:2.0}
-      max-interval: ${ALERT_RABBIT_RETRY_MAX_INTERVAL:10000}
+  port: 8088
 
 spring:
   application:
     name: ALERT-SERVICE
 
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/alert_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
-    driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    url: jdbc:mysql://localhost:3306/alert_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: root
+    password: Suraj@123
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     hibernate:
-      ddl-auto: validate
-    show-sql: ${JPA_SHOW_SQL:false}
-    open-in-view: false
+      ddl-auto: update
+    show-sql: true
     properties:
       hibernate:
-        format_sql: ${JPA_FORMAT_SQL:false}
+        format_sql: true
 
-  flyway:
-    enabled: ${FLYWAY_ENABLED:true}
-    baseline-on-migrate: true
-    locations: classpath:db/migration
+  mvc:
+    pathmatch:
+      use-suffix-pattern: false
 
   rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
     listener:
       simple:
-        default-requeue-rejected: false
+        retry:
+          enabled: true
+          initial-interval: 3000
+          max-attempts: 3
+          multiplier: 2.0
 
   mail:
-    host: ${MAIL_HOST:smtp.gmail.com}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:surajkr1122003@gmail.com}
+    password: ${MAIL_PASSWORD:kyydpmjoefdmacdh}
     properties:
       mail:
         smtp:
@@ -91,28 +53,26 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
+      defaultZone: http://localhost:8761/eureka
     register-with-eureka: true
     fetch-registry: true
   instance:
     prefer-ip-address: true
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: always
+logging:
+  level:
+    com.stockpro: DEBUG
+  file:
+    name: logs/alert-service.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
 
+# ✅ ADD THIS AT THE BOTTOM
 springdoc:
   api-docs:
     path: /v3/api-docs
   swagger-ui:
-    operationsSorter: alpha
+    path: /swagger-ui.html
+    operationsSorter: method
     tagsSorter: alpha
-
-logging:
-  level:
-    com.stockpro.alert: ${LOG_LEVEL:INFO}
+    display-request-duration: true

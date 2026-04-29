@@ -4,3 +4,5 @@
 logs/
 **/logs/
 *.log
+.idea/
+.project

@@ -1,8 +1,0 @@
-package com.stockpro.alert.exception;
-
-public class UnauthorizedAlertAccessException extends RuntimeException {
-
-    public UnauthorizedAlertAccessException(String message) {
-        super(message);
-    }
-}

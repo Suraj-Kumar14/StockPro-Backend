@@ -1,24 +1,15 @@
 server:
-  port: ${PORT:8085}
-
-app:
-  jwt:
-    secret: ${JWT_SECRET:ThisIsASecretKeyForJwtTokenGenerationThatMustBeAtLeast32BytesLong12345}
+  port: 8085
 
 spring:
   application:
     name: SUPPLIER-SERVICE
 
   datasource:
-    url: jdbc:h2:mem:supplierservice
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+    url: jdbc:mysql://localhost:3306/supplier_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: root
+    password: Suraj@123
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     hibernate:
@@ -31,17 +22,25 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
   instance:
     prefer-ip-address: true
 
-springdoc:
-  swagger-ui:
-    operationsSorter: alpha
-    tagsSorter: alpha
+logging:
+  level:
+    com.stockpro: DEBUG
+  file:
+    name: logs/supplier-service.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true

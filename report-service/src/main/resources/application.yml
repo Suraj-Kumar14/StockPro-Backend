@@ -1,104 +1,62 @@
 server:
-  port: ${PORT:8088}
-
-app:
-  jwt:
-    secret: ${JWT_SECRET:ThisIsASecretKeyForJwtTokenGenerationThatMustBeAtLeast32BytesLong12345}
+  port: 8089
 
 spring:
   application:
     name: REPORT-SERVICE
 
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/report_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:Suraj@123}
-    driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    url: jdbc:mysql://localhost:3306/report_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: root
+    password: Suraj@123
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     hibernate:
-      ddl-auto: validate
-    open-in-view: false
-    show-sql: ${JPA_SHOW_SQL:false}
+      ddl-auto: update
+    show-sql: true
     properties:
       hibernate:
-        format_sql: ${JPA_FORMAT_SQL:false}
+        format_sql: true
 
-  flyway:
-    enabled: true
-    baseline-on-migrate: true
-    locations: classpath:db/migration
+  mvc:
+    pathmatch:
+      use-suffix-pattern: false
 
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+# Dead stock threshold (days)
+report:
+  dead-stock-days: 90
+  slow-moving-days: 30
 
-product:
-  service:
-    name: ${PRODUCT_SERVICE_NAME:PRODUCT-SERVICE}
-    path: ${PRODUCT_SERVICE_PATH:/products}
-
-warehouse:
-  service:
-    name: ${WAREHOUSE_SERVICE_NAME:WAREHOUSE-SERVICE}
-
-movement:
-  service:
-    name: ${MOVEMENT_SERVICE_NAME:MOVEMENT-SERVICE}
-    path: ${MOVEMENT_SERVICE_PATH:/api/v1/movements}
-
-purchase:
-  service:
-    name: ${PURCHASE_SERVICE_NAME:PURCHASE-SERVICE}
-    path: ${PURCHASE_SERVICE_PATH:/api/v1/purchase-orders}
+# URLs of other services
+services:
+  warehouse-url: http://localhost:8084
+  purchase-url: http://localhost:8086
+  movement-url: http://localhost:8087
+  product-url: http://localhost:8083
 
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
+      defaultZone: http://localhost:8761/eureka
     register-with-eureka: true
     fetch-registry: true
   instance:
     prefer-ip-address: true
 
-report:
-  snapshot:
-    cron: ${REPORT_SNAPSHOT_CRON:0 0 0 * * *}
-    page-size: ${REPORT_SNAPSHOT_PAGE_SIZE:200}
-  dead-stock:
-    threshold-days: ${DEAD_STOCK_THRESHOLD_DAYS:90}
-  export:
-    directory: ${REPORT_EXPORT_DIR:reports}
-  rabbitmq:
-    exchange: ${REPORT_EXCHANGE:stockpro.report.exchange}
-    queues:
-      snapshot-completed: ${REPORT_SNAPSHOT_COMPLETED_QUEUE:report.snapshot.completed.queue}
-      generation-requested: ${REPORT_GENERATION_REQUESTED_QUEUE:report.generation.requested.queue}
-      generation-completed: ${REPORT_GENERATION_COMPLETED_QUEUE:report.generation.completed.queue}
-    routing-keys:
-      snapshot-completed: ${REPORT_SNAPSHOT_COMPLETED_ROUTING_KEY:report.snapshot.completed}
-      generation-requested: ${REPORT_GENERATION_REQUESTED_ROUTING_KEY:report.generation.requested}
-      generation-completed: ${REPORT_GENERATION_COMPLETED_ROUTING_KEY:report.generation.completed}
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: always
-  health:
-    rabbit:
-      enabled: ${RABBITMQ_HEALTH_ENABLED:false}
-
-springdoc:
-  swagger-ui:
-    operationsSorter: alpha
-    tagsSorter: alpha
-
 logging:
   level:
-    com.stockpro.report: ${LOG_LEVEL:INFO}
+    com.stockpro: DEBUG
+  file:
+    name: logs/report-service.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true

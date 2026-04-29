@@ -1,60 +1,46 @@
 server:
-  port: ${PORT:8082}
-
-app:
-  jwt:
-    secret: ${JWT_SECRET:ThisIsASecretKeyForJwtTokenGenerationThatMustBeAtLeast32BytesLong12345}
-
-warehouse:
-  service:
-    name: ${WAREHOUSE_SERVICE_NAME:WAREHOUSE-SERVICE}
-    internal-path: ${WAREHOUSE_SERVICE_INTERNAL_PATH:/warehouse/internal}
+  port: 8082
 
 spring:
   application:
     name: PRODUCT-SERVICE
 
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/product_service?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:Suraj@123}
-    driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    url: jdbc:mysql://localhost:3306/product_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: root
+    password: Suraj@123
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     hibernate:
-      ddl-auto: validate
-    show-sql: ${JPA_SHOW_SQL:false}
-    open-in-view: false
+      ddl-auto: update
+    show-sql: true
     properties:
       hibernate:
-        format_sql: ${JPA_FORMAT_SQL:false}
-
-  flyway:
-    enabled: ${FLYWAY_ENABLED:true}
-    baseline-on-migrate: true
-    locations: classpath:db/migration
+        format_sql: true
 
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
   instance:
     prefer-ip-address: true
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: always
-
-springdoc:
-  swagger-ui:
-    operationsSorter: alpha
-    tagsSorter: alpha
-
 logging:
   level:
-    com.stockpro.product: ${LOG_LEVEL:INFO}
+    com.stockpro: DEBUG
+  file:
+    name: logs/product-service.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true

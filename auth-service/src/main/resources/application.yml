@@ -1,37 +1,41 @@
 server:
-  port: ${PORT:8081}
-  address: 0.0.0.0
-
-app:
-  jwt:
-    secret: ${JWT_SECRET}
-    expiration-ms: ${JWT_EXPIRATION_MS:3600000}
-  frontend-url: ${FRONTEND_URL:http://localhost:4200}
+  port: 8081
+  forward-headers-strategy: framework
 
 spring:
   application:
     name: AUTH-SERVICE
 
   mail:
-    host: ${MAIL_HOST:smtp.gmail.com}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:surajkr1122003@gmail.com}
+    password: ${MAIL_PASSWORD:kyydpmjoefdmacdh}
     properties:
       mail:
         smtp:
           auth: true
           starttls:
             enable: true
-            required: true
-          ssl:
-            trust: smtp.gmail.com
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:72085009922-uj1d6o04b2920a0gabn54ln2aq2ie8jt.apps.googleusercontent.com}
+            client-secret: ${GOOGLE_CLIENT_SECRET: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}
+            redirect-uri: http://localhost:8080/login/oauth2/code/google
+            scope:
+              - openid
+              - profile
+              - email
 
   datasource:
-    url: ${DB_URL}
-    driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: jdbc:mysql://localhost:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: Suraj@123
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     hibernate:
@@ -41,35 +45,40 @@ spring:
       hibernate:
         format_sql: true
 
-  security:
-    oauth2:
-      client:
-        registration:
-          google:
-            client-id: ${GOOGLE_CLIENT_ID}
-            client-secret: ${GOOGLE_CLIENT_SECRET}
-            redirect-uri: ${GOOGLE_REDIRECT_URI}
-            scope:
-              - email
-              - profile
-
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka}
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
   instance:
-    prefer-ip-address: true
+    prefer-ip-address: false
+    hostname: localhost
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: "*"
-  endpoint:
-    health:
-      show-details: always
+# JWT config
+jwt:
+  secret: my-secret-key-ayush-chouhan-stockpro-secret-key-2024
+  expiration: 28800000
+  refresh-expiration: 604800000
+
+logging:
+  level:
+    com.stockpro: DEBUG
+  file:
+    name: logs/auth-service.log
+
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:4200}
+  otp:
+    expiry-minutes: ${OTP_EXPIRY_MINUTES:10}
+  mail:
+    from: ${MAIL_FROM:surajkr1122003@gmail.com}
 
 springdoc:
+  api-docs:
+    path: /v3/api-docs
   swagger-ui:
-    operationsSorter: alpha
+    path: /swagger-ui.html
+    operationsSorter: method
     tagsSorter: alpha
+    display-request-duration: true
