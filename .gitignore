@@ -1,3 +1,6 @@
-.vscode/
-.idea/
-target/
+/.metadata/
+
+# Logs
+logs/
+**/logs/
+*.log
