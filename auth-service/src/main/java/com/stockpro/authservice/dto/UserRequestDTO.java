@@ -23,6 +23,9 @@ public class UserRequestDTO {
             message = "Password must contain uppercase, lowercase, number, and special character")
     private String password;
     
+    @Pattern(
+            regexp = "^$|^[6-9][0-9]{9}$",
+            message = "Phone must be a valid 10-digit Indian mobile number starting with 6-9")
     private String phone;
     
     @NotNull(message = "Role is required")

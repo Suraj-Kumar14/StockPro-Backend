@@ -175,11 +175,43 @@ public class AuthController {
     @DeleteMapping("/user/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     @SecurityRequirement(name = "bearerAuth")
-    @Operation(summary = "Deactivate a user account (Admin only)")
+    @Operation(summary = "Deactivate a user account (Admin only) [DEPRECATED: use PUT /users/{id}/deactivate]")
     @ApiResponse(responseCode = "200", description = "Account deactivated successfully")
-    public ResponseEntity<String> deactivateUser(
+    public ResponseEntity<String> deactivateUserLegacy(
             @Parameter(description = "User ID", required = true) @PathVariable Long id) {
         authService.deactivate(id);
         return ResponseEntity.ok("Account deactivated successfully");
+    }
+
+    @PutMapping("/users/{id}/deactivate")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Deactivate a user account (Admin only)")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "User deactivated successfully"),
+        @ApiResponse(responseCode = "404", description = "User not found", content = @Content)
+    })
+    public ResponseEntity<String> deactivateUser(
+            @Parameter(description = "User ID", required = true) @PathVariable Long id,
+            Authentication authentication) {
+        log.info("[AUDIT] Admin {} deactivating userId={}", authentication.getName(), id);
+        authService.deactivate(id);
+        return ResponseEntity.ok("User deactivated successfully");
+    }
+
+    @PutMapping("/users/{id}/activate")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Activate a deactivated user account (Admin only)")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "User activated successfully"),
+        @ApiResponse(responseCode = "404", description = "User not found", content = @Content)
+    })
+    public ResponseEntity<String> activateUser(
+            @Parameter(description = "User ID", required = true) @PathVariable Long id,
+            Authentication authentication) {
+        log.info("[AUDIT] Admin {} activating userId={}", authentication.getName(), id);
+        authService.activate(id);
+        return ResponseEntity.ok("User activated successfully");
     }
 }

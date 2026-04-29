@@ -11,10 +11,10 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMQConfig {
 
     // Must match exact names from producer services
-    public static final String LOW_STOCK_QUEUE   = "stockpro.low.stock";
-    public static final String OVERSTOCK_QUEUE   = "stockpro.overstock";
-    public static final String PO_APPROVED_QUEUE = "stockpro.po.approved";
-    public static final String PO_OVERDUE_QUEUE  = "stockpro.po.overdue";
+    public static final String LOW_STOCK_QUEUE   = "low-stock-queue";
+    public static final String OVERSTOCK_QUEUE   = "overstock-queue";
+    public static final String PO_APPROVED_QUEUE = "po-approved-queue";
+    public static final String PO_OVERDUE_QUEUE  = "po-overdue-queue";
     public static final String EXCHANGE          = "stockpro.exchange";
 
     @Bean

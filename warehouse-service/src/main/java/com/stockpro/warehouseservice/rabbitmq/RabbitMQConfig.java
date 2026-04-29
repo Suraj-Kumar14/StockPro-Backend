@@ -2,7 +2,7 @@ package com.stockpro.warehouseservice.rabbitmq;
 
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -13,26 +13,19 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMQConfig {
 
-    // Queue names
     public static final String LOW_STOCK_QUEUE      = "low-stock-queue";
     public static final String OVERSTOCK_QUEUE      = "overstock-queue";
     public static final String GOODS_RECEIVED_QUEUE = "goods-received-queue";
 
-    // Exchange name
     public static final String STOCKPRO_EXCHANGE = "stockpro.exchange";
 
-    // Routing keys
     public static final String LOW_STOCK_ROUTING_KEY      = "stock.low";
     public static final String OVERSTOCK_ROUTING_KEY      = "stock.over";
     public static final String GOODS_RECEIVED_ROUTING_KEY = "stock.goods-received";
 
-    // ==================== QUEUES ====================
-    // NOTE: The return type MUST be org.springframework.amqp.core.Queue
-    //       NOT java.util.Queue — that was the compilation error
-
     @Bean
     public Queue lowStockQueue() {
-        return new Queue(LOW_STOCK_QUEUE, true); // durable = true
+        return new Queue(LOW_STOCK_QUEUE, true);
     }
 
     @Bean
@@ -45,43 +38,25 @@ public class RabbitMQConfig {
         return new Queue(GOODS_RECEIVED_QUEUE, true);
     }
 
-    // ==================== EXCHANGE ====================
-
     @Bean
-    public DirectExchange stockproExchange() {
-        return new DirectExchange(STOCKPRO_EXCHANGE);
-    }
-
-    // ==================== BINDINGS ====================
-
-    @Bean
-    public Binding lowStockBinding(Queue lowStockQueue,
-                                   DirectExchange stockproExchange) {
-        return BindingBuilder
-                .bind(lowStockQueue)
-                .to(stockproExchange)
-                .with(LOW_STOCK_ROUTING_KEY);
+    public TopicExchange stockproExchange() {
+        return new TopicExchange(STOCKPRO_EXCHANGE, true, false);
     }
 
     @Bean
-    public Binding overstockBinding(Queue overstockQueue,
-                                    DirectExchange stockproExchange) {
-        return BindingBuilder
-                .bind(overstockQueue)
-                .to(stockproExchange)
-                .with(OVERSTOCK_ROUTING_KEY);
+    public Binding lowStockBinding(Queue lowStockQueue, TopicExchange stockproExchange) {
+        return BindingBuilder.bind(lowStockQueue).to(stockproExchange).with(LOW_STOCK_ROUTING_KEY);
     }
 
     @Bean
-    public Binding goodsReceivedBinding(Queue goodsReceivedQueue,
-                                        DirectExchange stockproExchange) {
-        return BindingBuilder
-                .bind(goodsReceivedQueue)
-                .to(stockproExchange)
-                .with(GOODS_RECEIVED_ROUTING_KEY);
+    public Binding overstockBinding(Queue overstockQueue, TopicExchange stockproExchange) {
+        return BindingBuilder.bind(overstockQueue).to(stockproExchange).with(OVERSTOCK_ROUTING_KEY);
     }
 
-    // ==================== TEMPLATE ====================
+    @Bean
+    public Binding goodsReceivedBinding(Queue goodsReceivedQueue, TopicExchange stockproExchange) {
+        return BindingBuilder.bind(goodsReceivedQueue).to(stockproExchange).with(GOODS_RECEIVED_ROUTING_KEY);
+    }
 
     @Bean
     public Jackson2JsonMessageConverter messageConverter() {

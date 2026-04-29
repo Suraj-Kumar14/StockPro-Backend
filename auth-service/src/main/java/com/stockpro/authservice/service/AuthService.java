@@ -244,7 +244,20 @@ public class AuthService {
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
         user.setIsActive(false);
         userRepository.save(user);
-        log.info("User deactivated: {}", id);
+        log.info("[AUDIT] action=DEACTIVATE userId={} timestamp={}", id, LocalDateTime.now());
+        otpMailService.sendAccountDeactivatedEmail(user.getEmail(), user.getName());
+    }
+
+    public void activate(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+        if (Boolean.TRUE.equals(user.getIsActive())) {
+            throw new RuntimeException("User account is already active.");
+        }
+        user.setIsActive(true);
+        userRepository.save(user);
+        log.info("[AUDIT] action=ACTIVATE userId={} timestamp={}", id, LocalDateTime.now());
+        otpMailService.sendAccountReactivatedEmail(user.getEmail(), user.getName());
     }
 
     private LoginResponseDTO issueTokens(User user) {
