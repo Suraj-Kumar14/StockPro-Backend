@@ -10,6 +10,7 @@ This repository currently contains the core backend services built so far for th
 | `Admin-server` | `9090` | Spring Boot Admin monitoring dashboard |
 | `auth-service` | `8081` | User registration, login, JWT, OTP, roles |
 | `product-service` | `8083` | Product master catalogue, barcode lookup, low-stock query |
+| `payment-service` | `8090` | Razorpay order creation, payment verification, payment history |
 | `api-gateway` | `8080` | Single entry point for frontend clients |
 
 ## How The Services Connect
@@ -19,8 +20,9 @@ This repository currently contains the core backend services built so far for th
 3. `auth-service` handles registration, login, OTP verification, and issues JWT tokens.
 4. `api-gateway` validates JWT on protected routes and forwards requests to downstream services.
 5. `product-service` validates JWT again for method-level security and manages product master data.
-6. `product-service` is designed to call `warehouse-service` for live stock quantity when serving `getLowStockProducts()`.
-7. `Admin-server` monitors services that expose actuator endpoints and are configured as admin clients.
+6. `payment-service` registers with Eureka and is exposed through the gateway under `/payments/**`.
+7. `product-service` is designed to call `warehouse-service` for live stock quantity when serving `getLowStockProducts()`.
+8. `Admin-server` monitors services that expose actuator endpoints and are configured as admin clients.
 
 ## Current Backend Scope
 
@@ -28,6 +30,7 @@ Implemented services in this repository:
 
 - `auth-service`
 - `product-service`
+- `payment-service`
 - `api-gateway`
 - `eureka-server`
 - `Admin-server`
@@ -47,7 +50,8 @@ Referenced but not yet present here as standalone modules:
 2. `Admin-server`
 3. `auth-service`
 4. `product-service`
-5. `api-gateway`
+5. `payment-service`
+6. `api-gateway`
 
 ## Local Run Commands
 
@@ -72,6 +76,7 @@ mvn spring-boot:run
 | API Gateway | `http://localhost:8080` |
 | Auth Swagger | `http://localhost:8081/swagger-ui/index.html` |
 | Product Swagger | `http://localhost:8083/swagger-ui/index.html` |
+| Payment Swagger | `http://localhost:8090/swagger-ui.html` |
 
 ## Frontend Integration
 
@@ -108,10 +113,9 @@ Important note:
 There are a few current alignment points in the codebase that should be kept in mind:
 
 1. `product-service` exposes endpoints under `/products/**`.
-2. `api-gateway` is currently configured for product routes under `/api/v1/products/**`.
-3. `api-gateway` also points `product-service` to default URL `http://localhost:8082`, while `product-service` currently runs on `8083`.
-4. `product-service` low-stock logic expects a warehouse endpoint for live quantities, but `warehouse-service` is not part of this repository yet.
-5. `auth-service` includes Spring Boot Admin client support, but the other services are not fully aligned yet for uniform admin monitoring.
+2. `payment-service` exposes endpoints under `/payments/**`, and `api-gateway` is already configured to route those requests through Eureka.
+3. `product-service` low-stock logic expects a warehouse endpoint for live quantities, but `warehouse-service` is not part of this repository yet.
+4. `auth-service` includes Spring Boot Admin client support, but the other services are not fully aligned yet for uniform admin monitoring.
 
 If you want fully working end-to-end frontend integration through the gateway, align the gateway product route and target port with the current `product-service`.
 
@@ -119,6 +123,7 @@ If you want fully working end-to-end frontend integration through the gateway, a
 
 - [Auth Service](./auth-service/README.md)
 - [Product Service](./product-service/README.md)
+- [Payment Service](./payment-service/README.md)
 - [API Gateway](./api-gateway/README.md)
 - [Eureka Server](./eureka-server/README.md)
 - [Admin Server](./Admin-server/README.md)
