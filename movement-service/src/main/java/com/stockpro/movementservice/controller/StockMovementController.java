@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.*;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -18,6 +19,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/movements")
 @Slf4j
+@Validated
 @Tag(name = "Stock Movement",
      description = "APIs for recording and querying stock movements")
 public class StockMovementController {
@@ -43,7 +45,32 @@ public class StockMovementController {
 
     @GetMapping
     @Operation(summary = "Get all movements")
-    public ResponseEntity<List<StockMovementResponseDTO>> getAll() {
+    public ResponseEntity<List<StockMovementResponseDTO>> getAll(
+            @RequestParam(required = false) Long productId,
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) Long referenceId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime start,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            LocalDateTime end) {
+        if (productId != null) {
+            return ResponseEntity.ok(movementService.getByProduct(productId));
+        }
+        if (warehouseId != null) {
+            return ResponseEntity.ok(movementService.getByWarehouse(warehouseId));
+        }
+        if (type != null) {
+            return ResponseEntity.ok(movementService.getByType(type));
+        }
+        if (referenceId != null) {
+            return ResponseEntity.ok(movementService.getByReference(referenceId));
+        }
+        if (start != null && end != null) {
+            return ResponseEntity.ok(movementService.getByDateRange(start, end));
+        }
         return ResponseEntity.ok(movementService.getAllMovements());
     }
 

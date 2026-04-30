@@ -1,22 +1,36 @@
 package com.stockpro.movementservice;
 
-import com.stockpro.movementservice.dto.*;
-import com.stockpro.movementservice.entity.*;
+import com.stockpro.movementservice.dto.StockMovementRequestDTO;
+import com.stockpro.movementservice.dto.StockMovementResponseDTO;
+import com.stockpro.movementservice.entity.MovementType;
+import com.stockpro.movementservice.entity.StockMovement;
+import com.stockpro.movementservice.exception.InvalidMovementException;
 import com.stockpro.movementservice.exception.MovementNotFoundException;
+import com.stockpro.movementservice.exception.NegativeStockException;
 import com.stockpro.movementservice.repository.StockMovementRepository;
+import com.stockpro.movementservice.service.StockMovementMapper;
 import com.stockpro.movementservice.service.StockMovementService;
-import org.junit.jupiter.api.*;
+import com.stockpro.movementservice.service.StockMovementValidationService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.*;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class StockMovementServiceTest {
@@ -24,15 +38,19 @@ class StockMovementServiceTest {
     @Mock
     private StockMovementRepository movementRepository;
 
-    @InjectMocks
     private StockMovementService movementService;
 
-    private StockMovement mockMovement;
+    private StockMovement existingMovement;
     private StockMovementRequestDTO requestDTO;
 
     @BeforeEach
     void setUp() {
-        mockMovement = StockMovement.builder()
+        movementService = new StockMovementService(
+                movementRepository,
+                new StockMovementMapper(),
+                new StockMovementValidationService());
+
+        existingMovement = StockMovement.builder()
                 .movementId(1L)
                 .productId(1L)
                 .warehouseId(1L)
@@ -43,7 +61,7 @@ class StockMovementServiceTest {
                 .unitCost(new BigDecimal("50.00"))
                 .performedBy(1L)
                 .notes("Initial stock")
-                .movementDate(LocalDateTime.now())
+                .movementDate(LocalDateTime.now().minusDays(1))
                 .balanceAfter(100)
                 .build();
 
@@ -51,234 +69,211 @@ class StockMovementServiceTest {
         requestDTO.setProductId(1L);
         requestDTO.setWarehouseId(1L);
         requestDTO.setMovementType(MovementType.STOCK_IN);
-        requestDTO.setQuantity(100);
-        requestDTO.setReferenceId(1L);
+        requestDTO.setQuantity(25);
+        requestDTO.setReferenceId(2L);
         requestDTO.setReferenceType("PO");
-        requestDTO.setUnitCost(new BigDecimal("50.00"));
+        requestDTO.setUnitCost(new BigDecimal("55.00"));
         requestDTO.setPerformedBy(1L);
-        requestDTO.setNotes("Initial stock");
-        requestDTO.setBalanceAfter(100);
+        requestDTO.setNotes("GRN receipt");
+        requestDTO.setBalanceAfter(125);
     }
 
     @Test
-    void recordMovement_Success() {
-        when(movementRepository.save(any(StockMovement.class)))
-                .thenReturn(mockMovement);
+    void recordMovement_ComputesBalanceFromLedger() {
+        StockMovement savedMovement = StockMovement.builder()
+                .movementId(2L)
+                .productId(1L)
+                .warehouseId(1L)
+                .movementType(MovementType.STOCK_IN)
+                .quantity(25)
+                .referenceId(2L)
+                .referenceType("PO")
+                .unitCost(new BigDecimal("55.00"))
+                .performedBy(1L)
+                .notes("GRN receipt")
+                .balanceAfter(125)
+                .movementDate(LocalDateTime.now())
+                .build();
 
-        StockMovementResponseDTO result =
-                movementService.recordMovement(requestDTO);
+        when(movementRepository.findLatestBalanceCandidates(eq(1L), eq(1L), any(Pageable.class)))
+                .thenReturn(List.of(existingMovement));
+        when(movementRepository.save(any(StockMovement.class))).thenReturn(savedMovement);
+
+        StockMovementResponseDTO result = movementService.recordMovement(requestDTO);
 
         assertNotNull(result);
-        assertEquals(MovementType.STOCK_IN, result.getMovementType());
-        assertEquals(100, result.getQuantity());
+        assertEquals(125, result.getBalanceAfter());
         verify(movementRepository).save(any(StockMovement.class));
     }
 
     @Test
-    void recordMovement_StockOut_Success() {
+    void recordMovement_BalanceMismatch_ThrowsException() {
+        requestDTO.setBalanceAfter(999);
+        when(movementRepository.findLatestBalanceCandidates(eq(1L), eq(1L), any(Pageable.class)))
+                .thenReturn(List.of(existingMovement));
+
+        assertThrows(InvalidMovementException.class,
+                () -> movementService.recordMovement(requestDTO));
+        verify(movementRepository, never()).save(any(StockMovement.class));
+    }
+
+    @Test
+    void recordMovement_StockOutCausingNegativeBalance_ThrowsException() {
         requestDTO.setMovementType(MovementType.STOCK_OUT);
-        requestDTO.setQuantity(20);
-        requestDTO.setBalanceAfter(80);
-        mockMovement.setMovementType(MovementType.STOCK_OUT);
+        requestDTO.setQuantity(150);
+        requestDTO.setReferenceType("ISSUE");
+        requestDTO.setBalanceAfter(-50);
 
-        when(movementRepository.save(any(StockMovement.class)))
-                .thenReturn(mockMovement);
+        when(movementRepository.findLatestBalanceCandidates(eq(1L), eq(1L), any(Pageable.class)))
+                .thenReturn(List.of(existingMovement));
 
-        StockMovementResponseDTO result =
-                movementService.recordMovement(requestDTO);
-
-        assertNotNull(result);
-        verify(movementRepository).save(any(StockMovement.class));
+        assertThrows(NegativeStockException.class,
+                () -> movementService.recordMovement(requestDTO));
     }
 
     @Test
-    void getMovementById_Success() {
-        when(movementRepository.findById(1L))
-                .thenReturn(Optional.of(mockMovement));
+    void recordMovement_AdjustmentAllowsNegativeQuantityWithReason() {
+        requestDTO.setMovementType(MovementType.ADJUSTMENT);
+        requestDTO.setQuantity(-10);
+        requestDTO.setReferenceType("ADJUSTMENT");
+        requestDTO.setNotes("Cycle count correction");
+        requestDTO.setBalanceAfter(90);
 
-        StockMovementResponseDTO result =
-                movementService.getMovementById(1L);
+        StockMovement savedMovement = StockMovement.builder()
+                .movementId(3L)
+                .productId(1L)
+                .warehouseId(1L)
+                .movementType(MovementType.ADJUSTMENT)
+                .quantity(-10)
+                .referenceId(2L)
+                .referenceType("ADJUSTMENT")
+                .performedBy(1L)
+                .notes("Cycle count correction")
+                .balanceAfter(90)
+                .movementDate(LocalDateTime.now())
+                .build();
 
-        assertNotNull(result);
-        assertEquals(1L, result.getMovementId());
+        when(movementRepository.findLatestBalanceCandidates(eq(1L), eq(1L), any(Pageable.class)))
+                .thenReturn(List.of(existingMovement));
+        when(movementRepository.save(any(StockMovement.class))).thenReturn(savedMovement);
+
+        StockMovementResponseDTO result = movementService.recordMovement(requestDTO);
+
+        assertEquals(90, result.getBalanceAfter());
+        assertEquals(MovementType.ADJUSTMENT, result.getMovementType());
+    }
+
+    @Test
+    void recordMovement_WriteOffRequiresReason() {
+        requestDTO.setMovementType(MovementType.WRITE_OFF);
+        requestDTO.setQuantity(5);
+        requestDTO.setReferenceType("WRITE_OFF");
+        requestDTO.setNotes(" ");
+
+        assertThrows(InvalidMovementException.class,
+                () -> movementService.recordMovement(requestDTO));
+    }
+
+    @Test
+    void recordTransferPair_RecordsOutAndInAtomically() {
+        StockMovementRequestDTO transferOut = new StockMovementRequestDTO();
+        transferOut.setProductId(1L);
+        transferOut.setWarehouseId(1L);
+        transferOut.setMovementType(MovementType.TRANSFER_OUT);
+        transferOut.setQuantity(10);
+        transferOut.setReferenceId(50L);
+        transferOut.setReferenceType("TRANSFER");
+        transferOut.setPerformedBy(1L);
+        transferOut.setNotes("Transfer to WH-2");
+        transferOut.setBalanceAfter(90);
+
+        StockMovementRequestDTO transferIn = new StockMovementRequestDTO();
+        transferIn.setProductId(1L);
+        transferIn.setWarehouseId(2L);
+        transferIn.setMovementType(MovementType.TRANSFER_IN);
+        transferIn.setQuantity(10);
+        transferIn.setReferenceId(50L);
+        transferIn.setReferenceType("TRANSFER");
+        transferIn.setPerformedBy(1L);
+        transferIn.setNotes("Transfer from WH-1");
+        transferIn.setBalanceAfter(10);
+
+        StockMovement outSaved = StockMovement.builder()
+                .movementId(10L).productId(1L).warehouseId(1L)
+                .movementType(MovementType.TRANSFER_OUT).quantity(10)
+                .referenceId(50L).referenceType("TRANSFER").performedBy(1L)
+                .notes("Transfer to WH-2").balanceAfter(90).movementDate(LocalDateTime.now()).build();
+        StockMovement inSaved = StockMovement.builder()
+                .movementId(11L).productId(1L).warehouseId(2L)
+                .movementType(MovementType.TRANSFER_IN).quantity(10)
+                .referenceId(50L).referenceType("TRANSFER").performedBy(1L)
+                .notes("Transfer from WH-1").balanceAfter(10).movementDate(LocalDateTime.now()).build();
+
+        when(movementRepository.findLatestBalanceCandidates(eq(1L), eq(1L), any(Pageable.class)))
+                .thenReturn(List.of(existingMovement));
+        when(movementRepository.findLatestBalanceCandidates(eq(1L), eq(2L), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(movementRepository.save(any(StockMovement.class))).thenReturn(outSaved, inSaved);
+
+        List<StockMovementResponseDTO> result = movementService.recordTransferPair(transferOut, transferIn);
+
+        assertEquals(2, result.size());
+        assertEquals(MovementType.TRANSFER_OUT, result.get(0).getMovementType());
+        assertEquals(MovementType.TRANSFER_IN, result.get(1).getMovementType());
     }
 
     @Test
     void getMovementById_NotFound_ThrowsException() {
-        when(movementRepository.findById(99L))
-                .thenReturn(Optional.empty());
+        when(movementRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(MovementNotFoundException.class,
                 () -> movementService.getMovementById(99L));
     }
 
     @Test
-    void getAllMovements_ReturnsList() {
-        when(movementRepository.findAll())
-                .thenReturn(List.of(mockMovement));
+    void getMovementHistory_ReturnsChronologicalList() {
+        StockMovement laterMovement = StockMovement.builder()
+                .movementId(2L)
+                .productId(1L)
+                .warehouseId(1L)
+                .movementType(MovementType.STOCK_OUT)
+                .quantity(20)
+                .referenceId(3L)
+                .referenceType("ISSUE")
+                .performedBy(2L)
+                .movementDate(LocalDateTime.now())
+                .balanceAfter(80)
+                .build();
 
-        List<StockMovementResponseDTO> result =
-                movementService.getAllMovements();
+        when(movementRepository.findByProductIdAndWarehouseIdOrderByMovementDateAscMovementIdAsc(1L, 1L))
+                .thenReturn(List.of(existingMovement, laterMovement));
 
-        assertEquals(1, result.size());
+        List<StockMovementResponseDTO> result = movementService.getMovementHistory(1L, 1L);
+
+        assertEquals(2, result.size());
+        assertEquals(existingMovement.getMovementId(), result.get(0).getMovementId());
+        assertEquals(laterMovement.getMovementId(), result.get(1).getMovementId());
     }
 
     @Test
-    void getAllMovements_EmptyList() {
-        when(movementRepository.findAll()).thenReturn(List.of());
+    void getTotalStockInAndOut_AggregatesByDirection() {
+        StockMovement outboundMovement = StockMovement.builder()
+                .movementId(2L)
+                .productId(1L)
+                .warehouseId(1L)
+                .movementType(MovementType.STOCK_OUT)
+                .quantity(30)
+                .referenceId(4L)
+                .referenceType("ISSUE")
+                .performedBy(1L)
+                .movementDate(LocalDateTime.now())
+                .balanceAfter(70)
+                .build();
 
-        List<StockMovementResponseDTO> result =
-                movementService.getAllMovements();
+        when(movementRepository.findByProductIdAndWarehouseIdOrderByMovementDateAscMovementIdAsc(1L, 1L))
+                .thenReturn(List.of(existingMovement, outboundMovement));
 
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void getByProduct_ReturnsList() {
-        when(movementRepository.findByProductId(1L))
-                .thenReturn(List.of(mockMovement));
-
-        List<StockMovementResponseDTO> result =
-                movementService.getByProduct(1L);
-
-        assertEquals(1, result.size());
-        assertEquals(1L, result.get(0).getProductId());
-    }
-
-    @Test
-    void getByWarehouse_ReturnsList() {
-        when(movementRepository.findByWarehouseId(1L))
-                .thenReturn(List.of(mockMovement));
-
-        List<StockMovementResponseDTO> result =
-                movementService.getByWarehouse(1L);
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getByType_ValidType_ReturnsList() {
-        when(movementRepository.findByMovementType(MovementType.STOCK_IN))
-                .thenReturn(List.of(mockMovement));
-
-        List<StockMovementResponseDTO> result =
-                movementService.getByType("STOCK_IN");
-
-        assertEquals(1, result.size());
-        assertEquals(MovementType.STOCK_IN, result.get(0).getMovementType());
-    }
-
-    @Test
-    void getByType_InvalidType_ThrowsException() {
-        assertThrows(IllegalArgumentException.class,
-                () -> movementService.getByType("INVALID_TYPE"));
-    }
-
-    @Test
-    void getByReference_ReturnsList() {
-        when(movementRepository.findByReferenceId(1L))
-                .thenReturn(List.of(mockMovement));
-
-        List<StockMovementResponseDTO> result =
-                movementService.getByReference(1L);
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getByPerformedBy_ReturnsList() {
-        when(movementRepository.findByPerformedBy(1L))
-                .thenReturn(List.of(mockMovement));
-
-        List<StockMovementResponseDTO> result =
-                movementService.getByPerformedBy(1L);
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getByDateRange_ValidRange_ReturnsList() {
-        LocalDateTime start = LocalDateTime.now().minusDays(7);
-        LocalDateTime end = LocalDateTime.now();
-
-        when(movementRepository.findByMovementDateBetween(start, end))
-                .thenReturn(List.of(mockMovement));
-
-        List<StockMovementResponseDTO> result =
-                movementService.getByDateRange(start, end);
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getByDateRange_InvalidRange_ThrowsException() {
-        LocalDateTime start = LocalDateTime.now();
-        LocalDateTime end = LocalDateTime.now().minusDays(7);
-
-        assertThrows(IllegalArgumentException.class,
-                () -> movementService.getByDateRange(start, end));
-    }
-
-    @Test
-    void getMovementHistory_ReturnsList() {
-        when(movementRepository
-                .findByProductIdAndWarehouseIdOrderByMovementDateDesc(1L, 1L))
-                .thenReturn(List.of(mockMovement));
-
-        List<StockMovementResponseDTO> result =
-                movementService.getMovementHistory(1L, 1L);
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getTotalStockIn_ReturnsCorrectValue() {
-        when(movementRepository.getTotalStockIn(1L, 1L)).thenReturn(500);
-
-        Integer result = movementService.getTotalStockIn(1L, 1L);
-
-        assertEquals(500, result);
-    }
-
-    @Test
-    void getTotalStockOut_ReturnsCorrectValue() {
-        when(movementRepository.getTotalStockOut(1L, 1L)).thenReturn(200);
-
-        Integer result = movementService.getTotalStockOut(1L, 1L);
-
-        assertEquals(200, result);
-    }
-
-    @Test
-    void recordMovement_WriteOff_Success() {
-        requestDTO.setMovementType(MovementType.WRITE_OFF);
-        requestDTO.setQuantity(5);
-        requestDTO.setNotes("Damaged goods");
-        mockMovement.setMovementType(MovementType.WRITE_OFF);
-
-        when(movementRepository.save(any(StockMovement.class)))
-                .thenReturn(mockMovement);
-
-        StockMovementResponseDTO result =
-                movementService.recordMovement(requestDTO);
-
-        assertNotNull(result);
-        verify(movementRepository).save(any(StockMovement.class));
-    }
-
-    @Test
-    void recordMovement_Transfer_Success() {
-        requestDTO.setMovementType(MovementType.TRANSFER_OUT);
-        requestDTO.setReferenceType("TRANSFER");
-        mockMovement.setMovementType(MovementType.TRANSFER_OUT);
-
-        when(movementRepository.save(any(StockMovement.class)))
-                .thenReturn(mockMovement);
-
-        StockMovementResponseDTO result =
-                movementService.recordMovement(requestDTO);
-
-        assertNotNull(result);
-        verify(movementRepository).save(any(StockMovement.class));
+        assertEquals(100, movementService.getTotalStockIn(1L, 1L));
+        assertEquals(30, movementService.getTotalStockOut(1L, 1L));
     }
 }

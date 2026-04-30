@@ -18,9 +18,9 @@ public class StockMovementRequestDTO {
     private MovementType movementType;
 
     @NotNull(message = "Quantity is required")
-    @Min(value = 1, message = "Quantity must be at least 1")
     private Integer quantity;
 
+    @NotNull(message = "Reference ID is required")
     private Long referenceId;
 
     @Size(max = 50, message = "Reference type max 50 chars")

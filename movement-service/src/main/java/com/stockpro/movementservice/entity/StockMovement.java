@@ -6,7 +6,13 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "stock_movements")
+@Table(name = "stock_movements", indexes = {
+        @Index(name = "idx_movement_product", columnList = "productId"),
+        @Index(name = "idx_movement_warehouse", columnList = "warehouseId"),
+        @Index(name = "idx_movement_date", columnList = "movementDate"),
+        @Index(name = "idx_movement_reference", columnList = "referenceId"),
+        @Index(name = "idx_movement_product_warehouse_date", columnList = "productId, warehouseId, movementDate")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -16,6 +22,9 @@ public class StockMovement {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long movementId;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false)
     private Long productId;
@@ -31,6 +40,7 @@ public class StockMovement {
     private Integer quantity;
 
     // Reference to PO ID, issue order ID etc.
+    @Column(nullable = false)
     private Long referenceId;
 
     @Column(length = 50)
@@ -50,6 +60,7 @@ public class StockMovement {
     private LocalDateTime movementDate;
 
     // Stock balance after this movement
+    @Column(nullable = false)
     private Integer balanceAfter;
 
     @PrePersist

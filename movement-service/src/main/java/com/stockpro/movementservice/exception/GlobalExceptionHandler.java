@@ -2,6 +2,7 @@ package com.stockpro.movementservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.*;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -26,6 +27,17 @@ public class GlobalExceptionHandler {
                 HttpStatus.NOT_FOUND);
     }
 
+    @ExceptionHandler({InvalidMovementException.class, NegativeStockException.class})
+    public ResponseEntity<ErrorResponse> handleBusinessValidation(
+            RuntimeException ex, HttpServletRequest request) {
+        log.error("Invalid movement request: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidation(
             MethodArgumentNotValidException ex) {
@@ -45,6 +57,18 @@ public class GlobalExceptionHandler {
                         HttpStatus.BAD_REQUEST.value(), "Bad Request",
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLocking(
+            OptimisticLockingFailureException ex, HttpServletRequest request) {
+        log.error("Concurrent movement conflict: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.CONFLICT.value(), "Conflict",
+                        "The stock movement ledger was modified concurrently. Please retry.",
+                        request.getRequestURI()),
+                HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(Exception.class)
