@@ -3,18 +3,32 @@ package com.stockpro.warehouseservice.service;
 import com.stockpro.warehouseservice.dto.StockMovementResponseDTO;
 import com.stockpro.warehouseservice.entity.StockMovement;
 import com.stockpro.warehouseservice.repository.StockMovementRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class StockMovementService {
 
-    @Autowired
-    private StockMovementRepository stockMovementRepository;
+    private final StockMovementRepository stockMovementRepository;
+
+    public void recordReceipt(Long warehouseId, Long productId,
+            Integer quantityChanged, Integer previousQuantity,
+            Integer newQuantity, String reason) {
+        recordMovement(warehouseId, productId, "RECEIPT",
+                quantityChanged, previousQuantity, newQuantity, null, reason);
+    }
+
+    public void recordIssue(Long warehouseId, Long productId,
+            Integer quantityChanged, Integer previousQuantity,
+            Integer newQuantity, String reason) {
+        recordMovement(warehouseId, productId, "ISSUE",
+                quantityChanged, previousQuantity, newQuantity, null, reason);
+    }
 
     public void recordAdjustment(Long warehouseId, Long productId,
             Integer quantityChanged, Integer previousQuantity,
@@ -99,7 +113,7 @@ public class StockMovementService {
                 .reason(reason)
                 .build();
         stockMovementRepository.save(movement);
-        log.info("Recorded stock movement type {} for warehouse {} and product {}",
+        log.info("Recorded stock movement: operationType={}, warehouseId={}, productId={}",
                 movementType, warehouseId, productId);
     }
 

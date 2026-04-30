@@ -1,13 +1,18 @@
 package com.stockpro.warehouseservice.service;
 
-import com.stockpro.warehouseservice.dto.*;
+import com.stockpro.warehouseservice.dto.StockLevelResponseDTO;
+import com.stockpro.warehouseservice.dto.StockTransferDTO;
+import com.stockpro.warehouseservice.dto.StockUpdateDTO;
 import com.stockpro.warehouseservice.entity.StockLevel;
-import com.stockpro.warehouseservice.exception.*;
+import com.stockpro.warehouseservice.entity.Warehouse;
+import com.stockpro.warehouseservice.exception.InvalidOperationException;
+import com.stockpro.warehouseservice.exception.StockNotAvailableException;
+import com.stockpro.warehouseservice.exception.WarehouseNotFoundException;
 import com.stockpro.warehouseservice.rabbitmq.StockEventPublisher;
 import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import com.stockpro.warehouseservice.repository.WarehouseRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,22 +20,15 @@ import java.util.List;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class StockLevelService {
 
-    @Autowired
-    private StockLevelRepository stockLevelRepository;
-
-    @Autowired
-    private WarehouseRepository warehouseRepository;
-
-    @Autowired
-    private StockEventPublisher stockEventPublisher;
-
-    @Autowired
-    private StockMovementService stockMovementService;
-
-    @Autowired
-    private StockAlertService stockAlertService;
+    private final StockLevelRepository stockLevelRepository;
+    private final WarehouseRepository warehouseRepository;
+    private final StockEventPublisher stockEventPublisher;
+    private final StockMovementService stockMovementService;
+    private final StockAlertService stockAlertService;
+    private final InventoryOperationService inventoryOperationService;
 
     public StockLevelResponseDTO getStockLevel(Long warehouseId, Long productId) {
         log.info("Fetching stock for product {} in warehouse {}", productId, warehouseId);
@@ -46,186 +44,229 @@ public class StockLevelService {
         log.info("Fetching all stock for warehouse: {}", warehouseId);
         validateWarehouseExists(warehouseId);
         return stockLevelRepository.findByWarehouseId(warehouseId)
-                .stream().map(this::mapToDTO).toList();
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
     }
 
     public List<StockLevelResponseDTO> getStockByProduct(Long productId) {
         log.info("Fetching stock across all warehouses for product: {}", productId);
         return stockLevelRepository.findByProductId(productId)
-                .stream().map(this::mapToDTO).toList();
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
     }
 
     @Transactional
     public StockLevelResponseDTO updateStock(Long warehouseId, StockUpdateDTO dto) {
-        log.info("Updating stock for product {} in warehouse {}",
+        log.info("Processing stock update for product {} in warehouse {}",
                 dto.getProductId(), warehouseId);
-        validateWarehouseExists(warehouseId);
 
-        StockLevel stock = stockLevelRepository
-                .findByWarehouseIdAndProductId(warehouseId, dto.getProductId())
-                .orElseGet(() -> StockLevel.builder()
-                        .warehouseId(warehouseId)
-                        .productId(dto.getProductId())
-                        .quantity(0)
-                        .reservedQuantity(0)
-                        .build());
+        Warehouse warehouse = inventoryOperationService.getWarehouseForMutation(warehouseId);
+        StockLevel stock = inventoryOperationService.getOrCreateStockLevel(
+                warehouseId, dto.getProductId());
+        InventoryOperationService.ThresholdSettings thresholds =
+                inventoryOperationService.resolveThresholds(
+                        dto.getProductId(), dto.getReorderLevel(), dto.getMaxStockLevel());
 
-        int previousQuantity = stock.getQuantity();
-        stock.setQuantity(dto.getQuantity());
-        if (dto.getBinLocation() != null) {
-            stock.setBinLocation(dto.getBinLocation());
-        }
+        inventoryOperationService.applyThresholds(stock, thresholds);
+        inventoryOperationService.applyBinLocation(stock, dto.getBinLocation());
 
-        StockLevel saved = stockLevelRepository.save(stock);
-        stockMovementService.recordAdjustment(
-                saved.getWarehouseId(),
-                saved.getProductId(),
-                dto.getQuantity() - previousQuantity,
-                previousQuantity,
-                saved.getQuantity(),
-                "Stock updated via stock update endpoint");
-        stockAlertService.syncAlerts(saved, dto.getReorderLevel(), dto.getMaxStockLevel());
-        checkAndPublishStockEvents(saved, dto.getReorderLevel(), dto.getMaxStockLevel());
+        // Existing PUT endpoint now maps quantity deltas to receipt, issue, or no-op adjustment.
+        InventoryOperationService.StockMutation mutation =
+                inventoryOperationService.handleAdjustment(warehouse, stock, dto.getQuantity(), null);
 
-        log.info("Stock updated successfully");
-        return mapToDTO(saved);
+        StockLevel savedStock = inventoryOperationService.saveStockLevel(stock);
+        inventoryOperationService.saveWarehouse(warehouse);
+
+        recordStockUpdateMovement(savedStock, mutation);
+        syncStockSignals(savedStock);
+
+        log.info("Completed stock update: operationType={}, warehouseId={}, productId={}",
+                mutation.operationType(), savedStock.getWarehouseId(), savedStock.getProductId());
+        return mapToDTO(savedStock);
     }
 
     @Transactional
     public void reserveStock(Long warehouseId, Long productId, Integer quantity) {
-        log.info("Reserving {} units of product {} in warehouse {}",
-                quantity, productId, warehouseId);
+        log.info("Reserving stock: warehouseId={}, productId={}, operationType=RESERVATION",
+                warehouseId, productId);
+        validateWarehouseExists(warehouseId);
 
         StockLevel stock = stockLevelRepository
                 .findByWarehouseIdAndProductId(warehouseId, productId)
-                .orElseThrow(() -> new WarehouseNotFoundException(
-                        "Stock not found for product " + productId));
+                .orElseThrow(() -> new StockNotAvailableException(
+                        "Stock not found for product " + productId
+                                + " in warehouse " + warehouseId));
 
-        if (stock.getAvailableQuantity() < quantity) {
-            throw new InsufficientStockException(
-                    "Insufficient stock. Available: "
-                            + stock.getAvailableQuantity()
-                            + ", Requested: " + quantity);
-        }
+        InventoryOperationService.ReservationMutation mutation =
+                inventoryOperationService.reserveStock(stock, quantity);
+        StockLevel savedStock = inventoryOperationService.saveStockLevel(stock);
 
-        int previousReservedQuantity = stock.getReservedQuantity();
-        stock.setReservedQuantity(stock.getReservedQuantity() + quantity);
-        StockLevel saved = stockLevelRepository.save(stock);
         stockMovementService.recordReservation(
-                saved.getWarehouseId(),
-                saved.getProductId(),
-                quantity,
-                previousReservedQuantity,
-                saved.getReservedQuantity(),
+                savedStock.getWarehouseId(),
+                savedStock.getProductId(),
+                mutation.quantityChanged(),
+                mutation.previousReservedQuantity(),
+                mutation.newReservedQuantity(),
                 "Stock reserved");
-        log.info("Stock reserved successfully");
+        syncStockSignals(savedStock);
+
+        log.info("Completed stock reservation: warehouseId={}, productId={}, operationType=RESERVATION",
+                savedStock.getWarehouseId(), savedStock.getProductId());
     }
 
     @Transactional
     public void releaseReservation(Long warehouseId, Long productId, Integer quantity) {
-        log.info("Releasing reservation of {} units of product {} in warehouse {}",
-                quantity, productId, warehouseId);
+        log.info("Releasing reservation: warehouseId={}, productId={}, operationType=RELEASE",
+                warehouseId, productId);
+        validateWarehouseExists(warehouseId);
 
         StockLevel stock = stockLevelRepository
                 .findByWarehouseIdAndProductId(warehouseId, productId)
-                .orElseThrow(() -> new WarehouseNotFoundException(
-                        "Stock not found for product " + productId));
+                .orElseThrow(() -> new StockNotAvailableException(
+                        "Stock not found for product " + productId
+                                + " in warehouse " + warehouseId));
 
-        int previousReservedQuantity = stock.getReservedQuantity();
-        int newReserved = stock.getReservedQuantity() - quantity;
-        stock.setReservedQuantity(Math.max(0, newReserved));
-        StockLevel saved = stockLevelRepository.save(stock);
+        InventoryOperationService.ReservationMutation mutation =
+                inventoryOperationService.releaseReservation(stock, quantity);
+        StockLevel savedStock = inventoryOperationService.saveStockLevel(stock);
+
         stockMovementService.recordRelease(
-                saved.getWarehouseId(),
-                saved.getProductId(),
-                previousReservedQuantity - saved.getReservedQuantity(),
-                previousReservedQuantity,
-                saved.getReservedQuantity(),
+                savedStock.getWarehouseId(),
+                savedStock.getProductId(),
+                mutation.quantityChanged(),
+                mutation.previousReservedQuantity(),
+                mutation.newReservedQuantity(),
                 "Reservation released");
+        syncStockSignals(savedStock);
+
+        log.info("Completed reservation release: warehouseId={}, productId={}, operationType=RELEASE",
+                savedStock.getWarehouseId(), savedStock.getProductId());
     }
 
     @Transactional
     public void transferStock(StockTransferDTO dto) {
-        log.info("Transferring {} units of product {} from warehouse {} to {}",
-                dto.getQuantity(), dto.getProductId(),
-                dto.getFromWarehouseId(), dto.getToWarehouseId());
+        log.info("Transferring stock: productId={}, warehouseId={}, operationType=TRANSFER_OUT",
+                dto.getProductId(), dto.getFromWarehouseId());
 
         if (dto.getFromWarehouseId().equals(dto.getToWarehouseId())) {
-            throw new IllegalArgumentException(
+            throw new InvalidOperationException(
                     "Source and destination warehouses cannot be the same");
         }
 
-        validateWarehouseExists(dto.getFromWarehouseId());
-        validateWarehouseExists(dto.getToWarehouseId());
+        Warehouse sourceWarehouse = inventoryOperationService.getWarehouseForMutation(
+                dto.getFromWarehouseId());
+        Warehouse destinationWarehouse = inventoryOperationService.getWarehouseForMutation(
+                dto.getToWarehouseId());
 
-        StockLevel source = stockLevelRepository
-                .findByWarehouseIdAndProductId(
-                        dto.getFromWarehouseId(), dto.getProductId())
-                .orElseThrow(() -> new InsufficientStockException(
-                        "No stock found in source warehouse for product "
-                                + dto.getProductId()));
+        StockLevel sourceStock = inventoryOperationService.getOrCreateStockLevel(
+                dto.getFromWarehouseId(), dto.getProductId());
+        StockLevel destinationStock = inventoryOperationService.getOrCreateStockLevel(
+                dto.getToWarehouseId(), dto.getProductId());
 
-        if (source.getAvailableQuantity() < dto.getQuantity()) {
-            throw new InsufficientStockException(
-                    "Insufficient stock in source warehouse. Available: "
-                            + source.getAvailableQuantity()
-                            + ", Requested: " + dto.getQuantity());
-        }
+        InventoryOperationService.ThresholdSettings thresholds =
+                inventoryOperationService.resolveThresholds(
+                        dto.getProductId(),
+                        firstNonNull(sourceStock.getReorderLevel(), destinationStock.getReorderLevel()),
+                        firstNonNull(sourceStock.getMaxStockLevel(), destinationStock.getMaxStockLevel()));
+        inventoryOperationService.applyThresholds(sourceStock, thresholds);
+        inventoryOperationService.applyThresholds(destinationStock, thresholds);
 
-        int sourcePreviousQuantity = source.getQuantity();
-        source.setQuantity(source.getQuantity() - dto.getQuantity());
-        StockLevel savedSource = stockLevelRepository.save(source);
+        // Existing transfer endpoint now uses issue + receipt mutations inside one transaction.
+        InventoryOperationService.StockMutation sourceMutation =
+                inventoryOperationService.handleIssue(
+                        sourceWarehouse,
+                        sourceStock,
+                        dto.getQuantity(),
+                        dto.getReason());
+        InventoryOperationService.StockMutation destinationMutation =
+                inventoryOperationService.handleReceipt(
+                        destinationWarehouse,
+                        destinationStock,
+                        dto.getQuantity(),
+                        dto.getReason());
+
+        StockLevel savedSource = inventoryOperationService.saveStockLevel(sourceStock);
+        StockLevel savedDestination = inventoryOperationService.saveStockLevel(destinationStock);
+        inventoryOperationService.saveWarehouse(sourceWarehouse);
+        inventoryOperationService.saveWarehouse(destinationWarehouse);
+
         stockMovementService.recordTransferOut(
                 savedSource.getWarehouseId(),
                 savedSource.getProductId(),
                 dto.getQuantity(),
-                sourcePreviousQuantity,
-                savedSource.getQuantity(),
+                sourceMutation.previousQuantity(),
+                sourceMutation.newQuantity(),
                 dto.getReason(),
                 dto.getToWarehouseId());
-
-        StockLevel destination = stockLevelRepository
-                .findByWarehouseIdAndProductId(
-                        dto.getToWarehouseId(), dto.getProductId())
-                .orElseGet(() -> StockLevel.builder()
-                        .warehouseId(dto.getToWarehouseId())
-                        .productId(dto.getProductId())
-                        .quantity(0)
-                        .reservedQuantity(0)
-                        .build());
-
-        int destinationPreviousQuantity = destination.getQuantity();
-        destination.setQuantity(destination.getQuantity() + dto.getQuantity());
-        StockLevel savedDestination = stockLevelRepository.save(destination);
         stockMovementService.recordTransferIn(
                 savedDestination.getWarehouseId(),
                 savedDestination.getProductId(),
                 dto.getQuantity(),
-                destinationPreviousQuantity,
-                savedDestination.getQuantity(),
+                destinationMutation.previousQuantity(),
+                destinationMutation.newQuantity(),
                 dto.getReason(),
                 dto.getFromWarehouseId());
 
-        log.info("Stock transfer completed successfully");
+        syncStockSignals(savedSource);
+        syncStockSignals(savedDestination);
+
+        log.info("Completed stock transfer: productId={}, warehouseId={}, operationType=TRANSFER_IN",
+                savedDestination.getProductId(), savedDestination.getWarehouseId());
     }
 
     public List<StockLevelResponseDTO> getLowStockItems(Integer threshold) {
-        log.info("Fetching low stock items below threshold: {}", threshold);
+        log.info("Fetching low stock items using fallback threshold: {}", threshold);
         return stockLevelRepository.findLowStockItems(threshold)
-                .stream().map(this::mapToDTO).toList();
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
+    }
+
+    private void recordStockUpdateMovement(
+            StockLevel stock, InventoryOperationService.StockMutation mutation) {
+        switch (mutation.operationType()) {
+            case "RECEIPT" -> stockMovementService.recordReceipt(
+                    stock.getWarehouseId(),
+                    stock.getProductId(),
+                    mutation.quantityChanged(),
+                    mutation.previousQuantity(),
+                    mutation.newQuantity(),
+                    mutation.reason());
+            case "ISSUE" -> stockMovementService.recordIssue(
+                    stock.getWarehouseId(),
+                    stock.getProductId(),
+                    mutation.quantityChanged(),
+                    mutation.previousQuantity(),
+                    mutation.newQuantity(),
+                    mutation.reason());
+            default -> stockMovementService.recordAdjustment(
+                    stock.getWarehouseId(),
+                    stock.getProductId(),
+                    mutation.quantityChanged(),
+                    mutation.previousQuantity(),
+                    mutation.newQuantity(),
+                    mutation.reason());
+        }
+    }
+
+    private void syncStockSignals(StockLevel stock) {
+        stockAlertService.syncAlerts(stock, stock.getReorderLevel(), stock.getMaxStockLevel());
+        checkAndPublishStockEvents(stock, stock.getReorderLevel(), stock.getMaxStockLevel());
     }
 
     private void checkAndPublishStockEvents(StockLevel stock,
             Integer reorderLevel, Integer maxStockLevel) {
         try {
-            if (reorderLevel != null && stock.getQuantity() <= reorderLevel) {
+            if (reorderLevel != null && stock.getAvailableQuantity() < reorderLevel) {
                 log.warn("LOW STOCK detected! Product: {}, Warehouse: {}, Qty: {}",
                         stock.getProductId(), stock.getWarehouseId(),
-                        stock.getQuantity());
+                        stock.getAvailableQuantity());
                 stockEventPublisher.publishLowStockEvent(
                         stock.getProductId(),
                         stock.getWarehouseId(),
-                        stock.getQuantity(),
+                        stock.getAvailableQuantity(),
                         reorderLevel);
             }
 
@@ -239,8 +280,9 @@ public class StockLevelService {
                         stock.getQuantity(),
                         maxStockLevel);
             }
-        } catch (Exception e) {
-            log.error("Failed to publish stock event: {}", e.getMessage());
+        } catch (Exception ex) {
+            log.error("Failed to publish stock event for product {} in warehouse {}: {}",
+                    stock.getProductId(), stock.getWarehouseId(), ex.getMessage());
         }
     }
 
@@ -251,16 +293,20 @@ public class StockLevelService {
         }
     }
 
-    private StockLevelResponseDTO mapToDTO(StockLevel s) {
+    private Integer firstNonNull(Integer primary, Integer secondary) {
+        return primary != null ? primary : secondary;
+    }
+
+    private StockLevelResponseDTO mapToDTO(StockLevel stock) {
         return StockLevelResponseDTO.builder()
-                .stockId(s.getStockId())
-                .warehouseId(s.getWarehouseId())
-                .productId(s.getProductId())
-                .quantity(s.getQuantity())
-                .reservedQuantity(s.getReservedQuantity())
-                .availableQuantity(s.getAvailableQuantity())
-                .binLocation(s.getBinLocation())
-                .lastUpdated(s.getLastUpdated())
+                .stockId(stock.getStockId())
+                .warehouseId(stock.getWarehouseId())
+                .productId(stock.getProductId())
+                .quantity(stock.getQuantity())
+                .reservedQuantity(stock.getReservedQuantity())
+                .availableQuantity(stock.getAvailableQuantity())
+                .binLocation(stock.getBinLocation())
+                .lastUpdated(stock.getLastUpdated())
                 .build();
     }
 }

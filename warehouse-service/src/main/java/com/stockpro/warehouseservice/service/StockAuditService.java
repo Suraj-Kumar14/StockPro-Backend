@@ -4,80 +4,65 @@ import com.stockpro.warehouseservice.dto.StockAuditRequestDTO;
 import com.stockpro.warehouseservice.dto.StockAuditResponseDTO;
 import com.stockpro.warehouseservice.dto.StockLevelResponseDTO;
 import com.stockpro.warehouseservice.entity.StockLevel;
-import com.stockpro.warehouseservice.exception.WarehouseNotFoundException;
-import com.stockpro.warehouseservice.repository.StockLevelRepository;
-import com.stockpro.warehouseservice.repository.WarehouseRepository;
+import com.stockpro.warehouseservice.entity.Warehouse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class StockAuditService {
 
-    @Autowired
-    private StockLevelRepository stockLevelRepository;
-
-    @Autowired
-    private WarehouseRepository warehouseRepository;
-
-    @Autowired
-    private StockMovementService stockMovementService;
-
-    @Autowired
-    private StockAlertService stockAlertService;
+    private final StockMovementService stockMovementService;
+    private final StockAlertService stockAlertService;
+    private final InventoryOperationService inventoryOperationService;
 
     @Transactional
     public StockAuditResponseDTO performAudit(StockAuditRequestDTO dto) {
-        validateWarehouseExists(dto.getWarehouseId());
+        Warehouse warehouse = inventoryOperationService.getWarehouseForMutation(
+                dto.getWarehouseId());
+        StockLevel stock = inventoryOperationService.getOrCreateStockLevel(
+                dto.getWarehouseId(), dto.getProductId());
+        InventoryOperationService.ThresholdSettings thresholds =
+                inventoryOperationService.resolveThresholds(
+                        dto.getProductId(), dto.getReorderLevel(), dto.getMaxStockLevel());
 
-        StockLevel stock = stockLevelRepository
-                .findByWarehouseIdAndProductId(dto.getWarehouseId(), dto.getProductId())
-                .orElseGet(() -> StockLevel.builder()
-                        .warehouseId(dto.getWarehouseId())
-                        .productId(dto.getProductId())
-                        .quantity(0)
-                        .reservedQuantity(0)
-                        .build());
+        inventoryOperationService.applyThresholds(stock, thresholds);
+        inventoryOperationService.applyBinLocation(stock, dto.getBinLocation());
 
         int systemQuantity = stock.getQuantity();
-        int discrepancy = dto.getCountedQuantity() - systemQuantity;
+        InventoryOperationService.StockMutation mutation =
+                // Existing audit endpoint keeps its contract, but now reuses the same adjustment rules.
+                inventoryOperationService.handleAdjustment(
+                        warehouse, stock, dto.getCountedQuantity(), dto.getReason());
 
-        stock.setQuantity(dto.getCountedQuantity());
-        if (dto.getBinLocation() != null) {
-            stock.setBinLocation(dto.getBinLocation());
-        }
+        StockLevel savedStock = inventoryOperationService.saveStockLevel(stock);
+        inventoryOperationService.saveWarehouse(warehouse);
 
-        StockLevel saved = stockLevelRepository.save(stock);
         stockMovementService.recordAudit(
-                saved.getWarehouseId(),
-                saved.getProductId(),
-                discrepancy,
-                systemQuantity,
-                saved.getQuantity(),
+                savedStock.getWarehouseId(),
+                savedStock.getProductId(),
+                mutation.quantityChanged(),
+                mutation.previousQuantity(),
+                mutation.newQuantity(),
                 dto.getReason());
-        stockAlertService.syncAlerts(saved, dto.getReorderLevel(), dto.getMaxStockLevel());
+        stockAlertService.syncAlerts(
+                savedStock, savedStock.getReorderLevel(), savedStock.getMaxStockLevel());
 
         log.info("Completed stock audit for warehouse {} and product {}",
                 dto.getWarehouseId(), dto.getProductId());
 
         return StockAuditResponseDTO.builder()
-                .warehouseId(saved.getWarehouseId())
-                .productId(saved.getProductId())
+                .warehouseId(savedStock.getWarehouseId())
+                .productId(savedStock.getProductId())
                 .systemQuantity(systemQuantity)
-                .countedQuantity(saved.getQuantity())
-                .discrepancy(discrepancy)
+                .countedQuantity(savedStock.getQuantity())
+                .discrepancy(savedStock.getQuantity() - systemQuantity)
                 .reason(dto.getReason())
-                .updatedStock(mapToDto(saved))
+                .updatedStock(mapToDto(savedStock))
                 .build();
-    }
-
-    private void validateWarehouseExists(Long warehouseId) {
-        if (!warehouseRepository.existsById(warehouseId)) {
-            throw new WarehouseNotFoundException(
-                    "Warehouse not found with ID: " + warehouseId);
-        }
     }
 
     private StockLevelResponseDTO mapToDto(StockLevel stock) {

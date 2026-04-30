@@ -16,6 +16,9 @@ public class Warehouse {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long warehouseId;
 
+	@Version
+	private Long version;
+
 	@Column(nullable = false, unique = true, length = 100)
 	private String name;
 
@@ -48,9 +51,11 @@ public class Warehouse {
 	@PrePersist
 	protected void onCreate() {
 		createdAt = LocalDateTime.now();
-		if (isActive == null)
+		if (isActive == null) {
 			isActive = true;
-		if (usedCapacity == null)
+		}
+		if (usedCapacity == null) {
 			usedCapacity = 0;
+		}
 	}
 }

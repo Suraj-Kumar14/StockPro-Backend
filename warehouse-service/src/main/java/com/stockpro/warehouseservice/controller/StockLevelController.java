@@ -5,9 +5,11 @@ import com.stockpro.warehouseservice.service.StockLevelService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,6 +17,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/stock")
 @Slf4j
+@Validated
 @Tag(name = "Stock Level Management", description = "APIs for managing stock levels")
 public class StockLevelController {
 
@@ -60,7 +63,8 @@ public class StockLevelController {
     public ResponseEntity<String> reserveStock(
             @RequestParam Long warehouseId,
             @RequestParam Long productId,
-            @RequestParam Integer quantity) {
+            @RequestParam @Min(value = 1, message = "Quantity must be at least 1")
+            Integer quantity) {
         stockLevelService.reserveStock(warehouseId, productId, quantity);
         return ResponseEntity.ok("Stock reserved successfully");
     }
@@ -70,7 +74,8 @@ public class StockLevelController {
     public ResponseEntity<String> releaseReservation(
             @RequestParam Long warehouseId,
             @RequestParam Long productId,
-            @RequestParam Integer quantity) {
+            @RequestParam @Min(value = 1, message = "Quantity must be at least 1")
+            Integer quantity) {
         stockLevelService.releaseReservation(warehouseId, productId, quantity);
         return ResponseEntity.ok("Reservation released successfully");
     }
@@ -86,7 +91,9 @@ public class StockLevelController {
     @GetMapping("/low-stock")
     @Operation(summary = "Get low stock items")
     public ResponseEntity<List<StockLevelResponseDTO>> getLowStockItems(
-            @RequestParam(defaultValue = "10") Integer threshold) {
+            @RequestParam(defaultValue = "10")
+            @Min(value = 0, message = "Threshold cannot be negative")
+            Integer threshold) {
         return ResponseEntity.ok(
                 stockLevelService.getLowStockItems(threshold));
     }

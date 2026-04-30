@@ -19,13 +19,24 @@ public interface StockLevelRepository extends JpaRepository<StockLevel, Long> {
 
     List<StockLevel> findByProductId(Long productId);
 
-    // Products below reorder level (used by alert-service)
-    @Query("SELECT s FROM StockLevel s WHERE s.quantity <= :reorderLevel")
-    List<StockLevel> findLowStockItems(@Param("reorderLevel") Integer reorderLevel);
+    @Query("""
+            SELECT s
+            FROM StockLevel s
+            WHERE (s.quantity - s.reservedQuantity) < COALESCE(s.reorderLevel, :defaultReorderLevel)
+            """)
+    List<StockLevel> findLowStockItems(
+            @Param("defaultReorderLevel") Integer defaultReorderLevel);
 
     // All stock entries where available quantity is 0 or less
     @Query("SELECT s FROM StockLevel s WHERE (s.quantity - s.reservedQuantity) <= 0")
     List<StockLevel> findOutOfStockItems();
 
     boolean existsByWarehouseIdAndProductId(Long warehouseId, Long productId);
+
+    @Query("""
+            SELECT COALESCE(SUM(s.quantity), 0)
+            FROM StockLevel s
+            WHERE s.warehouseId = :warehouseId
+            """)
+    Integer sumQuantityByWarehouseId(@Param("warehouseId") Long warehouseId);
 }

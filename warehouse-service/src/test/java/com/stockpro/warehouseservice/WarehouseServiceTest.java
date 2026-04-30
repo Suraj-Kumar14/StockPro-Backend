@@ -3,7 +3,9 @@ package com.stockpro.warehouseservice;
 import com.stockpro.warehouseservice.dto.WarehouseRequestDTO;
 import com.stockpro.warehouseservice.dto.WarehouseResponseDTO;
 import com.stockpro.warehouseservice.entity.Warehouse;
+import com.stockpro.warehouseservice.exception.CapacityExceededException;
 import com.stockpro.warehouseservice.exception.WarehouseNotFoundException;
+import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import com.stockpro.warehouseservice.repository.WarehouseRepository;
 import com.stockpro.warehouseservice.service.WarehouseService;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +33,9 @@ class WarehouseServiceTest {
 
     @Mock
     private WarehouseRepository warehouseRepository;
+
+    @Mock
+    private StockLevelRepository stockLevelRepository;
 
     @InjectMocks
     private WarehouseService warehouseService;
@@ -132,6 +137,7 @@ class WarehouseServiceTest {
 
         when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse));
         when(warehouseRepository.existsByName("North Warehouse")).thenReturn(false);
+        when(stockLevelRepository.sumQuantityByWarehouseId(1L)).thenReturn(250);
         when(warehouseRepository.save(any(Warehouse.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         WarehouseResponseDTO result = warehouseService.updateWarehouse(1L, updateRequest);
@@ -140,6 +146,29 @@ class WarehouseServiceTest {
         assertEquals("Delhi", result.getLocation());
         assertEquals(44L, result.getManagerId());
         assertEquals(1200, result.getCapacity());
+        assertEquals(250, result.getUsedCapacity());
+    }
+
+    @Test
+    void updateWarehouse_shouldThrowException_whenCapacityFallsBelowCurrentUsage() {
+        WarehouseRequestDTO updateRequest = new WarehouseRequestDTO();
+        updateRequest.setName("Main Warehouse");
+        updateRequest.setLocation("Mumbai");
+        updateRequest.setAddress("123 Main Street");
+        updateRequest.setManagerId(11L);
+        updateRequest.setCapacity(200);
+        updateRequest.setPhone("9999999999");
+
+        when(warehouseRepository.findById(1L)).thenReturn(Optional.of(warehouse));
+        when(stockLevelRepository.sumQuantityByWarehouseId(1L)).thenReturn(250);
+
+        CapacityExceededException exception = assertThrows(
+                CapacityExceededException.class,
+                () -> warehouseService.updateWarehouse(1L, updateRequest)
+        );
+
+        assertEquals("Warehouse capacity cannot be reduced below current stock usage: 250",
+                exception.getMessage());
     }
 
     @Test

@@ -2,10 +2,13 @@ package com.stockpro.warehouseservice;
 
 import com.stockpro.warehouseservice.dto.StockTransferDTO;
 import com.stockpro.warehouseservice.entity.StockLevel;
-import com.stockpro.warehouseservice.exception.InsufficientStockException;
+import com.stockpro.warehouseservice.entity.Warehouse;
+import com.stockpro.warehouseservice.exception.InvalidOperationException;
+import com.stockpro.warehouseservice.exception.StockNotAvailableException;
 import com.stockpro.warehouseservice.rabbitmq.StockEventPublisher;
 import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import com.stockpro.warehouseservice.repository.WarehouseRepository;
+import com.stockpro.warehouseservice.service.InventoryOperationService;
 import com.stockpro.warehouseservice.service.StockAlertService;
 import com.stockpro.warehouseservice.service.StockLevelService;
 import com.stockpro.warehouseservice.service.StockMovementService;
@@ -20,8 +23,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,10 +45,15 @@ class StockMovementServiceTest {
     @Mock
     private StockAlertService stockAlertService;
 
+    @Mock
+    private InventoryOperationService inventoryOperationService;
+
     @InjectMocks
     private StockLevelService stockLevelService;
 
     private StockLevel sourceStock;
+    private Warehouse sourceWarehouse;
+    private Warehouse destinationWarehouse;
 
     @BeforeEach
     void setUp() {
@@ -56,42 +63,78 @@ class StockMovementServiceTest {
                 .productId(501L)
                 .quantity(100)
                 .reservedQuantity(20)
+                .reorderLevel(15)
+                .maxStockLevel(200)
                 .binLocation("SRC-A1")
+                .build();
+
+        sourceWarehouse = Warehouse.builder()
+                .warehouseId(1L)
+                .capacity(500)
+                .usedCapacity(100)
+                .isActive(true)
+                .build();
+
+        destinationWarehouse = Warehouse.builder()
+                .warehouseId(2L)
+                .capacity(500)
+                .usedCapacity(15)
+                .isActive(true)
                 .build();
     }
 
     @Test
     void reserveStock_shouldIncreaseReservedQuantity_whenAvailableStockExists() {
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.of(sourceStock));
-        when(stockLevelRepository.save(any(StockLevel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(warehouseRepository.existsById(1L)).thenReturn(true);
+        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L))
+                .thenReturn(Optional.of(sourceStock));
+        when(inventoryOperationService.reserveStock(sourceStock, 30))
+                .thenAnswer(invocation -> {
+                    sourceStock.setReservedQuantity(50);
+                    return new InventoryOperationService.ReservationMutation(30, 20, 50);
+                });
+        when(inventoryOperationService.saveStockLevel(sourceStock)).thenReturn(sourceStock);
 
         stockLevelService.reserveStock(1L, 501L, 30);
 
         assertEquals(50, sourceStock.getReservedQuantity());
-        verify(stockLevelRepository).save(sourceStock);
+        verify(stockMovementService).recordReservation(1L, 501L, 30, 20, 50, "Stock reserved");
     }
 
     @Test
     void reserveStock_shouldThrowException_whenAvailableStockIsInsufficient() {
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.of(sourceStock));
+        when(warehouseRepository.existsById(1L)).thenReturn(true);
+        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L))
+                .thenReturn(Optional.of(sourceStock));
+        when(inventoryOperationService.reserveStock(sourceStock, 81))
+                .thenThrow(new StockNotAvailableException(
+                        "Insufficient available stock. Available: 80, Requested: 81"));
 
-        InsufficientStockException exception = assertThrows(
-                InsufficientStockException.class,
+        StockNotAvailableException exception = assertThrows(
+                StockNotAvailableException.class,
                 () -> stockLevelService.reserveStock(1L, 501L, 81)
         );
 
-        assertEquals("Insufficient stock. Available: 80, Requested: 81", exception.getMessage());
+        assertEquals("Insufficient available stock. Available: 80, Requested: 81",
+                exception.getMessage());
     }
 
     @Test
-    void releaseReservation_shouldNotDropBelowZero_whenReleaseExceedsReservedQuantity() {
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.of(sourceStock));
-        when(stockLevelRepository.save(any(StockLevel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    void releaseReservation_shouldThrowException_whenReleaseExceedsReservedQuantity() {
+        when(warehouseRepository.existsById(1L)).thenReturn(true);
+        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L))
+                .thenReturn(Optional.of(sourceStock));
+        when(inventoryOperationService.releaseReservation(sourceStock, 50))
+                .thenThrow(new InvalidOperationException(
+                        "Cannot release more stock than is currently reserved"));
 
-        stockLevelService.releaseReservation(1L, 501L, 50);
+        InvalidOperationException exception = assertThrows(
+                InvalidOperationException.class,
+                () -> stockLevelService.releaseReservation(1L, 501L, 50)
+        );
 
-        assertEquals(0, sourceStock.getReservedQuantity());
-        verify(stockLevelRepository).save(sourceStock);
+        assertEquals("Cannot release more stock than is currently reserved",
+                exception.getMessage());
     }
 
     @Test
@@ -109,41 +152,42 @@ class StockMovementServiceTest {
                 .productId(501L)
                 .quantity(15)
                 .reservedQuantity(0)
+                .reorderLevel(15)
+                .maxStockLevel(200)
                 .binLocation("DEST-B2")
                 .build();
 
-        when(warehouseRepository.existsById(1L)).thenReturn(true);
-        when(warehouseRepository.existsById(2L)).thenReturn(true);
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.of(sourceStock));
-        when(stockLevelRepository.findByWarehouseIdAndProductId(2L, 501L)).thenReturn(Optional.of(destinationStock));
-        when(stockLevelRepository.save(any(StockLevel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(inventoryOperationService.getWarehouseForMutation(1L)).thenReturn(sourceWarehouse);
+        when(inventoryOperationService.getWarehouseForMutation(2L)).thenReturn(destinationWarehouse);
+        when(inventoryOperationService.getOrCreateStockLevel(1L, 501L)).thenReturn(sourceStock);
+        when(inventoryOperationService.getOrCreateStockLevel(2L, 501L)).thenReturn(destinationStock);
+        when(inventoryOperationService.resolveThresholds(501L, 15, 200))
+                .thenReturn(new InventoryOperationService.ThresholdSettings(15, 200));
+        when(inventoryOperationService.handleIssue(
+                sourceWarehouse, sourceStock, 40, "Transfer for customer demand"))
+                .thenAnswer(invocation -> {
+                    sourceStock.setQuantity(60);
+                    return new InventoryOperationService.StockMutation(
+                            "ISSUE", -40, 100, 60, "Transfer for customer demand");
+                });
+        when(inventoryOperationService.handleReceipt(
+                destinationWarehouse, destinationStock, 40, "Transfer for customer demand"))
+                .thenAnswer(invocation -> {
+                    destinationStock.setQuantity(55);
+                    return new InventoryOperationService.StockMutation(
+                            "RECEIPT", 40, 15, 55, "Transfer for customer demand");
+                });
+        when(inventoryOperationService.saveStockLevel(sourceStock)).thenReturn(sourceStock);
+        when(inventoryOperationService.saveStockLevel(destinationStock)).thenReturn(destinationStock);
 
         stockLevelService.transferStock(request);
 
         assertEquals(60, sourceStock.getQuantity());
         assertEquals(55, destinationStock.getQuantity());
-        verify(stockLevelRepository, times(2)).save(any(StockLevel.class));
-    }
-
-    @Test
-    void transferStock_shouldCreateDestinationStock_whenDestinationEntryIsMissing() {
-        StockTransferDTO request = new StockTransferDTO();
-        request.setFromWarehouseId(1L);
-        request.setToWarehouseId(3L);
-        request.setProductId(501L);
-        request.setQuantity(25);
-        request.setReason("New warehouse stocking");
-
-        when(warehouseRepository.existsById(1L)).thenReturn(true);
-        when(warehouseRepository.existsById(3L)).thenReturn(true);
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.of(sourceStock));
-        when(stockLevelRepository.findByWarehouseIdAndProductId(3L, 501L)).thenReturn(Optional.empty());
-        when(stockLevelRepository.save(any(StockLevel.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        stockLevelService.transferStock(request);
-
-        assertEquals(75, sourceStock.getQuantity());
-        verify(stockLevelRepository, times(2)).save(any(StockLevel.class));
+        verify(stockMovementService).recordTransferOut(1L, 501L, 40, 100, 60,
+                "Transfer for customer demand", 2L);
+        verify(stockMovementService).recordTransferIn(2L, 501L, 40, 15, 55,
+                "Transfer for customer demand", 1L);
     }
 
     @Test
@@ -155,33 +199,13 @@ class StockMovementServiceTest {
         request.setQuantity(5);
         request.setReason("Invalid transfer");
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
+        InvalidOperationException exception = assertThrows(
+                InvalidOperationException.class,
                 () -> stockLevelService.transferStock(request)
         );
 
-        assertEquals("Source and destination warehouses cannot be the same", exception.getMessage());
-    }
-
-    @Test
-    void transferStock_shouldThrowException_whenSourceWarehouseHasNoStock() {
-        StockTransferDTO request = new StockTransferDTO();
-        request.setFromWarehouseId(1L);
-        request.setToWarehouseId(2L);
-        request.setProductId(501L);
-        request.setQuantity(10);
-        request.setReason("Urgent transfer");
-
-        when(warehouseRepository.existsById(1L)).thenReturn(true);
-        when(warehouseRepository.existsById(2L)).thenReturn(true);
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.empty());
-
-        InsufficientStockException exception = assertThrows(
-                InsufficientStockException.class,
-                () -> stockLevelService.transferStock(request)
-        );
-
-        assertEquals("No stock found in source warehouse for product 501", exception.getMessage());
+        assertEquals("Source and destination warehouses cannot be the same",
+                exception.getMessage());
     }
 
     @Test
@@ -193,15 +217,30 @@ class StockMovementServiceTest {
         request.setQuantity(81);
         request.setReason("Over-allocation test");
 
-        when(warehouseRepository.existsById(1L)).thenReturn(true);
-        when(warehouseRepository.existsById(2L)).thenReturn(true);
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 501L)).thenReturn(Optional.of(sourceStock));
+        StockLevel destinationStock = StockLevel.builder()
+                .warehouseId(2L)
+                .productId(501L)
+                .quantity(15)
+                .reservedQuantity(0)
+                .build();
 
-        InsufficientStockException exception = assertThrows(
-                InsufficientStockException.class,
+        when(inventoryOperationService.getWarehouseForMutation(1L)).thenReturn(sourceWarehouse);
+        when(inventoryOperationService.getWarehouseForMutation(2L)).thenReturn(destinationWarehouse);
+        when(inventoryOperationService.getOrCreateStockLevel(1L, 501L)).thenReturn(sourceStock);
+        when(inventoryOperationService.getOrCreateStockLevel(2L, 501L)).thenReturn(destinationStock);
+        when(inventoryOperationService.resolveThresholds(501L, 15, 200))
+                .thenReturn(new InventoryOperationService.ThresholdSettings(15, 200));
+        when(inventoryOperationService.handleIssue(
+                sourceWarehouse, sourceStock, 81, "Over-allocation test"))
+                .thenThrow(new StockNotAvailableException(
+                        "Insufficient available stock. Available: 80, Requested: 81"));
+
+        StockNotAvailableException exception = assertThrows(
+                StockNotAvailableException.class,
                 () -> stockLevelService.transferStock(request)
         );
 
-        assertEquals("Insufficient stock in source warehouse. Available: 80, Requested: 81", exception.getMessage());
+        assertEquals("Insufficient available stock. Available: 80, Requested: 81",
+                exception.getMessage());
     }
 }

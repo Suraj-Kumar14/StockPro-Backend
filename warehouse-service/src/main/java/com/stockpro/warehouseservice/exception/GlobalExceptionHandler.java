@@ -1,8 +1,10 @@
 package com.stockpro.warehouseservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
@@ -40,10 +42,32 @@ public class GlobalExceptionHandler {
                 status);
     }
 
-    @ExceptionHandler(InsufficientStockException.class)
-    public ResponseEntity<ErrorResponse> handleInsufficientStock(
-            InsufficientStockException ex, HttpServletRequest request) {
-        log.error("InsufficientStockException: {}", ex.getMessage());
+    @ExceptionHandler({InsufficientStockException.class, StockNotAvailableException.class})
+    public ResponseEntity<ErrorResponse> handleStockNotAvailable(
+            RuntimeException ex, HttpServletRequest request) {
+        log.error("StockNotAvailableException: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(CapacityExceededException.class)
+    public ResponseEntity<ErrorResponse> handleCapacityExceeded(
+            CapacityExceededException ex, HttpServletRequest request) {
+        log.error("CapacityExceededException: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(InvalidOperationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidOperation(
+            InvalidOperationException ex, HttpServletRequest request) {
+        log.error("InvalidOperationException: {}", ex.getMessage());
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
                         HttpStatus.BAD_REQUEST.value(), "Bad Request",
@@ -63,6 +87,17 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(
+            ConstraintViolationException ex, HttpServletRequest request) {
+        log.error("ConstraintViolationException: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(
             IllegalArgumentException ex, HttpServletRequest request) {
@@ -72,6 +107,18 @@ public class GlobalExceptionHandler {
                         HttpStatus.BAD_REQUEST.value(), "Bad Request",
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLockConflict(
+            ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
+        log.error("Optimistic locking conflict: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.CONFLICT.value(), "Conflict",
+                        "Concurrent stock update detected. Please retry the request.",
+                        request.getRequestURI()),
+                HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(Exception.class)

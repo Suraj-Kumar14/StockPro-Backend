@@ -1,11 +1,14 @@
 package com.stockpro.warehouseservice.service;
 
-import com.stockpro.warehouseservice.dto.*;
+import com.stockpro.warehouseservice.dto.WarehouseRequestDTO;
+import com.stockpro.warehouseservice.dto.WarehouseResponseDTO;
 import com.stockpro.warehouseservice.entity.Warehouse;
+import com.stockpro.warehouseservice.exception.CapacityExceededException;
 import com.stockpro.warehouseservice.exception.WarehouseNotFoundException;
+import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import com.stockpro.warehouseservice.repository.WarehouseRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,10 +16,11 @@ import java.util.List;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class WarehouseService {
 
-    @Autowired
-    private WarehouseRepository warehouseRepository;
+    private final WarehouseRepository warehouseRepository;
+    private final StockLevelRepository stockLevelRepository;
 
     @Transactional
     public WarehouseResponseDTO createWarehouse(WarehouseRequestDTO dto) {
@@ -54,19 +58,25 @@ public class WarehouseService {
     public List<WarehouseResponseDTO> getAllWarehouses() {
         log.info("Fetching all warehouses");
         return warehouseRepository.findAll()
-                .stream().map(this::mapToDTO).toList();
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
     }
 
     public List<WarehouseResponseDTO> getActiveWarehouses() {
         log.info("Fetching active warehouses");
         return warehouseRepository.findByIsActive(true)
-                .stream().map(this::mapToDTO).toList();
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
     }
 
     public List<WarehouseResponseDTO> getWarehousesByManager(Long managerId) {
         log.info("Fetching warehouses for manager: {}", managerId);
         return warehouseRepository.findByManagerId(managerId)
-                .stream().map(this::mapToDTO).toList();
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
     }
 
     @Transactional
@@ -77,11 +87,18 @@ public class WarehouseService {
                 .orElseThrow(() -> new WarehouseNotFoundException(
                         "Warehouse not found with ID: " + id));
 
-        // Check name uniqueness if changed
         if (!warehouse.getName().equals(dto.getName())
                 && warehouseRepository.existsByName(dto.getName())) {
             throw new IllegalArgumentException(
                     "Warehouse with name '" + dto.getName() + "' already exists");
+        }
+
+        int actualUsedCapacity = defaultIfNull(
+                stockLevelRepository.sumQuantityByWarehouseId(id));
+        if (dto.getCapacity() < actualUsedCapacity) {
+            throw new CapacityExceededException(
+                    "Warehouse capacity cannot be reduced below current stock usage: "
+                            + actualUsedCapacity);
         }
 
         warehouse.setName(dto.getName());
@@ -89,6 +106,7 @@ public class WarehouseService {
         warehouse.setAddress(dto.getAddress());
         warehouse.setManagerId(dto.getManagerId());
         warehouse.setCapacity(dto.getCapacity());
+        warehouse.setUsedCapacity(actualUsedCapacity);
         warehouse.setPhone(dto.getPhone());
 
         Warehouse updated = warehouseRepository.save(warehouse);
@@ -117,18 +135,22 @@ public class WarehouseService {
         warehouseRepository.save(warehouse);
     }
 
-    private WarehouseResponseDTO mapToDTO(Warehouse w) {
+    private WarehouseResponseDTO mapToDTO(Warehouse warehouse) {
         return WarehouseResponseDTO.builder()
-                .warehouseId(w.getWarehouseId())
-                .name(w.getName())
-                .location(w.getLocation())
-                .address(w.getAddress())
-                .managerId(w.getManagerId())
-                .capacity(w.getCapacity())
-                .usedCapacity(w.getUsedCapacity())
-                .phone(w.getPhone())
-                .isActive(w.getIsActive())
-                .createdAt(w.getCreatedAt())
+                .warehouseId(warehouse.getWarehouseId())
+                .name(warehouse.getName())
+                .location(warehouse.getLocation())
+                .address(warehouse.getAddress())
+                .managerId(warehouse.getManagerId())
+                .capacity(warehouse.getCapacity())
+                .usedCapacity(warehouse.getUsedCapacity())
+                .phone(warehouse.getPhone())
+                .isActive(warehouse.getIsActive())
+                .createdAt(warehouse.getCreatedAt())
                 .build();
+    }
+
+    private int defaultIfNull(Integer value) {
+        return value == null ? 0 : value;
     }
 }

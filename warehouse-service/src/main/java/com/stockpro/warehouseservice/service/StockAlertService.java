@@ -5,8 +5,8 @@ import com.stockpro.warehouseservice.entity.StockAlert;
 import com.stockpro.warehouseservice.entity.StockLevel;
 import com.stockpro.warehouseservice.exception.WarehouseNotFoundException;
 import com.stockpro.warehouseservice.repository.StockAlertRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,23 +15,32 @@ import java.util.List;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class StockAlertService {
 
-    @Autowired
-    private StockAlertRepository stockAlertRepository;
+    private final StockAlertRepository stockAlertRepository;
 
     public void syncAlerts(StockLevel stock, Integer reorderLevel,
             Integer maxStockLevel) {
-        if (reorderLevel != null) {
-            syncAlert(stock, "LOW_STOCK", reorderLevel,
-                    stock.getQuantity() <= reorderLevel,
-                    "Low stock threshold reached");
+        Integer effectiveReorderLevel = reorderLevel != null
+                ? reorderLevel
+                : stock.getReorderLevel();
+        Integer effectiveMaxStockLevel = maxStockLevel != null
+                ? maxStockLevel
+                : stock.getMaxStockLevel();
+
+        if (effectiveReorderLevel != null) {
+            syncAlert(stock, "LOW_STOCK", effectiveReorderLevel,
+                    stock.getAvailableQuantity() < effectiveReorderLevel,
+                    "Low stock threshold reached",
+                    stock.getAvailableQuantity());
         }
 
-        if (maxStockLevel != null) {
-            syncAlert(stock, "OVERSTOCK", maxStockLevel,
-                    stock.getQuantity() > maxStockLevel,
-                    "Maximum stock threshold exceeded");
+        if (effectiveMaxStockLevel != null) {
+            syncAlert(stock, "OVERSTOCK", effectiveMaxStockLevel,
+                    stock.getQuantity() > effectiveMaxStockLevel,
+                    "Maximum stock threshold exceeded",
+                    stock.getQuantity());
         }
     }
 
@@ -56,7 +65,7 @@ public class StockAlertService {
     }
 
     private void syncAlert(StockLevel stock, String alertType, Integer threshold,
-            boolean shouldBeActive, String messagePrefix) {
+            boolean shouldBeActive, String messagePrefix, Integer currentQuantity) {
         StockAlert alert = stockAlertRepository
                 .findByWarehouseIdAndProductIdAndAlertTypeAndActiveTrue(
                         stock.getWarehouseId(), stock.getProductId(), alertType)
@@ -71,7 +80,7 @@ public class StockAlertService {
             alert.setAcknowledged(false);
             alert.setAcknowledgedAt(null);
             alert.setAcknowledgedBy(null);
-            alert.setCurrentQuantity(stock.getQuantity());
+            alert.setCurrentQuantity(currentQuantity);
             alert.setThresholdValue(threshold);
             alert.setMessage(messagePrefix + " for product "
                     + stock.getProductId() + " in warehouse "
@@ -79,7 +88,7 @@ public class StockAlertService {
             stockAlertRepository.save(alert);
         } else if (alert.getAlertId() != null) {
             alert.setActive(false);
-            alert.setCurrentQuantity(stock.getQuantity());
+            alert.setCurrentQuantity(currentQuantity);
             alert.setThresholdValue(threshold);
             stockAlertRepository.save(alert);
         }

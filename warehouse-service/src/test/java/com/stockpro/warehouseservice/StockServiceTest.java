@@ -3,10 +3,12 @@ package com.stockpro.warehouseservice;
 import com.stockpro.warehouseservice.dto.StockLevelResponseDTO;
 import com.stockpro.warehouseservice.dto.StockUpdateDTO;
 import com.stockpro.warehouseservice.entity.StockLevel;
+import com.stockpro.warehouseservice.entity.Warehouse;
 import com.stockpro.warehouseservice.exception.WarehouseNotFoundException;
 import com.stockpro.warehouseservice.rabbitmq.StockEventPublisher;
 import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import com.stockpro.warehouseservice.repository.WarehouseRepository;
+import com.stockpro.warehouseservice.service.InventoryOperationService;
 import com.stockpro.warehouseservice.service.StockAlertService;
 import com.stockpro.warehouseservice.service.StockLevelService;
 import com.stockpro.warehouseservice.service.StockMovementService;
@@ -48,10 +50,14 @@ class StockServiceTest {
     @Mock
     private StockAlertService stockAlertService;
 
+    @Mock
+    private InventoryOperationService inventoryOperationService;
+
     @InjectMocks
     private StockLevelService stockLevelService;
 
     private StockLevel stockLevel;
+    private Warehouse warehouse;
 
     @BeforeEach
     void setUp() {
@@ -61,8 +67,18 @@ class StockServiceTest {
                 .productId(1001L)
                 .quantity(80)
                 .reservedQuantity(10)
+                .reorderLevel(10)
+                .maxStockLevel(200)
                 .binLocation("R1-S1")
                 .lastUpdated(LocalDateTime.now())
+                .build();
+
+        warehouse = Warehouse.builder()
+                .warehouseId(1L)
+                .name("Main Warehouse")
+                .capacity(500)
+                .usedCapacity(80)
+                .isActive(true)
                 .build();
     }
 
@@ -102,7 +118,8 @@ class StockServiceTest {
                 .binLocation("R2-S4")
                 .build();
 
-        when(stockLevelRepository.findByProductId(1001L)).thenReturn(List.of(stockLevel, secondWarehouseStock));
+        when(stockLevelRepository.findByProductId(1001L))
+                .thenReturn(List.of(stockLevel, secondWarehouseStock));
 
         List<StockLevelResponseDTO> result = stockLevelService.getStockByProduct(1001L);
 
@@ -118,32 +135,50 @@ class StockServiceTest {
         request.setQuantity(45);
         request.setBinLocation("NEW-BIN");
 
+        StockLevel newStock = StockLevel.builder()
+                .warehouseId(1L)
+                .productId(2002L)
+                .quantity(0)
+                .reservedQuantity(0)
+                .build();
+
         StockLevel createdStock = StockLevel.builder()
                 .stockId(3L)
                 .warehouseId(1L)
                 .productId(2002L)
                 .quantity(45)
                 .reservedQuantity(0)
+                .reorderLevel(10)
+                .maxStockLevel(100)
                 .binLocation("NEW-BIN")
                 .build();
 
-        when(warehouseRepository.existsById(1L)).thenReturn(true);
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 2002L)).thenReturn(Optional.empty());
-        when(stockLevelRepository.save(any(StockLevel.class))).thenReturn(createdStock);
+        when(inventoryOperationService.getWarehouseForMutation(1L)).thenReturn(warehouse);
+        when(inventoryOperationService.getOrCreateStockLevel(1L, 2002L)).thenReturn(newStock);
+        when(inventoryOperationService.resolveThresholds(2002L, null, null))
+                .thenReturn(new InventoryOperationService.ThresholdSettings(10, 100));
+        when(inventoryOperationService.handleAdjustment(warehouse, newStock, 45, null))
+                .thenAnswer(invocation -> {
+                    newStock.setQuantity(45);
+                    return new InventoryOperationService.StockMutation(
+                            "RECEIPT", 45, 0, 45, "Stock receipt processed via stock update endpoint");
+                });
+        when(inventoryOperationService.saveStockLevel(newStock)).thenReturn(createdStock);
+        when(inventoryOperationService.saveWarehouse(warehouse)).thenReturn(warehouse);
 
         StockLevelResponseDTO result = stockLevelService.updateStock(1L, request);
 
         assertEquals(45, result.getQuantity());
         assertEquals("NEW-BIN", result.getBinLocation());
-        verify(stockLevelRepository).save(any(StockLevel.class));
+        verify(stockMovementService).recordReceipt(1L, 2002L, 45, 0, 45,
+                "Stock receipt processed via stock update endpoint");
     }
 
     @Test
-    void updateStock_shouldUpdateExistingStockAndPublishLowStockEvent_whenQuantityReachesReorderLevel() {
+    void updateStock_shouldPublishLowStockEvent_whenAvailableQuantityFallsBelowReorderLevel() {
         StockUpdateDTO request = new StockUpdateDTO();
         request.setProductId(1001L);
         request.setQuantity(10);
-        request.setBinLocation("LOW-STOCK-BIN");
         request.setReorderLevel(10);
 
         StockLevel savedStock = StockLevel.builder()
@@ -151,19 +186,29 @@ class StockServiceTest {
                 .warehouseId(1L)
                 .productId(1001L)
                 .quantity(10)
-                .reservedQuantity(0)
-                .binLocation("LOW-STOCK-BIN")
+                .reservedQuantity(1)
+                .reorderLevel(10)
+                .maxStockLevel(200)
                 .build();
 
-        when(warehouseRepository.existsById(1L)).thenReturn(true);
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 1001L)).thenReturn(Optional.of(stockLevel));
-        when(stockLevelRepository.save(any(StockLevel.class))).thenReturn(savedStock);
+        when(inventoryOperationService.getWarehouseForMutation(1L)).thenReturn(warehouse);
+        when(inventoryOperationService.getOrCreateStockLevel(1L, 1001L)).thenReturn(stockLevel);
+        when(inventoryOperationService.resolveThresholds(1001L, 10, null))
+                .thenReturn(new InventoryOperationService.ThresholdSettings(10, 200));
+        when(inventoryOperationService.handleAdjustment(warehouse, stockLevel, 10, null))
+                .thenAnswer(invocation -> {
+                    stockLevel.setQuantity(10);
+                    stockLevel.setReservedQuantity(1);
+                    return new InventoryOperationService.StockMutation(
+                            "ISSUE", -70, 80, 10, "Stock issue processed via stock update endpoint");
+                });
+        when(inventoryOperationService.saveStockLevel(stockLevel)).thenReturn(savedStock);
+        when(inventoryOperationService.saveWarehouse(warehouse)).thenReturn(warehouse);
 
         StockLevelResponseDTO result = stockLevelService.updateStock(1L, request);
 
         assertEquals(10, result.getQuantity());
-        assertEquals("LOW-STOCK-BIN", result.getBinLocation());
-        verify(stockEventPublisher).publishLowStockEvent(1001L, 1L, 10, 10);
+        verify(stockEventPublisher).publishLowStockEvent(1001L, 1L, 9, 10);
     }
 
     @Test
@@ -179,12 +224,24 @@ class StockServiceTest {
                 .productId(1001L)
                 .quantity(250)
                 .reservedQuantity(0)
+                .reorderLevel(10)
+                .maxStockLevel(200)
                 .binLocation("R1-S1")
                 .build();
 
-        when(warehouseRepository.existsById(1L)).thenReturn(true);
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 1001L)).thenReturn(Optional.of(stockLevel));
-        when(stockLevelRepository.save(any(StockLevel.class))).thenReturn(savedStock);
+        when(inventoryOperationService.getWarehouseForMutation(1L)).thenReturn(warehouse);
+        when(inventoryOperationService.getOrCreateStockLevel(1L, 1001L)).thenReturn(stockLevel);
+        when(inventoryOperationService.resolveThresholds(1001L, null, 200))
+                .thenReturn(new InventoryOperationService.ThresholdSettings(10, 200));
+        when(inventoryOperationService.handleAdjustment(warehouse, stockLevel, 250, null))
+                .thenAnswer(invocation -> {
+                    stockLevel.setQuantity(250);
+                    stockLevel.setReservedQuantity(0);
+                    return new InventoryOperationService.StockMutation(
+                            "RECEIPT", 170, 80, 250, "Stock receipt processed via stock update endpoint");
+                });
+        when(inventoryOperationService.saveStockLevel(stockLevel)).thenReturn(savedStock);
+        when(inventoryOperationService.saveWarehouse(warehouse)).thenReturn(warehouse);
 
         stockLevelService.updateStock(1L, request);
 
@@ -204,11 +261,21 @@ class StockServiceTest {
                 .productId(1001L)
                 .quantity(5)
                 .reservedQuantity(0)
+                .reorderLevel(10)
                 .build();
 
-        when(warehouseRepository.existsById(1L)).thenReturn(true);
-        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 1001L)).thenReturn(Optional.of(stockLevel));
-        when(stockLevelRepository.save(any(StockLevel.class))).thenReturn(savedStock);
+        when(inventoryOperationService.getWarehouseForMutation(1L)).thenReturn(warehouse);
+        when(inventoryOperationService.getOrCreateStockLevel(1L, 1001L)).thenReturn(stockLevel);
+        when(inventoryOperationService.resolveThresholds(1001L, 10, null))
+                .thenReturn(new InventoryOperationService.ThresholdSettings(10, 200));
+        when(inventoryOperationService.handleAdjustment(warehouse, stockLevel, 5, null))
+                .thenAnswer(invocation -> {
+                    stockLevel.setQuantity(5);
+                    return new InventoryOperationService.StockMutation(
+                            "ISSUE", -75, 80, 5, "Stock issue processed via stock update endpoint");
+                });
+        when(inventoryOperationService.saveStockLevel(stockLevel)).thenReturn(savedStock);
+        when(inventoryOperationService.saveWarehouse(warehouse)).thenReturn(warehouse);
         doThrow(new RuntimeException("RabbitMQ unavailable"))
                 .when(stockEventPublisher)
                 .publishLowStockEvent(1001L, 1L, 5, 10);

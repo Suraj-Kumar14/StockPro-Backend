@@ -16,6 +16,9 @@ public class StockLevel {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long stockId;
 
+	@Version
+	private Long version;
+
 	@Column(nullable = false)
 	private Long warehouseId;
 
@@ -31,6 +34,10 @@ public class StockLevel {
 	@Builder.Default
 	private Integer reservedQuantity = 0;
 
+	private Integer reorderLevel;
+
+	private Integer maxStockLevel;
+
 	// bin/aisle reference
 	@Column(length = 50)
 	private String binLocation;
@@ -39,16 +46,18 @@ public class StockLevel {
 
 	
 	public Integer getAvailableQuantity() {
-		return quantity - reservedQuantity;
+		return defaultIfNull(quantity) - defaultIfNull(reservedQuantity);
 	}
 
 	@PrePersist
 	@PreUpdate
 	protected void onUpdate() {
 		lastUpdated = LocalDateTime.now();
-		if (quantity == null)
-			quantity = 0;
-		if (reservedQuantity == null)
-			reservedQuantity = 0;
+		quantity = defaultIfNull(quantity);
+		reservedQuantity = defaultIfNull(reservedQuantity);
+	}
+
+	private int defaultIfNull(Integer value) {
+		return value == null ? 0 : value;
 	}
 }
