@@ -5,7 +5,10 @@ import lombok.*;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "po_line_items")
+@Table(name = "po_line_items", indexes = {
+        @Index(name = "idx_po_line_po_id", columnList = "purchase_order_id"),
+        @Index(name = "idx_po_line_product_id", columnList = "productId")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -15,6 +18,9 @@ public class POLineItem {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long lineItemId;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false)
     private Long productId;

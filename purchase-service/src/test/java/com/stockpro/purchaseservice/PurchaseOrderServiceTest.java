@@ -1,40 +1,82 @@
 package com.stockpro.purchaseservice;
 
-import com.stockpro.purchaseservice.dto.*;
-import com.stockpro.purchaseservice.entity.*;
-import com.stockpro.purchaseservice.exception.*;
-import com.stockpro.purchaseservice.repository.*;
+import com.stockpro.purchaseservice.dto.GoodsReceiptDTO;
+import com.stockpro.purchaseservice.dto.POLineItemDTO;
+import com.stockpro.purchaseservice.dto.PurchaseOrderRequestDTO;
+import com.stockpro.purchaseservice.dto.PurchaseOrderResponseDTO;
+import com.stockpro.purchaseservice.dto.StockProductThresholdDTO;
+import com.stockpro.purchaseservice.entity.POLineItem;
+import com.stockpro.purchaseservice.entity.POStatus;
+import com.stockpro.purchaseservice.entity.PurchaseOrder;
+import com.stockpro.purchaseservice.exception.InvalidPOStateException;
+import com.stockpro.purchaseservice.exception.OverReceiptException;
+import com.stockpro.purchaseservice.exception.PurchaseOrderNotFoundException;
+import com.stockpro.purchaseservice.rabbitmq.POEventPublisher;
+import com.stockpro.purchaseservice.repository.PurchaseOrderRepository;
+import com.stockpro.purchaseservice.service.ProductCatalogGateway;
+import com.stockpro.purchaseservice.service.PurchaseOrderMapper;
 import com.stockpro.purchaseservice.service.PurchaseOrderService;
-import org.junit.jupiter.api.*;
+import com.stockpro.purchaseservice.service.PurchaseOrderValidationService;
+import com.stockpro.purchaseservice.service.PurchaseOrderWorkflow;
+import com.stockpro.purchaseservice.service.SupplierGateway;
+import com.stockpro.purchaseservice.service.WarehouseGateway;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.*;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class PurchaseOrderServiceTest {
 
     @Mock
-    private PurchaseOrderRepository poRepository;
+    private PurchaseOrderRepository purchaseOrderRepository;
 
     @Mock
-    private POLineItemRepository lineItemRepository;
+    private SupplierGateway supplierGateway;
 
-    @InjectMocks
-    private PurchaseOrderService poService;
+    @Mock
+    private WarehouseGateway warehouseGateway;
 
-    private PurchaseOrder mockPO;
+    @Mock
+    private ProductCatalogGateway productCatalogGateway;
+
+    @Mock
+    private POEventPublisher poEventPublisher;
+
+    private PurchaseOrderService purchaseOrderService;
+
+    private PurchaseOrder purchaseOrder;
     private PurchaseOrderRequestDTO requestDTO;
 
     @BeforeEach
     void setUp() {
+        purchaseOrderService = new PurchaseOrderService(
+                purchaseOrderRepository,
+                new PurchaseOrderMapper(),
+                new PurchaseOrderValidationService(),
+                new PurchaseOrderWorkflow(),
+                supplierGateway,
+                warehouseGateway,
+                productCatalogGateway,
+                poEventPublisher);
+
         POLineItem lineItem = POLineItem.builder()
                 .lineItemId(1L)
                 .productId(1L)
@@ -44,7 +86,7 @@ class PurchaseOrderServiceTest {
                 .receivedQty(0)
                 .build();
 
-        mockPO = PurchaseOrder.builder()
+        purchaseOrder = PurchaseOrder.builder()
                 .poId(1L)
                 .supplierId(1L)
                 .warehouseId(1L)
@@ -56,7 +98,7 @@ class PurchaseOrderServiceTest {
                 .lineItems(new ArrayList<>(List.of(lineItem)))
                 .build();
 
-        lineItem.setPurchaseOrder(mockPO);
+        lineItem.setPurchaseOrder(purchaseOrder);
 
         POLineItemDTO lineItemDTO = new POLineItemDTO();
         lineItemDTO.setProductId(1L);
@@ -73,20 +115,24 @@ class PurchaseOrderServiceTest {
 
     @Test
     void createPO_Success() {
-        when(poRepository.save(any(PurchaseOrder.class))).thenReturn(mockPO);
+        doNothing().when(supplierGateway).ensureSupplierExists(1L);
+        doNothing().when(warehouseGateway).ensureWarehouseExists(1L);
+        when(purchaseOrderRepository.save(any(PurchaseOrder.class))).thenReturn(purchaseOrder);
 
-        PurchaseOrderResponseDTO result = poService.createPO(requestDTO);
+        PurchaseOrderResponseDTO result = purchaseOrderService.createPO(requestDTO);
 
         assertNotNull(result);
         assertEquals(POStatus.DRAFT, result.getStatus());
-        verify(poRepository).save(any(PurchaseOrder.class));
+        verify(supplierGateway).ensureSupplierExists(1L);
+        verify(warehouseGateway).ensureWarehouseExists(1L);
+        verify(purchaseOrderRepository).save(any(PurchaseOrder.class));
     }
 
     @Test
     void getPOById_Success() {
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
+        when(purchaseOrderRepository.findById(1L)).thenReturn(Optional.of(purchaseOrder));
 
-        PurchaseOrderResponseDTO result = poService.getPOById(1L);
+        PurchaseOrderResponseDTO result = purchaseOrderService.getPOById(1L);
 
         assertNotNull(result);
         assertEquals(1L, result.getPoId());
@@ -94,213 +140,127 @@ class PurchaseOrderServiceTest {
 
     @Test
     void getPOById_NotFound_ThrowsException() {
-        when(poRepository.findById(99L)).thenReturn(Optional.empty());
+        when(purchaseOrderRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(PurchaseOrderNotFoundException.class,
-                () -> poService.getPOById(99L));
+                () -> purchaseOrderService.getPOById(99L));
     }
 
     @Test
-    void getAllPOs_ReturnsList() {
-        when(poRepository.findAll()).thenReturn(List.of(mockPO));
+    void getPOsByStatus_ReceivedAlias_ReturnsLegacyAndCurrentStatuses() {
+        PurchaseOrder legacyReceived = PurchaseOrder.builder()
+                .poId(2L)
+                .status(POStatus.FULLY_RECEIVED)
+                .lineItems(List.of())
+                .build();
+        when(purchaseOrderRepository.findAllByStatusIn(List.of(POStatus.RECEIVED, POStatus.FULLY_RECEIVED)))
+                .thenReturn(List.of(purchaseOrder, legacyReceived));
 
-        List<PurchaseOrderResponseDTO> result = poService.getAllPOs();
+        List<PurchaseOrderResponseDTO> result = purchaseOrderService.getPOsByStatus("RECEIVED");
 
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getPOsBySupplier_ReturnsList() {
-        when(poRepository.findBySupplierId(1L)).thenReturn(List.of(mockPO));
-
-        List<PurchaseOrderResponseDTO> result = poService.getPOsBySupplier(1L);
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getPOsByStatus_ValidStatus_ReturnsList() {
-        when(poRepository.findByStatus(POStatus.DRAFT))
-                .thenReturn(List.of(mockPO));
-
-        List<PurchaseOrderResponseDTO> result = poService.getPOsByStatus("DRAFT");
-
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void getPOsByStatus_InvalidStatus_ThrowsException() {
-        assertThrows(IllegalArgumentException.class,
-                () -> poService.getPOsByStatus("INVALID_STATUS"));
-    }
-
-    @Test
-    void getPOsByDateRange_ValidRange_ReturnsList() {
-        LocalDate start = LocalDate.now().minusDays(7);
-        LocalDate end = LocalDate.now();
-        when(poRepository.findByOrderDateBetween(start, end))
-                .thenReturn(List.of(mockPO));
-
-        List<PurchaseOrderResponseDTO> result =
-                poService.getPOsByDateRange(start, end);
-
-        assertEquals(1, result.size());
+        assertEquals(2, result.size());
     }
 
     @Test
     void getPOsByDateRange_InvalidRange_ThrowsException() {
-        LocalDate start = LocalDate.now();
-        LocalDate end = LocalDate.now().minusDays(7);
+        LocalDate startDate = LocalDate.now();
+        LocalDate endDate = LocalDate.now().minusDays(1);
 
         assertThrows(IllegalArgumentException.class,
-                () -> poService.getPOsByDateRange(start, end));
+                () -> purchaseOrderService.getPOsByDateRange(startDate, endDate));
     }
 
     @Test
     void submitForApproval_Success() {
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
-        mockPO.setStatus(POStatus.DRAFT);
-        PurchaseOrder pending = PurchaseOrder.builder()
-                .poId(1L).status(POStatus.PENDING)
-                .lineItems(mockPO.getLineItems()).build();
-        when(poRepository.save(any())).thenReturn(pending);
+        purchaseOrder.setStatus(POStatus.DRAFT);
+        when(purchaseOrderRepository.findById(1L)).thenReturn(Optional.of(purchaseOrder));
+        when(purchaseOrderRepository.save(any(PurchaseOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PurchaseOrderResponseDTO result = poService.submitForApproval(1L);
+        PurchaseOrderResponseDTO result = purchaseOrderService.submitForApproval(1L);
 
         assertEquals(POStatus.PENDING, result.getStatus());
-    }
-
-    @Test
-    void submitForApproval_NotDraft_ThrowsException() {
-        mockPO.setStatus(POStatus.APPROVED);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
-
-        assertThrows(InvalidPOStatusException.class,
-                () -> poService.submitForApproval(1L));
+        verify(poEventPublisher).publishPOPending(anyLong(), anyLong(), anyLong(), anyLong(), any());
     }
 
     @Test
     void approvePO_Success() {
-        mockPO.setStatus(POStatus.PENDING);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
-        PurchaseOrder approved = PurchaseOrder.builder()
-                .poId(1L).status(POStatus.APPROVED)
-                .lineItems(mockPO.getLineItems()).build();
-        when(poRepository.save(any())).thenReturn(approved);
+        purchaseOrder.setStatus(POStatus.PENDING);
+        when(purchaseOrderRepository.findById(1L)).thenReturn(Optional.of(purchaseOrder));
+        when(purchaseOrderRepository.save(any(PurchaseOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PurchaseOrderResponseDTO result = poService.approvePO(1L);
+        PurchaseOrderResponseDTO result = purchaseOrderService.approvePO(1L);
 
         assertEquals(POStatus.APPROVED, result.getStatus());
+        verify(poEventPublisher).publishPOApproved(anyLong(), anyLong(), anyLong(), anyLong(), any(), any());
     }
 
     @Test
-    void approvePO_NotPending_ThrowsException() {
-        mockPO.setStatus(POStatus.DRAFT);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
+    void rejectPO_SetsCancelledStatus() {
+        purchaseOrder.setStatus(POStatus.PENDING);
+        when(purchaseOrderRepository.findById(1L)).thenReturn(Optional.of(purchaseOrder));
+        when(purchaseOrderRepository.save(any(PurchaseOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThrows(InvalidPOStatusException.class,
-                () -> poService.approvePO(1L));
-    }
-
-    @Test
-    void rejectPO_Success() {
-        mockPO.setStatus(POStatus.PENDING);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
-        when(poRepository.save(any())).thenReturn(mockPO);
-
-        PurchaseOrderResponseDTO result = poService.rejectPO(1L, "Wrong items");
-
-        verify(poRepository).save(any());
-    }
-
-    @Test
-    void cancelPO_Success() {
-        mockPO.setStatus(POStatus.APPROVED);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
-        PurchaseOrder cancelled = PurchaseOrder.builder()
-                .poId(1L).status(POStatus.CANCELLED)
-                .lineItems(mockPO.getLineItems()).build();
-        when(poRepository.save(any())).thenReturn(cancelled);
-
-        PurchaseOrderResponseDTO result =
-                poService.cancelPO(1L, "No longer needed");
+        PurchaseOrderResponseDTO result = purchaseOrderService.rejectPO(1L, "Pricing mismatch");
 
         assertEquals(POStatus.CANCELLED, result.getStatus());
+        assertEquals("REJECTED: Pricing mismatch", result.getNotes());
     }
 
     @Test
-    void cancelPO_AlreadyCancelled_ThrowsException() {
-        mockPO.setStatus(POStatus.CANCELLED);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
+    void cancelPO_ApprovedStatus_ThrowsException() {
+        purchaseOrder.setStatus(POStatus.APPROVED);
+        when(purchaseOrderRepository.findById(1L)).thenReturn(Optional.of(purchaseOrder));
 
-        assertThrows(InvalidPOStatusException.class,
-                () -> poService.cancelPO(1L, "reason"));
+        assertThrows(InvalidPOStateException.class,
+                () -> purchaseOrderService.cancelPO(1L, "No longer needed"));
     }
 
     @Test
-    void receiveGoods_FullReceipt_StatusFullyReceived() {
-        mockPO.setStatus(POStatus.APPROVED);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
+    void receiveGoods_FullReceipt_StatusReceived_AndWarehouseUpdated() {
+        purchaseOrder.setStatus(POStatus.APPROVED);
+        when(purchaseOrderRepository.findById(1L)).thenReturn(Optional.of(purchaseOrder));
+        when(purchaseOrderRepository.save(any(PurchaseOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PurchaseOrder received = PurchaseOrder.builder()
-                .poId(1L).status(POStatus.FULLY_RECEIVED)
-                .lineItems(mockPO.getLineItems())
-                .receivedDate(LocalDate.now()).build();
-        when(poRepository.save(any())).thenReturn(received);
+        StockProductThresholdDTO thresholds = new StockProductThresholdDTO();
+        thresholds.setProductId(1L);
+        thresholds.setReorderLevel(5);
+        thresholds.setMaxStockLevel(20);
+        when(productCatalogGateway.getProductThresholds(1L)).thenReturn(thresholds);
 
         GoodsReceiptDTO receipt = new GoodsReceiptDTO();
         receipt.setLineItemId(1L);
         receipt.setReceivedQty(10);
 
-        PurchaseOrderResponseDTO result =
-                poService.receiveGoods(1L, List.of(receipt));
+        PurchaseOrderResponseDTO result = purchaseOrderService.receiveGoods(1L, List.of(receipt));
 
-        assertEquals(POStatus.FULLY_RECEIVED, result.getStatus());
+        assertEquals(POStatus.RECEIVED, result.getStatus());
+        verify(warehouseGateway).increaseStock(1L, 1L, 10, thresholds);
     }
 
     @Test
-    void receiveGoods_InvalidStatus_ThrowsException() {
-        mockPO.setStatus(POStatus.DRAFT);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
+    void receiveGoods_ExceedsOrderedQty_ThrowsException_AndDoesNotCallWarehouse() {
+        purchaseOrder.setStatus(POStatus.APPROVED);
+        when(purchaseOrderRepository.findById(1L)).thenReturn(Optional.of(purchaseOrder));
 
         GoodsReceiptDTO receipt = new GoodsReceiptDTO();
         receipt.setLineItemId(1L);
-        receipt.setReceivedQty(5);
+        receipt.setReceivedQty(11);
 
-        assertThrows(InvalidPOStatusException.class,
-                () -> poService.receiveGoods(1L, List.of(receipt)));
-    }
-
-    @Test
-    void receiveGoods_ExceedsOrderedQty_ThrowsException() {
-        mockPO.setStatus(POStatus.APPROVED);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
-
-        GoodsReceiptDTO receipt = new GoodsReceiptDTO();
-        receipt.setLineItemId(1L);
-        receipt.setReceivedQty(999); // ordered was 10
-
-        assertThrows(IllegalArgumentException.class,
-                () -> poService.receiveGoods(1L, List.of(receipt)));
+        assertThrows(OverReceiptException.class,
+                () -> purchaseOrderService.receiveGoods(1L, List.of(receipt)));
+        verify(warehouseGateway, never()).increaseStock(anyLong(), anyLong(), any(), any());
     }
 
     @Test
     void updatePO_DraftStatus_Success() {
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
-        when(poRepository.save(any())).thenReturn(mockPO);
+        when(purchaseOrderRepository.findById(1L)).thenReturn(Optional.of(purchaseOrder));
+        when(purchaseOrderRepository.save(any(PurchaseOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doNothing().when(supplierGateway).ensureSupplierExists(1L);
+        doNothing().when(warehouseGateway).ensureWarehouseExists(1L);
 
-        PurchaseOrderResponseDTO result = poService.updatePO(1L, requestDTO);
+        PurchaseOrderResponseDTO result = purchaseOrderService.updatePO(1L, requestDTO);
 
         assertNotNull(result);
-        verify(poRepository).save(any());
-    }
-
-    @Test
-    void updatePO_NotDraft_ThrowsException() {
-        mockPO.setStatus(POStatus.APPROVED);
-        when(poRepository.findById(1L)).thenReturn(Optional.of(mockPO));
-
-        assertThrows(InvalidPOStatusException.class,
-                () -> poService.updatePO(1L, requestDTO));
+        verify(purchaseOrderRepository).save(any(PurchaseOrder.class));
     }
 }

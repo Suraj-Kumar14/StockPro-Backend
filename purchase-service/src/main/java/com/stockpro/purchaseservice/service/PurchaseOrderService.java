@@ -1,321 +1,371 @@
 package com.stockpro.purchaseservice.service;
 
-import com.stockpro.purchaseservice.dto.*;
-import com.stockpro.purchaseservice.dto.PurchaseOrderResponseDTO.POLineItemResponseDTO;
-import com.stockpro.purchaseservice.entity.*;
-import com.stockpro.purchaseservice.exception.*;
+import com.stockpro.purchaseservice.dto.GoodsReceiptDTO;
+import com.stockpro.purchaseservice.dto.POLineItemDTO;
+import com.stockpro.purchaseservice.dto.PurchaseOrderRequestDTO;
+import com.stockpro.purchaseservice.dto.PurchaseOrderResponseDTO;
+import com.stockpro.purchaseservice.dto.StockProductThresholdDTO;
+import com.stockpro.purchaseservice.entity.POLineItem;
+import com.stockpro.purchaseservice.entity.POStatus;
+import com.stockpro.purchaseservice.entity.PurchaseOrder;
+import com.stockpro.purchaseservice.exception.InvalidLineItemException;
+import com.stockpro.purchaseservice.exception.InvalidPOStateException;
+import com.stockpro.purchaseservice.exception.InvalidPOStatusException;
+import com.stockpro.purchaseservice.exception.PurchaseOrderNotFoundException;
 import com.stockpro.purchaseservice.rabbitmq.POEventPublisher;
-import com.stockpro.purchaseservice.repository.*;
+import com.stockpro.purchaseservice.repository.PurchaseOrderRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class PurchaseOrderService {
 
-    @Autowired
-    private PurchaseOrderRepository poRepository;
+    private static final EnumSet<POStatus> OVERDUE_STATUSES = EnumSet.of(
+            POStatus.APPROVED, POStatus.PARTIALLY_RECEIVED);
 
-    @Autowired
-    private POLineItemRepository lineItemRepository;
-
-    @Autowired
-    private POEventPublisher poEventPublisher;
+    private final PurchaseOrderRepository purchaseOrderRepository;
+    private final PurchaseOrderMapper purchaseOrderMapper;
+    private final PurchaseOrderValidationService validationService;
+    private final PurchaseOrderWorkflow workflow;
+    private final SupplierGateway supplierGateway;
+    private final WarehouseGateway warehouseGateway;
+    private final ProductCatalogGateway productCatalogGateway;
+    private final POEventPublisher poEventPublisher;
 
     @Transactional
     public PurchaseOrderResponseDTO createPO(PurchaseOrderRequestDTO dto) {
-        log.info("Creating PO for supplier: {}", dto.getSupplierId());
+        validationService.validatePurchaseOrderRequest(dto);
+        validateBusinessReferences(dto);
 
-        PurchaseOrder po = PurchaseOrder.builder()
-                .supplierId(dto.getSupplierId())
-                .warehouseId(dto.getWarehouseId())
-                .createdById(dto.getCreatedById())
-                .expectedDate(dto.getExpectedDate())
-                .notes(dto.getNotes())
-                .referenceNumber(dto.getReferenceNumber())
-                .status(POStatus.DRAFT)
-                .build();
+        PurchaseOrder purchaseOrder = new PurchaseOrder();
+        applyEditableFields(purchaseOrder, dto);
+        purchaseOrder.setStatus(POStatus.DRAFT);
+        purchaseOrder.setReceivedDate(null);
 
-        List<POLineItem> items = dto.getLineItems().stream()
-                .map(itemDto -> {
-                    BigDecimal total = itemDto.getUnitCost()
-                            .multiply(BigDecimal.valueOf(itemDto.getQuantity()));
-                    return POLineItem.builder()
-                            .productId(itemDto.getProductId())
-                            .quantity(itemDto.getQuantity())
-                            .unitCost(itemDto.getUnitCost())
-                            .totalCost(total)
-                            .receivedQty(0)
-                            .purchaseOrder(po)
-                            .build();
-                }).toList();
-
-        po.setLineItems(items);
-
-        BigDecimal totalAmount = items.stream()
-                .map(POLineItem::getTotalCost)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        po.setTotalAmount(totalAmount);
-
-        PurchaseOrder saved = poRepository.save(po);
-        log.info("PO created with ID: {}", saved.getPoId());
-        return mapToDTO(saved);
+        PurchaseOrder saved = savePurchaseOrder(purchaseOrder);
+        log.info("Created PO {} for supplier {} and warehouse {} with status {}",
+                saved.getPoId(), saved.getSupplierId(), saved.getWarehouseId(), saved.getStatus());
+        return purchaseOrderMapper.toResponse(saved);
     }
 
     public PurchaseOrderResponseDTO getPOById(Long id) {
-        PurchaseOrder po = poRepository.findById(id)
-                .orElseThrow(() -> new PurchaseOrderNotFoundException(
-                        "Purchase order not found with ID: " + id));
-        return mapToDTO(po);
+        return purchaseOrderMapper.toResponse(getPOEntity(id));
     }
 
     public List<PurchaseOrderResponseDTO> getAllPOs() {
-        return poRepository.findAll().stream().map(this::mapToDTO).toList();
+        return purchaseOrderRepository.findAll().stream()
+                .map(purchaseOrderMapper::toResponse)
+                .toList();
     }
 
     public List<PurchaseOrderResponseDTO> getPOsBySupplier(Long supplierId) {
-        return poRepository.findBySupplierId(supplierId)
-                .stream().map(this::mapToDTO).toList();
+        return purchaseOrderRepository.findBySupplierId(supplierId).stream()
+                .map(purchaseOrderMapper::toResponse)
+                .toList();
     }
 
     public List<PurchaseOrderResponseDTO> getPOsByWarehouse(Long warehouseId) {
-        return poRepository.findByWarehouseId(warehouseId)
-                .stream().map(this::mapToDTO).toList();
+        return purchaseOrderRepository.findByWarehouseId(warehouseId).stream()
+                .map(purchaseOrderMapper::toResponse)
+                .toList();
     }
 
     public List<PurchaseOrderResponseDTO> getPOsByStatus(String status) {
-        try {
-            POStatus poStatus = POStatus.valueOf(status.toUpperCase());
-            return poRepository.findByStatus(poStatus)
-                    .stream().map(this::mapToDTO).toList();
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid status: " + status);
-        }
+        POStatus requestedStatus = parseStatus(status);
+        List<POStatus> statuses = requestedStatus == POStatus.RECEIVED
+                ? List.of(POStatus.RECEIVED, POStatus.FULLY_RECEIVED)
+                : List.of(requestedStatus);
+
+        return purchaseOrderRepository.findAllByStatusIn(statuses).stream()
+                .map(purchaseOrderMapper::toResponse)
+                .toList();
     }
 
     public List<PurchaseOrderResponseDTO> getPOsByCreatedBy(Long userId) {
-        return poRepository.findByCreatedById(userId)
-                .stream().map(this::mapToDTO).toList();
+        return purchaseOrderRepository.findByCreatedById(userId).stream()
+                .map(purchaseOrderMapper::toResponse)
+                .toList();
     }
 
-    public List<PurchaseOrderResponseDTO> getPOsByDateRange(
-            LocalDate startDate, LocalDate endDate) {
+    public List<PurchaseOrderResponseDTO> getPOsByDateRange(LocalDate startDate, LocalDate endDate) {
         if (startDate.isAfter(endDate)) {
-            throw new IllegalArgumentException(
-                    "Start date cannot be after end date");
+            throw new IllegalArgumentException("Start date cannot be after end date");
         }
-        return poRepository.findByOrderDateBetween(startDate, endDate)
-                .stream().map(this::mapToDTO).toList();
+
+        return purchaseOrderRepository.findByOrderDateBetween(startDate, endDate).stream()
+                .map(purchaseOrderMapper::toResponse)
+                .toList();
     }
 
     public List<PurchaseOrderResponseDTO> getOverduePOs() {
-        return poRepository.findByStatusAndExpectedDateBefore(
-                        POStatus.APPROVED, LocalDate.now())
-                .stream().map(this::mapToDTO).toList();
+        return purchaseOrderRepository.findOverduePurchaseOrders(OVERDUE_STATUSES, LocalDate.now()).stream()
+                .map(purchaseOrderMapper::toResponse)
+                .toList();
     }
 
     @Transactional
     public PurchaseOrderResponseDTO submitForApproval(Long id) {
-        PurchaseOrder po = getPOEntity(id);
-        if (po.getStatus() != POStatus.DRAFT) {
-            throw new InvalidPOStatusException(
-                    "Only DRAFT POs can be submitted. Current: " + po.getStatus());
+        PurchaseOrder purchaseOrder = getPOEntity(id);
+        workflow.assertCanSubmit(snapshotFor(purchaseOrder));
+
+        purchaseOrder.setStatus(POStatus.PENDING);
+        PurchaseOrder saved = savePurchaseOrder(purchaseOrder);
+        log.info("PO {} moved to {}", saved.getPoId(), saved.getStatus());
+
+        try {
+            poEventPublisher.publishPOPending(saved.getPoId(), saved.getSupplierId(),
+                    saved.getWarehouseId(), saved.getCreatedById(), saved.getExpectedDate());
+        } catch (Exception ex) {
+            log.warn("Pending alert hook failed for PO {}: {}", saved.getPoId(), ex.getMessage());
         }
-        po.setStatus(POStatus.PENDING);
-        return mapToDTO(poRepository.save(po));
+
+        return purchaseOrderMapper.toResponse(saved);
     }
 
     @Transactional
     public PurchaseOrderResponseDTO approvePO(Long id) {
-        log.info("Approving PO: {}", id);
-        PurchaseOrder po = getPOEntity(id);
+        PurchaseOrder purchaseOrder = getPOEntity(id);
+        workflow.assertCanApprove(snapshotFor(purchaseOrder));
 
-        if (po.getStatus() != POStatus.PENDING) {
-            throw new InvalidPOStatusException(
-                    "Only PENDING POs can be approved. Current: " + po.getStatus());
-        }
+        purchaseOrder.setStatus(POStatus.APPROVED);
+        PurchaseOrder saved = savePurchaseOrder(purchaseOrder);
+        log.info("PO {} moved to {}", saved.getPoId(), saved.getStatus());
 
-        po.setStatus(POStatus.APPROVED);
-        PurchaseOrder saved = poRepository.save(po);
-
-        // ✅ PUBLISH PO_APPROVED EVENT
         try {
-            poEventPublisher.publishPOApproved(
-                    saved.getPoId(),
-                    saved.getSupplierId(),
-                    saved.getWarehouseId(),
-                    saved.getCreatedById(),
-                    saved.getTotalAmount(),
-                    saved.getExpectedDate());
-        } catch (Exception e) {
-            log.error("Failed to publish PO_APPROVED event: {}", e.getMessage());
+            poEventPublisher.publishPOApproved(saved.getPoId(), saved.getSupplierId(),
+                    saved.getWarehouseId(), saved.getCreatedById(),
+                    saved.getTotalAmount(), saved.getExpectedDate());
+        } catch (Exception ex) {
+            log.warn("Approved alert hook failed for PO {}: {}", saved.getPoId(), ex.getMessage());
         }
 
-        return mapToDTO(saved);
+        return purchaseOrderMapper.toResponse(saved);
     }
 
     @Transactional
     public PurchaseOrderResponseDTO rejectPO(Long id, String reason) {
-        PurchaseOrder po = getPOEntity(id);
-        if (po.getStatus() != POStatus.PENDING) {
-            throw new InvalidPOStatusException(
-                    "Only PENDING POs can be rejected. Current: " + po.getStatus());
-        }
-        po.setStatus(POStatus.DRAFT);
-        po.setNotes("REJECTED: " + reason
-                + (po.getNotes() != null ? " | " + po.getNotes() : ""));
-        return mapToDTO(poRepository.save(po));
+        PurchaseOrder purchaseOrder = getPOEntity(id);
+        workflow.assertCanReject(snapshotFor(purchaseOrder));
+
+        purchaseOrder.setStatus(POStatus.CANCELLED);
+        purchaseOrder.setNotes(prependAuditNote("REJECTED", requireReason(reason), purchaseOrder.getNotes()));
+
+        PurchaseOrder saved = savePurchaseOrder(purchaseOrder);
+        log.info("PO {} rejected and moved to {}", saved.getPoId(), saved.getStatus());
+        return purchaseOrderMapper.toResponse(saved);
     }
 
     @Transactional
     public PurchaseOrderResponseDTO cancelPO(Long id, String reason) {
-        PurchaseOrder po = getPOEntity(id);
-        if (po.getStatus() == POStatus.FULLY_RECEIVED
-                || po.getStatus() == POStatus.CANCELLED) {
-            throw new InvalidPOStatusException(
-                    "Cannot cancel a " + po.getStatus() + " PO");
-        }
-        po.setStatus(POStatus.CANCELLED);
-        po.setNotes("CANCELLED: " + reason
-                + (po.getNotes() != null ? " | " + po.getNotes() : ""));
-        return mapToDTO(poRepository.save(po));
+        PurchaseOrder purchaseOrder = getPOEntity(id);
+        workflow.assertCanCancel(snapshotFor(purchaseOrder));
+
+        purchaseOrder.setStatus(POStatus.CANCELLED);
+        purchaseOrder.setNotes(prependAuditNote("CANCELLED", requireReason(reason), purchaseOrder.getNotes()));
+
+        PurchaseOrder saved = savePurchaseOrder(purchaseOrder);
+        log.info("PO {} cancelled from workflow state {}", saved.getPoId(), saved.getStatus());
+        return purchaseOrderMapper.toResponse(saved);
     }
 
     @Transactional
-    public PurchaseOrderResponseDTO receiveGoods(Long poId,
-            List<GoodsReceiptDTO> receipts) {
-        PurchaseOrder po = getPOEntity(poId);
+    public PurchaseOrderResponseDTO receiveGoods(Long poId, List<GoodsReceiptDTO> receipts) {
+        PurchaseOrder purchaseOrder = getPOEntity(poId);
+        workflow.assertCanReceive(snapshotFor(purchaseOrder));
+        validationService.validateGoodsReceipts(receipts);
 
-        if (po.getStatus() != POStatus.APPROVED
-                && po.getStatus() != POStatus.PARTIALLY_RECEIVED) {
-            throw new InvalidPOStatusException(
-                    "Goods can only be received for APPROVED or PARTIALLY_RECEIVED POs.");
+        Map<Long, POLineItem> lineItemsById = indexLineItems(purchaseOrder);
+        for (GoodsReceiptDTO receipt : receipts) {
+            POLineItem lineItem = lineItemsById.get(receipt.getLineItemId());
+            if (lineItem == null) {
+                throw new InvalidLineItemException(
+                        "Line item not found for receipt: " + receipt.getLineItemId());
+            }
+            validationService.validateReceiptQuantity(lineItem, receipt.getReceivedQty());
         }
 
         for (GoodsReceiptDTO receipt : receipts) {
-            POLineItem lineItem = po.getLineItems().stream()
-                    .filter(i -> i.getLineItemId().equals(receipt.getLineItemId()))
-                    .findFirst()
-                    .orElseThrow(() -> new PurchaseOrderNotFoundException(
-                            "Line item not found: " + receipt.getLineItemId()));
+            POLineItem lineItem = lineItemsById.get(receipt.getLineItemId());
+            lineItem.setReceivedQty(lineItem.getReceivedQty() + receipt.getReceivedQty());
 
-            int newQty = lineItem.getReceivedQty() + receipt.getReceivedQty();
-            if (newQty > lineItem.getQuantity()) {
-                throw new IllegalArgumentException(
-                        "Received qty exceeds ordered qty for product "
-                        + lineItem.getProductId());
-            }
-            lineItem.setReceivedQty(newQty);
+            StockProductThresholdDTO thresholds =
+                    productCatalogGateway.getProductThresholds(lineItem.getProductId());
+
+            log.info("Recording GRN for PO {}, product {}, warehouse {}, quantity {}",
+                    purchaseOrder.getPoId(), lineItem.getProductId(),
+                    purchaseOrder.getWarehouseId(), receipt.getReceivedQty());
+
+            warehouseGateway.increaseStock(purchaseOrder.getWarehouseId(),
+                    lineItem.getProductId(), receipt.getReceivedQty(), thresholds);
         }
 
-        boolean allReceived = po.getLineItems().stream()
-                .allMatch(i -> i.getReceivedQty().equals(i.getQuantity()));
+        if (purchaseOrder.getLineItems().stream()
+                .allMatch(this::isFullyReceived)) {
+            purchaseOrder.setStatus(POStatus.RECEIVED);
+            purchaseOrder.setReceivedDate(LocalDate.now());
+        } else {
+            purchaseOrder.setStatus(POStatus.PARTIALLY_RECEIVED);
+            purchaseOrder.setReceivedDate(null);
+        }
 
-        po.setStatus(allReceived
-                ? POStatus.FULLY_RECEIVED : POStatus.PARTIALLY_RECEIVED);
-        if (allReceived) po.setReceivedDate(LocalDate.now());
-
-        return mapToDTO(poRepository.save(po));
+        PurchaseOrder saved = savePurchaseOrder(purchaseOrder);
+        log.info("Completed goods receipt for PO {}. New status: {}",
+                saved.getPoId(), saved.getStatus());
+        return purchaseOrderMapper.toResponse(saved);
     }
 
     @Transactional
     public PurchaseOrderResponseDTO updatePO(Long id, PurchaseOrderRequestDTO dto) {
-        PurchaseOrder po = getPOEntity(id);
-        if (po.getStatus() != POStatus.DRAFT) {
-            throw new InvalidPOStatusException(
-                    "Only DRAFT POs can be updated. Current: " + po.getStatus());
-        }
-        po.setSupplierId(dto.getSupplierId());
-        po.setWarehouseId(dto.getWarehouseId());
-        po.setExpectedDate(dto.getExpectedDate());
-        po.setNotes(dto.getNotes());
-        po.setReferenceNumber(dto.getReferenceNumber());
-        po.getLineItems().clear();
-        List<POLineItem> newItems = dto.getLineItems().stream()
-                .map(itemDto -> {
-                    BigDecimal total = itemDto.getUnitCost()
-                            .multiply(BigDecimal.valueOf(itemDto.getQuantity()));
-                    return POLineItem.builder()
-                            .productId(itemDto.getProductId())
-                            .quantity(itemDto.getQuantity())
-                            .unitCost(itemDto.getUnitCost())
-                            .totalCost(total)
-                            .receivedQty(0)
-                            .purchaseOrder(po)
-                            .build();
-                }).toList();
-        po.getLineItems().addAll(newItems);
-        BigDecimal totalAmount = newItems.stream()
-                .map(POLineItem::getTotalCost)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        po.setTotalAmount(totalAmount);
-        return mapToDTO(poRepository.save(po));
+        PurchaseOrder purchaseOrder = getPOEntity(id);
+        workflow.assertDraft(snapshotFor(purchaseOrder));
+        validationService.validatePurchaseOrderRequest(dto);
+        validateBusinessReferences(dto);
+
+        applyEditableFields(purchaseOrder, dto);
+        PurchaseOrder saved = savePurchaseOrder(purchaseOrder);
+        log.info("Updated DRAFT PO {}", saved.getPoId());
+        return purchaseOrderMapper.toResponse(saved);
     }
 
-    // ✅ SCHEDULED: Check for overdue POs every day at 9 AM
     @Scheduled(cron = "0 0 9 * * *")
     public void checkOverduePOs() {
         log.info("Running scheduled overdue PO check");
-        List<PurchaseOrder> overduePOs = poRepository
-                .findByStatusAndExpectedDateBefore(
-                        POStatus.APPROVED, LocalDate.now());
+        List<PurchaseOrder> overduePOs = purchaseOrderRepository
+                .findOverduePurchaseOrders(OVERDUE_STATUSES, LocalDate.now());
 
-        for (PurchaseOrder po : overduePOs) {
+        for (PurchaseOrder purchaseOrder : overduePOs) {
             try {
-                poEventPublisher.publishPOOverdue(
-                        po.getPoId(),
-                        po.getSupplierId(),
-                        po.getWarehouseId(),
-                        po.getExpectedDate());
-            } catch (Exception e) {
-                log.error("Failed to publish PO_OVERDUE for PO {}: {}",
-                        po.getPoId(), e.getMessage());
+                poEventPublisher.publishPOOverdue(purchaseOrder.getPoId(),
+                        purchaseOrder.getSupplierId(), purchaseOrder.getWarehouseId(),
+                        purchaseOrder.getExpectedDate());
+            } catch (Exception ex) {
+                log.warn("Overdue alert hook failed for PO {}: {}",
+                        purchaseOrder.getPoId(), ex.getMessage());
             }
         }
 
-        log.info("Overdue PO check complete. Found {} overdue POs",
-                overduePOs.size());
+        log.info("Overdue PO check complete. Found {} overdue POs", overduePOs.size());
+    }
+
+    private void validateBusinessReferences(PurchaseOrderRequestDTO dto) {
+        supplierGateway.ensureSupplierExists(dto.getSupplierId());
+        warehouseGateway.ensureWarehouseExists(dto.getWarehouseId());
+    }
+
+    private void applyEditableFields(PurchaseOrder purchaseOrder, PurchaseOrderRequestDTO dto) {
+        purchaseOrder.setSupplierId(dto.getSupplierId());
+        purchaseOrder.setWarehouseId(dto.getWarehouseId());
+        purchaseOrder.setCreatedById(dto.getCreatedById());
+        purchaseOrder.setExpectedDate(dto.getExpectedDate());
+        purchaseOrder.setNotes(trimToNull(dto.getNotes()));
+        purchaseOrder.setReferenceNumber(trimToNull(dto.getReferenceNumber()));
+        replaceLineItems(purchaseOrder, dto.getLineItems());
+        purchaseOrder.setTotalAmount(calculateTotalAmount(purchaseOrder.getLineItems()));
+    }
+
+    private void replaceLineItems(PurchaseOrder purchaseOrder, List<POLineItemDTO> lineItemDTOs) {
+        purchaseOrder.getLineItems().clear();
+        for (POLineItemDTO lineItemDTO : lineItemDTOs) {
+            POLineItem lineItem = POLineItem.builder()
+                    .productId(lineItemDTO.getProductId())
+                    .quantity(lineItemDTO.getQuantity())
+                    .unitCost(lineItemDTO.getUnitCost())
+                    .totalCost(calculateLineTotal(lineItemDTO))
+                    .receivedQty(0)
+                    .purchaseOrder(purchaseOrder)
+                    .build();
+            purchaseOrder.getLineItems().add(lineItem);
+        }
+    }
+
+    private BigDecimal calculateTotalAmount(List<POLineItem> lineItems) {
+        return lineItems.stream()
+                .map(POLineItem::getTotalCost)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal calculateLineTotal(POLineItemDTO lineItemDTO) {
+        return lineItemDTO.getUnitCost()
+                .multiply(BigDecimal.valueOf(lineItemDTO.getQuantity()));
+    }
+
+    private PurchaseOrderWorkflow.PurchaseOrderStateSnapshot snapshotFor(PurchaseOrder purchaseOrder) {
+        return new PurchaseOrderWorkflow.PurchaseOrderStateSnapshot(normalizeStatus(purchaseOrder.getStatus()));
+    }
+
+    private POStatus normalizeStatus(POStatus status) {
+        return status == POStatus.FULLY_RECEIVED ? POStatus.RECEIVED : status;
+    }
+
+    private POStatus parseStatus(String status) {
+        try {
+            POStatus parsedStatus = POStatus.valueOf(status.trim().toUpperCase());
+            return normalizeStatus(parsedStatus);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid status: " + status);
+        }
+    }
+
+    private Map<Long, POLineItem> indexLineItems(PurchaseOrder purchaseOrder) {
+        Map<Long, POLineItem> lineItemsById = new HashMap<>();
+        for (POLineItem lineItem : purchaseOrder.getLineItems()) {
+            lineItemsById.put(lineItem.getLineItemId(), lineItem);
+        }
+        return lineItemsById;
+    }
+
+    private boolean isFullyReceived(POLineItem lineItem) {
+        return lineItem.getReceivedQty() != null
+                && lineItem.getQuantity() != null
+                && lineItem.getReceivedQty().intValue() == lineItem.getQuantity().intValue();
+    }
+
+    private String requireReason(String reason) {
+        String trimmedReason = trimToNull(reason);
+        if (trimmedReason == null) {
+            throw new InvalidPOStateException("A reason is required for this operation");
+        }
+        return trimmedReason;
+    }
+
+    private String prependAuditNote(String action, String reason, String existingNotes) {
+        String auditNote = action + ": " + reason;
+        return existingNotes == null ? auditNote : auditNote + " | " + existingNotes;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmedValue = value.trim();
+        return trimmedValue.isEmpty() ? null : trimmedValue;
     }
 
     private PurchaseOrder getPOEntity(Long id) {
-        return poRepository.findById(id)
+        return purchaseOrderRepository.findById(id)
                 .orElseThrow(() -> new PurchaseOrderNotFoundException(
                         "Purchase order not found with ID: " + id));
     }
 
-    private PurchaseOrderResponseDTO mapToDTO(PurchaseOrder po) {
-        List<POLineItemResponseDTO> lineItems = po.getLineItems().stream()
-                .map(item -> POLineItemResponseDTO.builder()
-                        .lineItemId(item.getLineItemId())
-                        .productId(item.getProductId())
-                        .quantity(item.getQuantity())
-                        .unitCost(item.getUnitCost())
-                        .totalCost(item.getTotalCost())
-                        .receivedQty(item.getReceivedQty())
-                        .build())
-                .toList();
-
-        return PurchaseOrderResponseDTO.builder()
-                .poId(po.getPoId())
-                .supplierId(po.getSupplierId())
-                .warehouseId(po.getWarehouseId())
-                .createdById(po.getCreatedById())
-                .status(po.getStatus())
-                .totalAmount(po.getTotalAmount())
-                .orderDate(po.getOrderDate())
-                .expectedDate(po.getExpectedDate())
-                .receivedDate(po.getReceivedDate())
-                .notes(po.getNotes())
-                .referenceNumber(po.getReferenceNumber())
-                .createdAt(po.getCreatedAt())
-                .lineItems(lineItems)
-                .build();
+    private PurchaseOrder savePurchaseOrder(PurchaseOrder purchaseOrder) {
+        try {
+            purchaseOrder.setTotalAmount(calculateTotalAmount(purchaseOrder.getLineItems()));
+            return purchaseOrderRepository.save(purchaseOrder);
+        } catch (DataIntegrityViolationException ex) {
+            throw new InvalidPOStatusException("Purchase order data violates a persistence constraint");
+        }
     }
 }

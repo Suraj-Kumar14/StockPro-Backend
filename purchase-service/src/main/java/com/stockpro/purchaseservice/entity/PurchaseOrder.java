@@ -9,7 +9,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "purchase_orders")
+@Table(name = "purchase_orders", indexes = {
+        @Index(name = "idx_po_status", columnList = "status"),
+        @Index(name = "idx_po_supplier", columnList = "supplierId"),
+        @Index(name = "idx_po_warehouse", columnList = "warehouseId"),
+        @Index(name = "idx_po_order_date", columnList = "orderDate"),
+        @Index(name = "idx_po_expected_date", columnList = "expectedDate"),
+        @Index(name = "idx_po_reference_number", columnList = "referenceNumber", unique = true)
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -19,6 +26,9 @@ public class PurchaseOrder {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long poId;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false)
     private Long supplierId;
@@ -64,6 +74,11 @@ public class PurchaseOrder {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         orderDate = LocalDate.now();
-        if (status == null) status = POStatus.DRAFT;
+        if (status == null) {
+            status = POStatus.DRAFT;
+        }
+        if (totalAmount == null) {
+            totalAmount = BigDecimal.ZERO;
+        }
     }
 }

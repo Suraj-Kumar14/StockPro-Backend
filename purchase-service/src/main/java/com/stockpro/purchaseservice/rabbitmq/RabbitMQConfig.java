@@ -15,16 +15,23 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMQConfig {
 
     public static final String PO_APPROVED_QUEUE = "po-approved-queue";
+    public static final String PO_PENDING_QUEUE  = "po-pending-queue";
     public static final String PO_OVERDUE_QUEUE  = "po-overdue-queue";
 
     public static final String EXCHANGE = "stockpro.exchange";
 
     public static final String PO_APPROVED_KEY = "po.approved";
+    public static final String PO_PENDING_KEY  = "po.pending";
     public static final String PO_OVERDUE_KEY  = "po.overdue";
 
     @Bean
     public Queue poApprovedQueue() {
         return QueueBuilder.durable(PO_APPROVED_QUEUE).build();
+    }
+
+    @Bean
+    public Queue poPendingQueue() {
+        return QueueBuilder.durable(PO_PENDING_QUEUE).build();
     }
 
     @Bean
@@ -43,6 +50,14 @@ public class RabbitMQConfig {
                 .bind(poApprovedQueue())
                 .to(stockproExchange())
                 .with(PO_APPROVED_KEY);
+    }
+
+    @Bean
+    public Binding poPendingBinding() {
+        return BindingBuilder
+                .bind(poPendingQueue())
+                .to(stockproExchange())
+                .with(PO_PENDING_KEY);
     }
 
     @Bean

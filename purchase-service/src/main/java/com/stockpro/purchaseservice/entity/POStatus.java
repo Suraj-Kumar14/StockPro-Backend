@@ -5,6 +5,8 @@ public enum POStatus {
     PENDING,
     APPROVED,
     PARTIALLY_RECEIVED,
+    RECEIVED,
+    @Deprecated
     FULLY_RECEIVED,
     CANCELLED
 }

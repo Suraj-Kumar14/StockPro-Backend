@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.*;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -18,6 +19,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/purchase-orders")
 @Slf4j
+@Validated
 @Tag(name = "Purchase Order Management",
      description = "APIs for managing purchase orders")
 public class PurchaseOrderController {
@@ -109,7 +111,7 @@ public class PurchaseOrderController {
     public ResponseEntity<PurchaseOrderResponseDTO> rejectPO(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
-        String reason = body.getOrDefault("reason", "No reason provided");
+        String reason = body.get("reason");
         return ResponseEntity.ok(poService.rejectPO(id, reason));
     }
 
@@ -118,7 +120,7 @@ public class PurchaseOrderController {
     public ResponseEntity<PurchaseOrderResponseDTO> cancelPO(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
-        String reason = body.getOrDefault("reason", "No reason provided");
+        String reason = body.get("reason");
         return ResponseEntity.ok(poService.cancelPO(id, reason));
     }
 

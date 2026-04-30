@@ -2,6 +2,7 @@ package com.stockpro.purchaseservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.*;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -37,6 +38,22 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler({
+            InvalidPOStateException.class,
+            InvalidLineItemException.class,
+            OverReceiptException.class,
+            SupplierNotFoundException.class
+    })
+    public ResponseEntity<ErrorResponse> handleBusinessValidation(
+            RuntimeException ex, HttpServletRequest request) {
+        log.error("Business validation failed: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidation(
             MethodArgumentNotValidException ex) {
@@ -56,6 +73,18 @@ public class GlobalExceptionHandler {
                         HttpStatus.BAD_REQUEST.value(), "Bad Request",
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLocking(
+            OptimisticLockingFailureException ex, HttpServletRequest request) {
+        log.error("Concurrent update conflict: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.CONFLICT.value(), "Conflict",
+                        "The purchase order was modified by another transaction. Please retry.",
+                        request.getRequestURI()),
+                HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(Exception.class)

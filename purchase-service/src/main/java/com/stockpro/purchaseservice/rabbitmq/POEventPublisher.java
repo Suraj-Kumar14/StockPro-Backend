@@ -16,6 +16,27 @@ public class POEventPublisher {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
+    public void publishPOPending(Long poId, Long supplierId,
+            Long warehouseId, Long requestedByUserId,
+            LocalDate expectedDate) {
+
+        POPendingEvent event = POPendingEvent.builder()
+                .poId(poId)
+                .supplierId(supplierId)
+                .warehouseId(warehouseId)
+                .requestedByUserId(requestedByUserId)
+                .expectedDate(expectedDate)
+                .submittedAt(LocalDateTime.now())
+                .build();
+
+        log.info("Publishing PO_PENDING event for PO: {}", poId);
+
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.EXCHANGE,
+                RabbitMQConfig.PO_PENDING_KEY,
+                event);
+    }
+
     public void publishPOApproved(Long poId, Long supplierId,
             Long warehouseId, Long approvedByUserId,
             java.math.BigDecimal totalAmount, LocalDate expectedDate) {
