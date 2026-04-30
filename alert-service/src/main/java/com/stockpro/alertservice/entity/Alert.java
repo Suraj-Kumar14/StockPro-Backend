@@ -9,7 +9,14 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "alerts")
+@Table(name = "alerts", indexes = {
+        @Index(name = "idx_alert_recipient", columnList = "recipientId"),
+        @Index(name = "idx_alert_is_read", columnList = "isRead"),
+        @Index(name = "idx_alert_is_acknowledged", columnList = "isAcknowledged"),
+        @Index(name = "idx_alert_type", columnList = "type"),
+        @Index(name = "idx_alert_severity", columnList = "severity"),
+        @Index(name = "idx_alert_created_at", columnList = "createdAt")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -19,6 +26,9 @@ public class Alert {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long alertId;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false)
     private Long recipientId; // User ID who receives this alert
@@ -34,7 +44,7 @@ public class Alert {
     @Column(nullable = false, length = 200)
     private String title;
 
-    @Column(length = 1000)
+    @Column(nullable = false, length = 1000)
     private String message;
 
     @Column
@@ -64,8 +74,23 @@ public class Alert {
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(nullable = false)
+    private Boolean isArchived = false;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (channel == null) {
+            channel = "IN_APP";
+        }
+        if (isRead == null) {
+            isRead = false;
+        }
+        if (isAcknowledged == null) {
+            isAcknowledged = false;
+        }
+        if (isArchived == null) {
+            isArchived = false;
+        }
     }
 }

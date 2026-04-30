@@ -13,6 +13,7 @@ public class RabbitMQConfig {
     // Must match exact names from producer services
     public static final String LOW_STOCK_QUEUE   = "low-stock-queue";
     public static final String OVERSTOCK_QUEUE   = "overstock-queue";
+    public static final String PO_PENDING_QUEUE  = "po-pending-queue";
     public static final String PO_APPROVED_QUEUE = "po-approved-queue";
     public static final String PO_OVERDUE_QUEUE  = "po-overdue-queue";
     public static final String EXCHANGE          = "stockpro.exchange";
@@ -25,6 +26,11 @@ public class RabbitMQConfig {
     @Bean
     public Queue overstockQueue() {
         return QueueBuilder.durable(OVERSTOCK_QUEUE).build();
+    }
+
+    @Bean
+    public Queue poPendingQueue() {
+        return QueueBuilder.durable(PO_PENDING_QUEUE).build();
     }
 
     @Bean
@@ -52,6 +58,12 @@ public class RabbitMQConfig {
     public Binding overstockBinding() {
         return BindingBuilder.bind(overstockQueue())
                 .to(exchange()).with("stock.over");
+    }
+
+    @Bean
+    public Binding poPendingBinding() {
+        return BindingBuilder.bind(poPendingQueue())
+                .to(exchange()).with("po.pending");
     }
 
     @Bean
