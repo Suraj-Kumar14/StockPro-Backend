@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 @RestController
 @RequestMapping("/products")
 @Slf4j
+@Validated
 @Tag(name = "Product Management", description = "APIs for managing products")
 public class ProductController {
 
@@ -99,9 +101,16 @@ public class ProductController {
 
     @GetMapping("/search")
     @Operation(summary = "Search products")
-    public ResponseEntity<List<ProductResponseDTO>> searchProducts(@RequestParam String keyword) {
+    public ResponseEntity<List<ProductResponseDTO>> searchProducts(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String brand,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
         log.info("Received request to search products with keyword: {}", keyword);
-        List<ProductResponseDTO> response = productService.searchProducts(keyword);
+        List<ProductResponseDTO> response = productService.searchProducts(
+                keyword, name, category, brand, page, size);
         return ResponseEntity.ok(response);
     }
 

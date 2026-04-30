@@ -44,3 +44,9 @@ springdoc:
     operationsSorter: method
     tagsSorter: alpha
     display-request-duration: true
+
+warehouse-service:
+  base-url: ${WAREHOUSE_SERVICE_BASE_URL:http://localhost:8084/stock}
+
+purchase-service:
+  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8085}

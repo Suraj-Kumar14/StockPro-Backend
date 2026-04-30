@@ -10,7 +10,13 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "products")
+@Table(name = "products", indexes = {
+        @Index(name = "idx_product_sku", columnList = "sku", unique = true),
+        @Index(name = "idx_product_barcode", columnList = "barcode", unique = true),
+        @Index(name = "idx_product_category", columnList = "category"),
+        @Index(name = "idx_product_brand", columnList = "brand"),
+        @Index(name = "idx_product_active", columnList = "is_active")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -21,7 +27,10 @@ public class Product {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long productId;
 
-    @Column(unique = true, nullable = false, length = 50)
+    @Version
+    private Long version;
+
+    @Column(unique = true, nullable = false, length = 50, updatable = false)
     private String sku;
 
     @Column(nullable = false, length = 200)
