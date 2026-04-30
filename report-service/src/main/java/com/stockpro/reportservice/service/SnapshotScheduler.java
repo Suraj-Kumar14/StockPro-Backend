@@ -16,23 +16,21 @@ public class SnapshotScheduler {
     @Scheduled(cron = "0 0 0 * * *")
     public void takeDailySnapshot() {
         log.info("Running daily inventory snapshot job");
-        // In full integration, this would call warehouse-service
-        // to get all stock levels and create snapshots
-        // For now, logs that the job ran
-        log.info("Daily snapshot job completed at midnight");
+        reportService.takeDailySnapshot();
+        log.info("Daily snapshot job completed");
     }
 
     // Low stock check every 15 minutes
     @Scheduled(fixedRate = 900000)
     public void checkLowStock() {
-        log.debug("Running low stock check");
-        // Would trigger alerts via alert-service in full integration
+        log.debug("Refreshing low stock analytics view");
+        reportService.getLowStockReport(10);
     }
 
     // Overdue PO alert at 9:00 AM daily
     @Scheduled(cron = "0 0 9 * * *")
     public void checkOverduePOs() {
-        log.info("Running overdue PO check");
-        // Would call purchase-service and trigger alerts
+        log.info("Refreshing overdue PO summary analytics");
+        reportService.getPOSummary(java.time.LocalDate.now().minusDays(30), java.time.LocalDate.now());
     }
 }

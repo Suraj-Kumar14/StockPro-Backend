@@ -1,6 +1,8 @@
 package com.stockpro.reportservice.repository;
 
 import com.stockpro.reportservice.entity.InventorySnapshot;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -23,6 +25,9 @@ public interface InventorySnapshotRepository
 
     List<InventorySnapshot> findBySnapshotDateBetween(
             LocalDate start, LocalDate end);
+
+    Page<InventorySnapshot> findBySnapshotDateBetween(
+            LocalDate start, LocalDate end, Pageable pageable);
 
     List<InventorySnapshot> findByWarehouseIdAndSnapshotDate(
             Long warehouseId, LocalDate snapshotDate);
@@ -49,6 +54,14 @@ public interface InventorySnapshotRepository
            "WHERE s.snapshotDate = " +
            "(SELECT MAX(s2.snapshotDate) FROM InventorySnapshot s2)")
     List<InventorySnapshot> findLatestSnapshot();
+
+    @Query("SELECT MAX(s.snapshotDate) FROM InventorySnapshot s")
+    LocalDate findLatestSnapshotDate();
+
+    List<InventorySnapshot> findBySnapshotDateOrderByWarehouseIdAscProductIdAsc(LocalDate snapshotDate);
+
+    @Query("SELECT COALESCE(SUM(s.stockValue), 0) FROM InventorySnapshot s WHERE s.snapshotDate BETWEEN :startDate AND :endDate")
+    BigDecimal sumStockValueBetween(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
 
     boolean existsByWarehouseIdAndProductIdAndSnapshotDate(
             Long warehouseId, Long productId, LocalDate snapshotDate);

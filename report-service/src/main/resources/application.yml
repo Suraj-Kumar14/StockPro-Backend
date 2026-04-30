@@ -33,7 +33,7 @@ services:
   warehouse-url: http://localhost:8084
   purchase-url: http://localhost:8086
   movement-url: http://localhost:8087
-  product-url: http://localhost:8083
+  product-url: http://localhost:8082
 
 eureka:
   client:

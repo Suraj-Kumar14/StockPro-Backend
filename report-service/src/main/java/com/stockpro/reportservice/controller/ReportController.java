@@ -4,10 +4,14 @@ import com.stockpro.reportservice.dto.*;
 import com.stockpro.reportservice.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -18,6 +22,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/reports")
 @Slf4j
+@Validated
 @Tag(name = "Reports & Analytics",
      description = "APIs for inventory reports and analytics")
 public class ReportController {
@@ -30,10 +35,10 @@ public class ReportController {
     @PostMapping("/snapshot")
     @Operation(summary = "Take a manual inventory snapshot")
     public ResponseEntity<InventorySnapshotDTO> takeSnapshot(
-            @RequestParam Long warehouseId,
-            @RequestParam Long productId,
-            @RequestParam Integer quantity,
-            @RequestParam BigDecimal stockValue) {
+            @RequestParam @NotNull Long warehouseId,
+            @RequestParam @NotNull Long productId,
+            @RequestParam @NotNull @Min(0) Integer quantity,
+            @RequestParam @NotNull @Min(0) BigDecimal stockValue) {
         return ResponseEntity.ok(
                 reportService.takeSnapshot(
                         warehouseId, productId, quantity, stockValue));
@@ -106,7 +111,7 @@ public class ReportController {
     @GetMapping("/low-stock")
     @Operation(summary = "Get low stock report")
     public ResponseEntity<List<InventorySnapshotDTO>> getLowStockReport(
-            @RequestParam(defaultValue = "10") Integer threshold) {
+            @RequestParam(defaultValue = "10") @Min(0) Integer threshold) {
         return ResponseEntity.ok(reportService.getLowStockReport(threshold));
     }
 
@@ -115,7 +120,7 @@ public class ReportController {
     @GetMapping("/dead-stock")
     @Operation(summary = "Get dead stock (no movement for N days)")
     public ResponseEntity<List<DeadStockDTO>> getDeadStock(
-            @RequestParam(required = false) Integer days) {
+            @RequestParam(required = false) @Min(1) Integer days) {
         return ResponseEntity.ok(reportService.getDeadStock(days));
     }
 
@@ -124,14 +129,14 @@ public class ReportController {
     @GetMapping("/top-moving")
     @Operation(summary = "Get top moving products")
     public ResponseEntity<List<TopMovingProductDTO>> getTopMovingProducts(
-            @RequestParam(defaultValue = "10") Integer limit) {
+            @RequestParam(defaultValue = "10") @Min(1) Integer limit) {
         return ResponseEntity.ok(reportService.getTopMovingProducts(limit));
     }
 
     @GetMapping("/slow-moving")
     @Operation(summary = "Get slow moving products")
     public ResponseEntity<List<TopMovingProductDTO>> getSlowMovingProducts(
-            @RequestParam(required = false) Integer days) {
+            @RequestParam(required = false) @Min(1) Integer days) {
         return ResponseEntity.ok(reportService.getSlowMovingProducts(days));
     }
 
@@ -166,7 +171,7 @@ public class ReportController {
     @GetMapping("/export")
     @Operation(summary = "Export report data as CSV")
     public ResponseEntity<String> exportReport(
-            @RequestParam String type) {
+            @RequestParam @NotBlank String type) {
         return ResponseEntity.ok()
                 .header("Content-Type", "text/csv")
                 .header("Content-Disposition",

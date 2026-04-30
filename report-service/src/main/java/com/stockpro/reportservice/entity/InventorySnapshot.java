@@ -7,7 +7,17 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "inventory_snapshots")
+@Table(name = "inventory_snapshots",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_snapshot_warehouse_product_date",
+                        columnNames = {"warehouseId", "productId", "snapshotDate"})
+        },
+        indexes = {
+        @Index(name = "idx_snapshot_date", columnList = "snapshotDate"),
+        @Index(name = "idx_snapshot_warehouse", columnList = "warehouseId"),
+        @Index(name = "idx_snapshot_product", columnList = "productId"),
+        @Index(name = "idx_snapshot_warehouse_product_date", columnList = "warehouseId, productId, snapshotDate")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -17,6 +27,9 @@ public class InventorySnapshot {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long snapshotId;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false)
     private Long warehouseId;

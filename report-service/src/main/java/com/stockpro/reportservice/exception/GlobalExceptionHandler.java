@@ -1,7 +1,9 @@
 package com.stockpro.reportservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.*;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -14,6 +16,26 @@ import java.util.Map;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(DataNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleDataNotFound(
+            DataNotFoundException ex, HttpServletRequest request) {
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.NOT_FOUND.value(), "Not Found",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(ReportGenerationException.class)
+    public ResponseEntity<ErrorResponse> handleReportGeneration(
+            ReportGenerationException ex, HttpServletRequest request) {
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_GATEWAY.value(), "Bad Gateway",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_GATEWAY);
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegal(
@@ -34,6 +56,27 @@ public class GlobalExceptionHandler {
             errors.put(field, error.getDefaultMessage());
         });
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(
+            ConstraintViolationException ex, HttpServletRequest request) {
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLocking(
+            OptimisticLockingFailureException ex, HttpServletRequest request) {
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.CONFLICT.value(), "Conflict",
+                        "Snapshot data was modified concurrently. Please retry.",
+                        request.getRequestURI()),
+                HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(Exception.class)
