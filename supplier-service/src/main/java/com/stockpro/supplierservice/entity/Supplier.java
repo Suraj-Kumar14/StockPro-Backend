@@ -9,7 +9,14 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "suppliers")
+@Table(name = "suppliers", indexes = {
+        @Index(name = "idx_supplier_name", columnList = "name"),
+        @Index(name = "idx_supplier_city", columnList = "city"),
+        @Index(name = "idx_supplier_country", columnList = "country"),
+        @Index(name = "idx_supplier_email", columnList = "email", unique = true),
+        @Index(name = "idx_supplier_tax_id", columnList = "taxId", unique = true),
+        @Index(name = "idx_supplier_active", columnList = "isActive")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -19,6 +26,9 @@ public class Supplier {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long supplierId;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false, length = 200)
     private String name;
@@ -57,6 +67,9 @@ public class Supplier {
     private Integer totalOrders = 0; // Count of POs placed
 
     @Column(nullable = false)
+    private Integer ratingCount = 0;
+
+    @Column(nullable = false)
     private Boolean isActive = true;
 
     @Column(updatable = false)
@@ -71,6 +84,15 @@ public class Supplier {
         updatedAt = LocalDateTime.now();
         if (rating == null) {
             rating = 0.0;
+        }
+        if (totalOrders == null) {
+            totalOrders = 0;
+        }
+        if (ratingCount == null) {
+            ratingCount = 0;
+        }
+        if (isActive == null) {
+            isActive = true;
         }
     }
 

@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/suppliers")
 @Slf4j
+@Validated
 @Tag(name = "Supplier Management", description = "APIs for managing suppliers/vendors")
 public class SupplierController {
 
@@ -73,9 +75,17 @@ public class SupplierController {
 
     @GetMapping("/search")
     @Operation(summary = "Search suppliers")
-    public ResponseEntity<List<SupplierResponseDTO>> searchSuppliers(@RequestParam String keyword) {
-        log.info("Received request to search suppliers with keyword: {}", keyword);
-        List<SupplierResponseDTO> response = supplierService.searchSuppliers(keyword);
+    public ResponseEntity<List<SupplierResponseDTO>> searchSuppliers(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String country,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        log.info("Received supplier search request keyword={}, name={}, city={}, country={}",
+                keyword, name, city, country);
+        List<SupplierResponseDTO> response =
+                supplierService.searchSuppliers(keyword, name, city, country, page, size);
         return ResponseEntity.ok(response);
     }
 

@@ -3,199 +3,182 @@ package com.stockpro.supplierservice.service;
 import com.stockpro.supplierservice.dto.SupplierRequestDTO;
 import com.stockpro.supplierservice.dto.SupplierResponseDTO;
 import com.stockpro.supplierservice.entity.Supplier;
-import com.stockpro.supplierservice.exception.DuplicateTaxIdException;
+import com.stockpro.supplierservice.exception.InactiveSupplierException;
+import com.stockpro.supplierservice.exception.InvalidSupplierDataException;
 import com.stockpro.supplierservice.exception.SupplierNotFoundException;
 import com.stockpro.supplierservice.repository.SupplierRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class SupplierService {
 
-    @Autowired
-    private SupplierRepository supplierRepository;
+    private static final int DEFAULT_PAGE = 0;
+    private static final int DEFAULT_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 200;
+
+    private final SupplierRepository supplierRepository;
+    private final SupplierValidationService validationService;
+    private final SupplierMapper supplierMapper;
 
     @Transactional
     public SupplierResponseDTO createSupplier(SupplierRequestDTO dto) {
-        log.info("Creating supplier with email: {}", dto.getEmail());
+        SupplierRequestDTO normalizedRequest = normalizeRequest(dto);
+        validationService.validateForCreate(normalizedRequest);
 
-        if (supplierRepository.existsByEmail(dto.getEmail())) {
-            throw new DuplicateTaxIdException
-            ("Supplier with email " + dto.getEmail() + " already exists");
-        }
+        Supplier supplier = new Supplier();
+        applyMutableFields(supplier, normalizedRequest, false);
+        supplier.setIsActive(true);
+        supplier.setRating(defaultRating(normalizedRequest));
+        supplier.setTotalOrders(0);
+        supplier.setRatingCount(0);
 
-        if (dto.getTaxId() != null && supplierRepository.existsByTaxId(dto.getTaxId())) {
-            throw new DuplicateTaxIdException
-            ("Supplier with Tax ID " + dto.getTaxId() + " already exists");
-        }
-
-        Supplier supplier = mapToEntity(dto);
-        Supplier savedSupplier = supplierRepository.save(supplier);
-
-        log.info("Supplier created successfully with ID: {}", savedSupplier.getSupplierId());
-        return mapToDTO(savedSupplier);
+        Supplier savedSupplier = saveSupplier(supplier);
+        log.info("Created supplier {} with email {}", savedSupplier.getSupplierId(), savedSupplier.getEmail());
+        return supplierMapper.toResponse(savedSupplier);
     }
 
     public SupplierResponseDTO getSupplierById(Long id) {
-        log.info("Fetching supplier with ID: {}", id);
-        Supplier supplier = supplierRepository.findById(id)
-                .orElseThrow(() -> new SupplierNotFoundException("Supplier not found with ID: " + id));
-        return mapToDTO(supplier);
+        return supplierMapper.toResponse(getSupplier(id));
     }
 
     public List<SupplierResponseDTO> getAllSuppliers() {
-        log.info("Fetching all suppliers");
-        return supplierRepository.findAll()
-                .stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        return supplierRepository.findAll(Sort.by(Sort.Direction.ASC, "name")).stream()
+                .map(supplierMapper::toResponse)
+                .toList();
     }
 
     public List<SupplierResponseDTO> getActiveSuppliers() {
-        log.info("Fetching active suppliers");
-        return supplierRepository.findByIsActive(true)
-                .stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        return supplierRepository.findByIsActive(true).stream()
+                .sorted((left, right) -> left.getName().compareToIgnoreCase(right.getName()))
+                .map(supplierMapper::toResponse)
+                .toList();
     }
 
     public List<SupplierResponseDTO> getSuppliersByCity(String city) {
-        log.info("Fetching suppliers by city: {}", city);
-        return supplierRepository.findByCity(city)
-                .stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        return supplierRepository.findByCityContainingIgnoreCase(normalizeFilter(city)).stream()
+                .map(supplierMapper::toResponse)
+                .toList();
     }
 
     public List<SupplierResponseDTO> getSuppliersByCountry(String country) {
-        log.info("Fetching suppliers by country: {}", country);
-        return supplierRepository.findByCountry(country)
-                .stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        return supplierRepository.findByCountryContainingIgnoreCase(normalizeFilter(country)).stream()
+                .map(supplierMapper::toResponse)
+                .toList();
     }
 
     public List<SupplierResponseDTO> searchSuppliers(String keyword) {
-        log.info("Searching suppliers with keyword: {}", keyword);
-        return supplierRepository.searchSuppliers(keyword)
+        String normalizedKeyword = normalizeFilter(keyword);
+        if (normalizedKeyword == null) {
+            return getAllSuppliers();
+        }
+        return supplierRepository.searchSuppliers(normalizedKeyword).stream()
+                .map(supplierMapper::toResponse)
+                .toList();
+    }
+
+    public List<SupplierResponseDTO> searchSuppliers(
+            String keyword, String name, String city, String country, Integer page, Integer size) {
+        Pageable pageable = buildPageable(page, size);
+        String normalizedName = firstNonNull(normalizeFilter(name), normalizeFilter(keyword));
+        String normalizedCity = normalizeFilter(city);
+        String normalizedCountry = normalizeFilter(country);
+
+        return supplierRepository.searchSuppliers(normalizedName, normalizedCity, normalizedCountry, pageable)
+                .getContent()
                 .stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+                .map(supplierMapper::toResponse)
+                .toList();
     }
 
     public List<SupplierResponseDTO> getTopRatedSuppliers(Double minRating) {
-        log.info("Fetching top-rated suppliers with minimum rating: {}", minRating);
-        return supplierRepository.findTopRatedSuppliers(minRating)
-                .stream()
-                .map(this::mapToDTO)
-                .collect(Collectors.toList());
+        double normalizedMinRating = minRating == null ? 4.0 : minRating;
+        if (normalizedMinRating < 0.0 || normalizedMinRating > 5.0) {
+            throw new InvalidSupplierDataException("Minimum rating must be between 0 and 5");
+        }
+        return supplierRepository.findTopRatedSuppliers(normalizedMinRating).stream()
+                .map(supplierMapper::toResponse)
+                .toList();
     }
 
     @Transactional
     public SupplierResponseDTO updateSupplier(Long id, SupplierRequestDTO dto) {
-        log.info("Updating supplier with ID: {}", id);
+        Supplier supplier = getSupplier(id);
+        SupplierRequestDTO normalizedRequest = normalizeRequest(dto);
+        validationService.validateForUpdate(supplier, normalizedRequest);
 
-        Supplier supplier = supplierRepository.findById(id)
-                .orElseThrow(() -> new SupplierNotFoundException
-                		("Supplier not found with ID: " + id));
-
-        // Check email uniqueness if changed
-        if (!supplier.getEmail().equals(dto.getEmail()) && supplierRepository.existsByEmail(dto.getEmail())) {
-            throw new DuplicateTaxIdException
-            ("Supplier with email " + dto.getEmail() + " already exists");
-        }
-
-        // Check taxId uniqueness if changed
-        if (dto.getTaxId() != null && 
-            !dto.getTaxId().equals(supplier.getTaxId()) && 
-            supplierRepository.existsByTaxId(dto.getTaxId())) {
-            throw new DuplicateTaxIdException
-            ("Supplier with Tax ID " + dto.getTaxId() + " already exists");
-        }
-
-        updateEntityFromDTO(supplier, dto);
-        Supplier updatedSupplier = supplierRepository.save(supplier);
-
-        log.info("Supplier updated successfully with ID: {}", id);
-        return mapToDTO(updatedSupplier);
+        applyMutableFields(supplier, normalizedRequest, true);
+        Supplier updatedSupplier = saveSupplier(supplier);
+        log.info("Updated supplier {}", updatedSupplier.getSupplierId());
+        return supplierMapper.toResponse(updatedSupplier);
     }
 
     @Transactional
     public void updateRating(Long id, Double newRating) {
-        log.info("Updating rating for supplier ID: {} to {}", id, newRating);
+        validationService.validateRating(newRating);
 
-        Supplier supplier = supplierRepository.findById(id)
-                .orElseThrow(() -> new SupplierNotFoundException
-                		("Supplier not found with ID: " + id));
+        Supplier supplier = getSupplier(id);
+        double currentRating = supplier.getRating() == null ? 0.0 : supplier.getRating();
+        int ratingCount = supplier.getRatingCount() == null ? 0 : supplier.getRatingCount();
+        double averageRating = ((currentRating * ratingCount) + newRating) / (ratingCount + 1);
 
-        // Calculate average rating based on total orders
-        if (supplier.getTotalOrders() == 0) {
-            supplier.setRating(newRating);
-        } else {
-            double currentTotal = supplier.getRating() * supplier.getTotalOrders();
-            double newTotal = currentTotal + newRating;
-            supplier.setRating(newTotal / (supplier.getTotalOrders() + 1));
-        }
+        supplier.setRating(averageRating);
+        supplier.setRatingCount(ratingCount + 1);
+        saveSupplier(supplier);
 
-        supplier.setTotalOrders(supplier.getTotalOrders() + 1);
-        supplierRepository.save(supplier);
-
-        log.info("Supplier rating updated. New average: {}", supplier.getRating());
+        log.info("Updated rating for supplier {}. New average={}, ratingCount={}",
+                supplier.getSupplierId(), supplier.getRating(), supplier.getRatingCount());
     }
 
     @Transactional
     public void deactivateSupplier(Long id) {
-        log.info("Deactivating supplier with ID: {}", id);
-
-        Supplier supplier = supplierRepository.findById(id)
-                .orElseThrow(() -> new SupplierNotFoundException
-                		("Supplier not found with ID: " + id));
+        Supplier supplier = getSupplier(id);
+        if (Boolean.FALSE.equals(supplier.getIsActive())) {
+            log.info("Supplier {} is already inactive", id);
+            return;
+        }
 
         supplier.setIsActive(false);
-        supplierRepository.save(supplier);
-
-        log.info("Supplier deactivated successfully with ID: {}", id);
+        saveSupplier(supplier);
+        log.info("Deactivated supplier {}", id);
     }
 
     @Transactional
     public void deleteSupplier(Long id) {
-        log.info("Deleting supplier with ID: {}", id);
-
-        if (!supplierRepository.existsById(id)) {
-            throw new SupplierNotFoundException
-            ("Supplier not found with ID: " + id);
-        }
-
-        supplierRepository.deleteById(id);
-        log.info("Supplier deleted successfully with ID: {}", id);
+        deactivateSupplier(id);
     }
 
-    // Helper methods
-    private Supplier mapToEntity(SupplierRequestDTO dto) {
-        return Supplier.builder()
-                .name(dto.getName())
-                .contactPerson(dto.getContactPerson())
-                .email(dto.getEmail())
-                .phone(dto.getPhone())
-                .address(dto.getAddress())
-                .city(dto.getCity())
-                .country(dto.getCountry())
-                .taxId(dto.getTaxId())
-                .paymentTerms(dto.getPaymentTerms())
-                .leadTimeDays(dto.getLeadTimeDays())
-                .isActive(true)
-                .rating(0.0)
-                .totalOrders(0)
-                .build();
+    private Supplier getSupplier(Long id) {
+        return supplierRepository.findById(id)
+                .orElseThrow(() -> new SupplierNotFoundException("Supplier not found with ID: " + id));
     }
 
-    private void updateEntityFromDTO(Supplier supplier, SupplierRequestDTO dto) {
+    private SupplierRequestDTO normalizeRequest(SupplierRequestDTO dto) {
+        SupplierRequestDTO normalized = new SupplierRequestDTO();
+        normalized.setName(trimToNull(dto.getName()));
+        normalized.setContactPerson(trimToNull(dto.getContactPerson()));
+        normalized.setEmail(lowercase(trimToNull(dto.getEmail())));
+        normalized.setPhone(trimToNull(dto.getPhone()));
+        normalized.setAddress(trimToNull(dto.getAddress()));
+        normalized.setCity(trimToNull(dto.getCity()));
+        normalized.setCountry(trimToNull(dto.getCountry()));
+        normalized.setTaxId(trimToNull(dto.getTaxId()));
+        normalized.setPaymentTerms(trimToNull(dto.getPaymentTerms()));
+        normalized.setLeadTimeDays(dto.getLeadTimeDays());
+        return normalized;
+    }
+
+    private void applyMutableFields(Supplier supplier, SupplierRequestDTO dto, boolean keepImmutableTaxId) {
         supplier.setName(dto.getName());
         supplier.setContactPerson(dto.getContactPerson());
         supplier.setEmail(dto.getEmail());
@@ -203,29 +186,49 @@ public class SupplierService {
         supplier.setAddress(dto.getAddress());
         supplier.setCity(dto.getCity());
         supplier.setCountry(dto.getCountry());
-        supplier.setTaxId(dto.getTaxId());
+        if (!keepImmutableTaxId || supplier.getTaxId() == null) {
+            supplier.setTaxId(dto.getTaxId());
+        }
         supplier.setPaymentTerms(dto.getPaymentTerms());
         supplier.setLeadTimeDays(dto.getLeadTimeDays());
     }
 
-    private SupplierResponseDTO mapToDTO(Supplier supplier) {
-        return SupplierResponseDTO.builder()
-                .supplierId(supplier.getSupplierId())
-                .name(supplier.getName())
-                .contactPerson(supplier.getContactPerson())
-                .email(supplier.getEmail())
-                .phone(supplier.getPhone())
-                .address(supplier.getAddress())
-                .city(supplier.getCity())
-                .country(supplier.getCountry())
-                .taxId(supplier.getTaxId())
-                .paymentTerms(supplier.getPaymentTerms())
-                .leadTimeDays(supplier.getLeadTimeDays())
-                .rating(supplier.getRating())
-                .totalOrders(supplier.getTotalOrders())
-                .isActive(supplier.getIsActive())
-                .createdAt(supplier.getCreatedAt())
-                .updatedAt(supplier.getUpdatedAt())
-                .build();
+    private Supplier saveSupplier(Supplier supplier) {
+        try {
+            return supplierRepository.save(supplier);
+        } catch (DataIntegrityViolationException ex) {
+            throw new InvalidSupplierDataException("Supplier data violates a persistence constraint");
+        }
+    }
+
+    private Pageable buildPageable(Integer page, Integer size) {
+        int resolvedPage = page == null || page < 0 ? DEFAULT_PAGE : page;
+        int requestedSize = size == null || size < 1 ? DEFAULT_SIZE : size;
+        int resolvedSize = Math.min(requestedSize, MAX_PAGE_SIZE);
+        return PageRequest.of(resolvedPage, resolvedSize, Sort.by(Sort.Direction.ASC, "name"));
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String lowercase(String value) {
+        return value == null ? null : value.toLowerCase();
+    }
+
+    private String normalizeFilter(String value) {
+        return trimToNull(value);
+    }
+
+    private String firstNonNull(String first, String second) {
+        return first != null ? first : second;
+    }
+
+    private Double defaultRating(SupplierRequestDTO dto) {
+        return 0.0;
     }
 }

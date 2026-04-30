@@ -32,12 +32,13 @@ public class SupplierRequestDTO {
     @Size(max = 50, message = "Tax ID must be less than 50 characters")
     private String taxId;
 
+    @NotBlank(message = "Payment terms are required")
     @Pattern(regexp = "^(NET-15|NET-30|NET-45|NET-60|NET-90|IMMEDIATE|COD)$", 
              message = "Payment terms must be NET-15, NET-30, NET-45, NET-60, NET-90, IMMEDIATE, or COD")
     private String paymentTerms;
 
     @NotNull(message = "Lead time is required")
-    @Min(value = 1, message = "Lead time must be at least 1 day")
+    @Min(value = 0, message = "Lead time cannot be negative")
     @Max(value = 365, message = "Lead time cannot exceed 365 days")
     private Integer leadTimeDays;
 }

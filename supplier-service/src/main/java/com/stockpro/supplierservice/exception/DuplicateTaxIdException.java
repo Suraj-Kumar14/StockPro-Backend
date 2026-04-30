@@ -1,6 +1,7 @@
 package com.stockpro.supplierservice.exception;
 
-public class DuplicateTaxIdException extends RuntimeException {
+@Deprecated
+public class DuplicateTaxIdException extends DuplicateSupplierException {
     public DuplicateTaxIdException(String message) {
         super(message);
     }

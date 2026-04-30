@@ -2,6 +2,7 @@ package com.stockpro.supplierservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -35,9 +36,9 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
     }
 
-    @ExceptionHandler(DuplicateTaxIdException.class)
-    public ResponseEntity<ErrorResponse> handleDuplicateTaxIdException(
-            DuplicateTaxIdException ex,
+    @ExceptionHandler({DuplicateTaxIdException.class, DuplicateSupplierException.class})
+    public ResponseEntity<ErrorResponse> handleDuplicateSupplierException(
+            RuntimeException ex,
             HttpServletRequest request) {
         
         log.error("Duplicate Tax ID/Email: {}", ex.getMessage());
@@ -51,6 +52,24 @@ public class GlobalExceptionHandler {
         );
         
         return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler({InvalidSupplierDataException.class, InactiveSupplierException.class, IllegalArgumentException.class})
+    public ResponseEntity<ErrorResponse> handleSupplierBusinessException(
+            RuntimeException ex,
+            HttpServletRequest request) {
+
+        log.error("Supplier business validation error: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                "Bad Request",
+                ex.getMessage(),
+                request.getRequestURI()
+        );
+
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -67,6 +86,24 @@ public class GlobalExceptionHandler {
         });
         
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLockingException(
+            OptimisticLockingFailureException ex,
+            HttpServletRequest request) {
+
+        log.error("Concurrent supplier update conflict: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.CONFLICT.value(),
+                "Conflict",
+                "The supplier was modified by another transaction. Please retry.",
+                request.getRequestURI()
+        );
+
+        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(Exception.class)
