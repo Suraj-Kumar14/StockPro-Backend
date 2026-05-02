@@ -3,6 +3,7 @@ package com.stockpro.warehouseservice.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
@@ -109,6 +110,18 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConflict(
+            DataIntegrityViolationException ex, HttpServletRequest request) {
+        log.error("DataIntegrityViolationException: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.CONFLICT.value(), "Conflict",
+                        "Duplicate resource or conflicting data",
+                        request.getRequestURI()),
+                HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleOptimisticLockConflict(
             ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
@@ -116,7 +129,7 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
                         HttpStatus.CONFLICT.value(), "Conflict",
-                        "Concurrent stock update detected. Please retry the request.",
+                        "Stock was updated by another transaction. Please retry.",
                         request.getRequestURI()),
                 HttpStatus.CONFLICT);
     }

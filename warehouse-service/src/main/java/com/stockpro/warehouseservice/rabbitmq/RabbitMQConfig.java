@@ -2,60 +2,69 @@ package com.stockpro.warehouseservice.rabbitmq;
 
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class RabbitMQConfig {
 
-    public static final String LOW_STOCK_QUEUE      = "low-stock-queue";
-    public static final String OVERSTOCK_QUEUE      = "overstock-queue";
-    public static final String GOODS_RECEIVED_QUEUE = "goods-received-queue";
-
-    public static final String STOCKPRO_EXCHANGE = "stockpro.exchange";
-
-    public static final String LOW_STOCK_ROUTING_KEY      = "stock.low";
-    public static final String OVERSTOCK_ROUTING_KEY      = "stock.over";
-    public static final String GOODS_RECEIVED_ROUTING_KEY = "stock.goods-received";
+    public static final String STOCKPRO_EXCHANGE = "stockpro.warehouse.exchange";
+    public static final String LOW_STOCK_ROUTING_KEY = "stock.low";
+    public static final String OVERSTOCK_ROUTING_KEY = "stock.overstock";
+    public static final String GOODS_RECEIVED_ROUTING_KEY = "stock.received";
 
     @Bean
-    public Queue lowStockQueue() {
-        return new Queue(LOW_STOCK_QUEUE, true);
+    public Queue lowStockQueue(
+            @Value("${stockpro.rabbitmq.warehouse.low-stock.queue:stockpro.warehouse.low-stock.queue}") String queueName) {
+        return QueueBuilder.durable(queueName).build();
     }
 
     @Bean
-    public Queue overstockQueue() {
-        return new Queue(OVERSTOCK_QUEUE, true);
+    public Queue overstockQueue(
+            @Value("${stockpro.rabbitmq.warehouse.overstock.queue:stockpro.warehouse.overstock.queue}") String queueName) {
+        return QueueBuilder.durable(queueName).build();
     }
 
     @Bean
-    public Queue goodsReceivedQueue() {
-        return new Queue(GOODS_RECEIVED_QUEUE, true);
+    public Queue goodsReceivedQueue(
+            @Value("${stockpro.rabbitmq.warehouse.stock-received.queue:stockpro.warehouse.stock-received.queue}") String queueName) {
+        return QueueBuilder.durable(queueName).build();
     }
 
     @Bean
-    public TopicExchange stockproExchange() {
-        return new TopicExchange(STOCKPRO_EXCHANGE, true, false);
+    public TopicExchange stockproExchange(@Value("${stockpro.rabbitmq.warehouse.exchange}") String exchangeName) {
+        return new TopicExchange(exchangeName, true, false);
     }
 
     @Bean
-    public Binding lowStockBinding(Queue lowStockQueue, TopicExchange stockproExchange) {
-        return BindingBuilder.bind(lowStockQueue).to(stockproExchange).with(LOW_STOCK_ROUTING_KEY);
+    public Binding lowStockBinding(
+            Queue lowStockQueue,
+            TopicExchange stockproExchange,
+            @Value("${stockpro.rabbitmq.warehouse.routing.stock-low}") String routingKey) {
+        return BindingBuilder.bind(lowStockQueue).to(stockproExchange).with(routingKey);
     }
 
     @Bean
-    public Binding overstockBinding(Queue overstockQueue, TopicExchange stockproExchange) {
-        return BindingBuilder.bind(overstockQueue).to(stockproExchange).with(OVERSTOCK_ROUTING_KEY);
+    public Binding overstockBinding(
+            Queue overstockQueue,
+            TopicExchange stockproExchange,
+            @Value("${stockpro.rabbitmq.warehouse.routing.stock-overstock}") String routingKey) {
+        return BindingBuilder.bind(overstockQueue).to(stockproExchange).with(routingKey);
     }
 
     @Bean
-    public Binding goodsReceivedBinding(Queue goodsReceivedQueue, TopicExchange stockproExchange) {
-        return BindingBuilder.bind(goodsReceivedQueue).to(stockproExchange).with(GOODS_RECEIVED_ROUTING_KEY);
+    public Binding goodsReceivedBinding(
+            Queue goodsReceivedQueue,
+            TopicExchange stockproExchange,
+            @Value("${stockpro.rabbitmq.warehouse.routing.stock-received}") String routingKey) {
+        return BindingBuilder.bind(goodsReceivedQueue).to(stockproExchange).with(routingKey);
     }
 
     @Bean

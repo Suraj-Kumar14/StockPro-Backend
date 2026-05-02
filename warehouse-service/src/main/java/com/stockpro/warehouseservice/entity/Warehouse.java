@@ -19,8 +19,11 @@ public class Warehouse {
 	@Version
 	private Long version;
 
-	@Column(nullable = false, unique = true, length = 100)
+	@Column(nullable = false, length = 100)
 	private String name;
+
+	@Column(nullable = false, unique = true, length = 50)
+	private String code;
 
 	@Column(nullable = false, length = 200)
 	private String location;
@@ -48,14 +51,32 @@ public class Warehouse {
 	@Column(updatable = false)
 	private LocalDateTime createdAt;
 
+	private LocalDateTime updatedAt;
+
+	private Long createdBy;
+
+	private Long updatedBy;
+
 	@PrePersist
 	protected void onCreate() {
 		createdAt = LocalDateTime.now();
+		updatedAt = createdAt;
 		if (isActive == null) {
 			isActive = true;
 		}
 		if (usedCapacity == null) {
 			usedCapacity = 0;
+		}
+	}
+
+	@PreUpdate
+	protected void onUpdate() {
+		updatedAt = LocalDateTime.now();
+		if (usedCapacity == null) {
+			usedCapacity = 0;
+		}
+		if (isActive == null) {
+			isActive = true;
 		}
 	}
 }

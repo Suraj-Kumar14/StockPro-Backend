@@ -3,6 +3,7 @@ package com.stockpro.warehouseservice.rabbitmq;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -13,6 +14,18 @@ public class StockEventPublisher {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    @Value("${stockpro.rabbitmq.warehouse.exchange}")
+    private String exchange;
+
+    @Value("${stockpro.rabbitmq.warehouse.routing.stock-low}")
+    private String lowStockRoutingKey;
+
+    @Value("${stockpro.rabbitmq.warehouse.routing.stock-overstock}")
+    private String overstockRoutingKey;
+
+    @Value("${stockpro.rabbitmq.warehouse.routing.stock-received}")
+    private String goodsReceivedRoutingKey;
 
     // Called when stock drops below reorder level
     public void publishLowStockEvent(Long productId, Long warehouseId,
@@ -25,8 +38,8 @@ public class StockEventPublisher {
                 "eventType",    "LOW_STOCK"
         );
         rabbitTemplate.convertAndSend(
-                RabbitMQConfig.STOCKPRO_EXCHANGE,
-                RabbitMQConfig.LOW_STOCK_ROUTING_KEY,
+                exchange,
+                lowStockRoutingKey,
                 event
         );
         log.info("Published LOW_STOCK event for product {} in warehouse {}",
@@ -44,8 +57,8 @@ public class StockEventPublisher {
                 "eventType",   "OVERSTOCK"
         );
         rabbitTemplate.convertAndSend(
-                RabbitMQConfig.STOCKPRO_EXCHANGE,
-                RabbitMQConfig.OVERSTOCK_ROUTING_KEY,
+                exchange,
+                overstockRoutingKey,
                 event
         );
         log.info("Published OVERSTOCK event for product {} in warehouse {}",
@@ -63,8 +76,8 @@ public class StockEventPublisher {
                 "eventType",   "GOODS_RECEIVED"
         );
         rabbitTemplate.convertAndSend(
-                RabbitMQConfig.STOCKPRO_EXCHANGE,
-                RabbitMQConfig.GOODS_RECEIVED_ROUTING_KEY,
+                exchange,
+                goodsReceivedRoutingKey,
                 event
         );
         log.info("Published GOODS_RECEIVED event for product {} in warehouse {}",

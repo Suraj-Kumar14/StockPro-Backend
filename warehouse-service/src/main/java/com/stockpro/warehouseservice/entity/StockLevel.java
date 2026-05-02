@@ -38,7 +38,6 @@ public class StockLevel {
 
 	private Integer maxStockLevel;
 
-	// bin/aisle reference
 	@Column(length = 50)
 	private String binLocation;
 
@@ -59,5 +58,14 @@ public class StockLevel {
 
 	private int defaultIfNull(Integer value) {
 		return value == null ? 0 : value;
+	}
+
+	@Transient
+	public String getLocationCode() {
+		return binLocation;
+	}
+
+	public void setLocationCode(String locationCode) {
+		this.binLocation = locationCode;
 	}
 }
