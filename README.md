@@ -117,6 +117,23 @@ There are a few current alignment points in the codebase that should be kept in 
 3. `product-service` low-stock logic expects a warehouse endpoint for live quantities, but `warehouse-service` is not part of this repository yet.
 4. `auth-service` includes Spring Boot Admin client support, but the other services are not fully aligned yet for uniform admin monitoring.
 
+## RabbitMQ Exchange Standard
+
+All StockPro service event exchanges use `TopicExchange`.
+
+Standard exchange names:
+
+- `stockpro.product.exchange`
+- `stockpro.warehouse.exchange`
+- `stockpro.purchase.exchange`
+- `stockpro.supplier.exchange`
+- `stockpro.movement.exchange`
+- `stockpro.alert.exchange`
+- `stockpro.payment.exchange`
+- `stockpro.report.exchange`
+
+If RabbitMQ throws `PRECONDITION_FAILED` with an inequivalent exchange `type`, delete the old conflicting exchange and queue objects from your local RabbitMQ instance before restarting the services. RabbitMQ does not allow an existing exchange to change from `direct` to `topic` in place.
+
 If you want fully working end-to-end frontend integration through the gateway, align the gateway product route and target port with the current `product-service`.
 
 ## Service Docs
