@@ -1,18 +1,29 @@
 package com.stockpro.product_service.entity;
 
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Builder.Default;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "products", indexes = {
         @Index(name = "idx_product_sku", columnList = "sku", unique = true),
         @Index(name = "idx_product_barcode", columnList = "barcode", unique = true),
+        @Index(name = "idx_product_name", columnList = "name"),
         @Index(name = "idx_product_category", columnList = "category"),
         @Index(name = "idx_product_brand", columnList = "brand"),
         @Index(name = "idx_product_active", columnList = "is_active")
@@ -27,10 +38,7 @@ public class Product {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long productId;
 
-    @Version
-    private Long version;
-
-    @Column(unique = true, nullable = false, length = 50, updatable = false)
+    @Column(nullable = false, unique = true, length = 50, updatable = false)
     private String sku;
 
     @Column(nullable = false, length = 200)
@@ -46,22 +54,22 @@ public class Product {
     private String brand;
 
     @Column(nullable = false, length = 50)
-    private String unitOfMeasure; // kg, litre, piece, box, etc.
+    private String unitOfMeasure;
 
-    @Column(nullable = false, precision = 10, scale = 2)
+    @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal costPrice;
 
-    @Column(nullable = false, precision = 10, scale = 2)
+    @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal sellingPrice;
 
     @Column(nullable = false)
-    private Integer reorderLevel; // Min quantity before alert
+    private Integer reorderLevel;
 
     @Column(nullable = false)
-    private Integer maxStockLevel; // Max quantity threshold
+    private Integer maxStockLevel;
 
     @Column(nullable = false)
-    private Integer leadTimeDays; // Days from order to delivery
+    private Integer leadTimeDays;
 
     @Column(length = 500)
     private String imageUrl;
@@ -69,19 +77,32 @@ public class Product {
     @Column(unique = true, length = 100)
     private String barcode;
 
-    @Column(nullable = false)
+    @Column(name = "is_active", nullable = false)
+    @Default
     private Boolean isActive = true;
 
-    @Column(updatable = false)
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column
+    @Column(nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(updatable = false)
+    private Long createdBy;
+
+    private Long updatedBy;
+
+    @Version
+    private Long version;
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+        createdAt = now;
+        updatedAt = now;
+        if (isActive == null) {
+            isActive = true;
+        }
     }
 
     @PreUpdate

@@ -1,14 +1,15 @@
 package com.stockpro.product_service.service;
 
-import com.stockpro.product_service.dto.ProductResponseDTO;
-import com.stockpro.product_service.entity.Product;
 import org.springframework.stereotype.Component;
+
+import com.stockpro.product_service.dto.response.ProductResponse;
+import com.stockpro.product_service.entity.Product;
 
 @Component
 public class ProductMapper {
 
-    public ProductResponseDTO toResponse(Product product) {
-        return ProductResponseDTO.builder()
+    public ProductResponse toResponse(Product product) {
+        return ProductResponse.builder()
                 .productId(product.getProductId())
                 .sku(product.getSku())
                 .name(product.getName())

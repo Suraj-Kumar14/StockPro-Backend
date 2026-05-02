@@ -1,69 +1,71 @@
 package com.stockpro.product_service.repository;
 
-import com.stockpro.product_service.entity.Product;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
-
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+import com.stockpro.product_service.entity.Product;
+
 @Repository
-public interface ProductRepository extends JpaRepository<Product, Long> {
+public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
+
+    Optional<Product> findByProductId(Long productId);
 
     Optional<Product> findBySkuIgnoreCase(String sku);
 
     Optional<Product> findByBarcode(String barcode);
 
-    List<Product> findByCategoryIgnoreCaseOrderByNameAsc(String category);
-
-    List<Product> findByBrandIgnoreCaseOrderByNameAsc(String brand);
-
-    List<Product> findByIsActive(Boolean isActive);
-
-    Page<Product> findByIsActiveTrue(Pageable pageable);
-
     boolean existsBySkuIgnoreCase(String sku);
+
+    boolean existsBySkuIgnoreCaseAndProductIdNot(String sku, Long productId);
 
     boolean existsByBarcode(String barcode);
 
     boolean existsByBarcodeAndProductIdNot(String barcode, Long productId);
 
-    Long countByCategory(String category);
+    Page<Product> findByIsActive(Boolean isActive, Pageable pageable);
+
+    List<Product> findByCategoryIgnoreCaseOrderByNameAsc(String category);
+
+    List<Product> findByBrandIgnoreCaseOrderByNameAsc(String brand);
+
+    List<Product> findByIsActiveTrueOrderByNameAsc();
+
+    long countByIsActive(Boolean isActive);
 
     @Query("""
-            SELECT p
-            FROM Product p
-            WHERE LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
-            ORDER BY p.name ASC
+            select count(distinct p.category)
+            from Product p
+            where p.category is not null and trim(p.category) <> ''
             """)
-    Page<Product> searchByName(@Param("keyword") String keyword, Pageable pageable);
+    long countDistinctCategories();
 
     @Query("""
-            SELECT p
-            FROM Product p
-            WHERE (:name IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT(:name, '%')))
-              AND (:category IS NULL OR LOWER(p.category) = LOWER(:category))
-              AND (:brand IS NULL OR LOWER(p.brand) = LOWER(:brand))
-            ORDER BY p.name ASC
+            select count(distinct lower(p.brand))
+            from Product p
+            where p.brand is not null and trim(p.brand) <> ''
             """)
-    Page<Product> searchByFilters(
-            @Param("name") String name,
-            @Param("category") String category,
-            @Param("brand") String brand,
-            Pageable pageable);
+    long countDistinctBrands();
 
     @Query("""
-            SELECT p
-            FROM Product p
-            WHERE LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
-               OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%'))
-               OR LOWER(p.category) LIKE LOWER(CONCAT('%', :keyword, '%'))
-               OR LOWER(COALESCE(p.brand, '')) LIKE LOWER(CONCAT('%', :keyword, '%'))
-            ORDER BY p.name ASC
+            select distinct p.category
+            from Product p
+            where p.category is not null and trim(p.category) <> ''
+            order by p.category asc
             """)
-    Page<Product> searchProducts(@Param("keyword") String keyword, Pageable pageable);
+    List<String> findDistinctCategories();
+
+    @Query("""
+            select distinct p.brand
+            from Product p
+            where p.brand is not null and trim(p.brand) <> ''
+            order by p.brand asc
+            """)
+    List<String> findDistinctBrands();
 }

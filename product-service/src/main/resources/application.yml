@@ -6,9 +6,9 @@ spring:
     name: PRODUCT-SERVICE
 
   datasource:
-    url: jdbc:mysql://localhost:3306/product_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
-    username: root
-    password: Suraj@123
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/product_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:Suraj@123}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -18,6 +18,12 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
 eureka:
   client:
@@ -46,7 +52,34 @@ springdoc:
     display-request-duration: true
 
 warehouse-service:
-  base-url: ${WAREHOUSE_SERVICE_BASE_URL:http://localhost:8084/stock}
+  base-url: ${WAREHOUSE_SERVICE_BASE_URL:http://localhost:8080/stock}
 
 purchase-service:
-  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8085}
+  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8080/purchase-orders}
+
+auth-service:
+  base-url: ${AUTH_SERVICE_BASE_URL:http://localhost:8080/auth}
+
+jwt:
+  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
+
+stockpro:
+  rabbitmq:
+    product:
+      exchange: ${PRODUCT_RABBITMQ_EXCHANGE:stockpro.product.exchange}
+      routing:
+        created: ${PRODUCT_RABBITMQ_ROUTING_CREATED:product.created}
+        updated: ${PRODUCT_RABBITMQ_ROUTING_UPDATED:product.updated}
+        activated: ${PRODUCT_RABBITMQ_ROUTING_ACTIVATED:product.activated}
+        deactivated: ${PRODUCT_RABBITMQ_ROUTING_DEACTIVATED:product.deactivated}
+        reorderChanged: ${PRODUCT_RABBITMQ_ROUTING_REORDER_CHANGED:product.reorder-config.changed}
+        deleted: ${PRODUCT_RABBITMQ_ROUTING_DELETED:product.deleted}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  health:
+    redis:
+      enabled: false

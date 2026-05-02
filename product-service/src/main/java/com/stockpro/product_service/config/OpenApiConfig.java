@@ -1,14 +1,15 @@
 package com.stockpro.product_service.config;
 
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
-import io.swagger.v3.oas.models.Components;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class OpenApiConfig {
@@ -19,8 +20,8 @@ public class OpenApiConfig {
     public OpenAPI openAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("StockPro – Product Service API")
-                        .description("REST API for managing products and their inventory details.")
+                        .title("StockPro Product Service API")
+                        .description("REST API for managing products, product search, barcode lookups, and product summary widgets.")
                         .version("1.0.0")
                         .contact(new Contact()
                                 .name("StockPro Team")
@@ -36,6 +37,6 @@ public class OpenApiConfig {
                                         .type(SecurityScheme.Type.HTTP)
                                         .scheme("bearer")
                                         .bearerFormat("JWT")
-                                        .description("Provide a valid JWT token from the Auth Service (POST /auth/login).")));
+                                        .description("Provide a valid JWT token issued by the auth-service login flow.")));
     }
 }

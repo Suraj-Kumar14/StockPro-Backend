@@ -2,12 +2,14 @@ package com.stockpro.product_service.controller;
 
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -16,127 +18,176 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.stockpro.product_service.dto.ProductRequestDTO;
-import com.stockpro.product_service.dto.ProductResponseDTO;
+import com.stockpro.product_service.dto.request.CreateProductRequest;
+import com.stockpro.product_service.dto.request.UpdateProductRequest;
+import com.stockpro.product_service.dto.response.ProductResponse;
+import com.stockpro.product_service.dto.response.ProductSummaryResponse;
+import com.stockpro.product_service.service.CurrentUserContext;
 import com.stockpro.product_service.service.ProductService;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/products")
-@Slf4j
+@RequestMapping("/api/v1/products")
 @Validated
-@Tag(name = "Product Management", description = "APIs for managing products")
+@RequiredArgsConstructor
+@Tag(name = "Products", description = "Product management APIs for the StockPro inventory catalog")
+@SecurityRequirement(name = "bearerAuth")
 public class ProductController {
 
-    @Autowired
-    private ProductService productService;
+    private static final String AUTHENTICATED_ROLES = "hasAnyRole('ADMIN','MANAGER','OFFICER','STAFF')";
+    private static final String MANAGE_ROLES = "hasAnyRole('ADMIN','MANAGER')";
+
+    private final ProductService productService;
+    private final CurrentUserContext currentUserContext;
 
     @PostMapping
-    @Operation(summary = "Create new product")
-    public ResponseEntity<ProductResponseDTO> createProduct(@Valid @RequestBody ProductRequestDTO dto) {
-        log.info("Received request to create product");
-        ProductResponseDTO response = productService.createProduct(dto);
-        return new ResponseEntity<>(response, HttpStatus.CREATED);
-    }
-
-    @GetMapping("/{id}")
-    @Operation(summary = "Get product by ID")
-    public ResponseEntity<ProductResponseDTO> getProductById(@PathVariable Long id) {
-        log.info("Received request to get product with ID: {}", id);
-        ProductResponseDTO response = productService.getProductById(id);
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/sku/{sku}")
-    @Operation(summary = "Get product by SKU")
-    public ResponseEntity<ProductResponseDTO> getProductBySku(@PathVariable String sku) {
-        log.info("Received request to get product with SKU: {}", sku);
-        ProductResponseDTO response = productService.getProductBySku(sku);
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/barcode/{barcode}")
-    @Operation(summary = "Get product by barcode")
-    public ResponseEntity<ProductResponseDTO> getProductByBarcode(@PathVariable String barcode) {
-        log.info("Received request to get product with barcode: {}", barcode);
-        ProductResponseDTO response = productService.getProductByBarcode(barcode);
-        return ResponseEntity.ok(response);
+    @PreAuthorize(MANAGE_ROLES)
+    @Operation(summary = "Create product", description = "Allowed roles: ADMIN, MANAGER")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Product created",
+                    content = @Content(schema = @Schema(implementation = ProductResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Validation failed", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Forbidden", content = @Content),
+            @ApiResponse(responseCode = "409", description = "Duplicate SKU or barcode", content = @Content)
+    })
+    public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody CreateProductRequest request) {
+        Long actorId = currentUserContext.getActorId();
+        ProductResponse response = productService.createProduct(request, actorId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping
-    @Operation(summary = "Get all products")
-    public ResponseEntity<List<ProductResponseDTO>> getAllProducts() {
-        log.info("Received request to get all products");
-        List<ProductResponseDTO> response = productService.getAllProducts();
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/active")
-    @Operation(summary = "Get all active products")
-    public ResponseEntity<List<ProductResponseDTO>> getActiveProducts() {
-        log.info("Received request to get active products");
-        List<ProductResponseDTO> response = productService.getActiveProducts();
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/category/{category}")
-    @Operation(summary = "Get products by category")
-    public ResponseEntity<List<ProductResponseDTO>> getProductsByCategory(@PathVariable String category) {
-        log.info("Received request to get products by category: {}", category);
-        List<ProductResponseDTO> response = productService.getProductsByCategory(category);
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/brand/{brand}")
-    @Operation(summary = "Get products by brand")
-    public ResponseEntity<List<ProductResponseDTO>> getProductsByBrand(@PathVariable String brand) {
-        log.info("Received request to get products by brand: {}", brand);
-        List<ProductResponseDTO> response = productService.getProductsByBrand(brand);
-        return ResponseEntity.ok(response);
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Get paginated products", description = "Allowed roles: ADMIN, MANAGER, OFFICER, STAFF")
+    public ResponseEntity<Page<ProductResponse>> getProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "name") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir) {
+        return ResponseEntity.ok(productService.getAllProducts(page, size, sortBy, sortDir));
     }
 
     @GetMapping("/search")
-    @Operation(summary = "Search products")
-    public ResponseEntity<List<ProductResponseDTO>> searchProducts(
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Search products", description = "Search by keyword, category, brand, and active status")
+    public ResponseEntity<Page<ProductResponse>> searchProducts(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String name,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String brand,
+            @RequestParam(required = false) Boolean isActive,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
-        log.info("Received request to search products with keyword: {}", keyword);
-        List<ProductResponseDTO> response = productService.searchProducts(
-                keyword, name, category, brand, page, size);
-        return ResponseEntity.ok(response);
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "name") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir) {
+        return ResponseEntity.ok(productService.searchProducts(
+                keyword, category, brand, isActive, page, size, sortBy, sortDir));
     }
 
-    @PutMapping("/{id}")
-    @Operation(summary = "Update product")
-    public ResponseEntity<ProductResponseDTO> updateProduct(
-            @PathVariable Long id,
-            @Valid @RequestBody ProductRequestDTO dto) {
-        log.info("Received request to update product with ID: {}", id);
-        ProductResponseDTO response = productService.updateProduct(id, dto);
-        return ResponseEntity.ok(response);
+    @GetMapping("/summary")
+    @PreAuthorize(MANAGE_ROLES)
+    @Operation(summary = "Get product summary", description = "Allowed roles: ADMIN, MANAGER")
+    public ResponseEntity<ProductSummaryResponse> getSummary() {
+        return ResponseEntity.ok(productService.getProductSummary());
     }
 
-    @PutMapping("/{id}/deactivate")
-    @Operation(summary = "Deactivate product")
-    public ResponseEntity<String> deactivateProduct(@PathVariable Long id) {
-        log.info("Received request to deactivate product with ID: {}", id);
-        productService.deactivateProduct(id);
-        return ResponseEntity.ok("Product deactivated successfully");
+    @GetMapping("/categories")
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Get categories", description = "Returns distinct product categories")
+    public ResponseEntity<List<String>> getCategories() {
+        return ResponseEntity.ok(productService.getCategories());
     }
 
-    @DeleteMapping("/{id}")
-    @Operation(summary = "Delete product")
-    public ResponseEntity<String> deleteProduct(@PathVariable Long id) {
-        log.info("Received request to delete product with ID: {}", id);
-        productService.deleteProduct(id);
-        return ResponseEntity.ok("Product deleted successfully");
+    @GetMapping("/brands")
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Get brands", description = "Returns distinct product brands")
+    public ResponseEntity<List<String>> getBrands() {
+        return ResponseEntity.ok(productService.getBrands());
+    }
+
+    @GetMapping("/sku/{sku}")
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Get product by SKU")
+    public ResponseEntity<ProductResponse> getProductBySku(
+            @Parameter(description = "Unique product SKU", required = true)
+            @PathVariable String sku) {
+        return ResponseEntity.ok(productService.getProductBySku(sku));
+    }
+
+    @GetMapping("/barcode/{barcode}")
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Get product by barcode", description = "Barcode lookup endpoint for scanner workflows")
+    public ResponseEntity<ProductResponse> getProductByBarcode(
+            @Parameter(description = "Product barcode", required = true)
+            @PathVariable String barcode) {
+        return ResponseEntity.ok(productService.getProductByBarcode(barcode));
+    }
+
+    @GetMapping("/category/{category}")
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Get products by category")
+    public ResponseEntity<List<ProductResponse>> getProductsByCategory(@PathVariable String category) {
+        return ResponseEntity.ok(productService.getProductsByCategory(category));
+    }
+
+    @GetMapping("/brand/{brand}")
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Get products by brand")
+    public ResponseEntity<List<ProductResponse>> getProductsByBrand(@PathVariable String brand) {
+        return ResponseEntity.ok(productService.getProductsByBrand(brand));
+    }
+
+    @GetMapping("/{productId:\\d+}")
+    @PreAuthorize(AUTHENTICATED_ROLES)
+    @Operation(summary = "Get product by id")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Product found"),
+            @ApiResponse(responseCode = "404", description = "Product not found", content = @Content)
+    })
+    public ResponseEntity<ProductResponse> getProductById(@PathVariable Long productId) {
+        return ResponseEntity.ok(productService.getProductById(productId));
+    }
+
+    @PutMapping("/{productId:\\d+}")
+    @PreAuthorize(MANAGE_ROLES)
+    @Operation(summary = "Update product", description = "Allowed roles: ADMIN, MANAGER")
+    public ResponseEntity<ProductResponse> updateProduct(
+            @PathVariable Long productId,
+            @Valid @RequestBody UpdateProductRequest request) {
+        Long actorId = currentUserContext.getActorId();
+        return ResponseEntity.ok(productService.updateProduct(productId, request, actorId));
+    }
+
+    @PatchMapping("/{productId:\\d+}/deactivate")
+    @PreAuthorize(MANAGE_ROLES)
+    @Operation(summary = "Deactivate product", description = "Soft-deactivates the product")
+    public ResponseEntity<ProductResponse> deactivateProduct(@PathVariable Long productId) {
+        Long actorId = currentUserContext.getActorId();
+        return ResponseEntity.ok(productService.deactivateProduct(productId, actorId));
+    }
+
+    @PatchMapping("/{productId:\\d+}/activate")
+    @PreAuthorize(MANAGE_ROLES)
+    @Operation(summary = "Activate product", description = "Reactivates the product")
+    public ResponseEntity<ProductResponse> activateProduct(@PathVariable Long productId) {
+        Long actorId = currentUserContext.getActorId();
+        return ResponseEntity.ok(productService.activateProduct(productId, actorId));
+    }
+
+    @DeleteMapping("/{productId:\\d+}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Delete product", description = "Hard-deletes only if the product is already inactive and safe to remove")
+    public ResponseEntity<Void> deleteProduct(@PathVariable Long productId) {
+        productService.deleteProduct(productId);
+        return ResponseEntity.noContent().build();
     }
 }
