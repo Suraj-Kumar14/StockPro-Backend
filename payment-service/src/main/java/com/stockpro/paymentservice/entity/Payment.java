@@ -1,9 +1,31 @@
 package com.stockpro.paymentservice.entity;
 
-import jakarta.persistence.*;
-import lombok.*;
+import com.stockpro.paymentservice.enums.PaymentMethod;
+import com.stockpro.paymentservice.enums.PaymentStatus;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "payments")
@@ -17,55 +39,108 @@ public class Payment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long paymentId;
 
-    // Razorpay order ID returned when order is created
-    @Column(unique = true)
-    private String razorpayOrderId;
+    @Column(nullable = false, unique = true, length = 32)
+    private String paymentNumber;
 
-    // Razorpay payment ID after successful payment
-    private String razorpayPaymentId;
-
-    // Razorpay signature for verification
-    private String razorpaySignature;
-
-    // Reference to PO ID from purchase-service
+    @Column(nullable = false)
     private Long purchaseOrderId;
 
-    // User who initiated the payment
-    private Long userId;
+    @Column(length = 50)
+    private String poNumber;
 
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal amount;
+    @Column(nullable = false)
+    private Long supplierId;
 
-    @Column(nullable = false, length = 3)
-    @Builder.Default
-    private String currency = "INR";
+    @Column(length = 255)
+    private String supplierName;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    @Builder.Default
-    private PaymentStatus status = PaymentStatus.CREATED;
+    @Column(nullable = false, length = 30)
+    private PaymentStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private PaymentMethod paymentMethod;
+
+    @Column(nullable = false, precision = 15, scale = 2)
+    private BigDecimal paymentAmount;
+
+    @Column(nullable = false, precision = 15, scale = 2)
+    private BigDecimal poTotalAmount;
+
+    @Column(nullable = false, precision = 15, scale = 2)
+    private BigDecimal previouslyPaidAmount;
+
+    @Column(nullable = false, precision = 15, scale = 2)
+    private BigDecimal remainingAmount;
+
+    @Column(nullable = false, length = 3)
+    private String currency;
+
+    private LocalDate paymentDate;
+
+    @Column(length = 100)
+    private String transactionReference;
+
+    @Column(length = 100)
+    private String bankReference;
+
+    @Column(length = 1000)
+    private String remarks;
 
     @Column(length = 500)
-    private String description;
+    private String rejectionReason;
 
     @Column(length = 500)
-    private String failureReason;
+    private String cancellationReason;
 
-    @Column(updatable = false)
+    @Column(length = 500)
+    private String reversalReason;
+
+    private Long createdBy;
+    private Long submittedBy;
+    private Long approvedBy;
+    private Long rejectedBy;
+    private Long cancelledBy;
+    private Long paidBy;
+    private Long reversedBy;
+
+    private LocalDateTime submittedAt;
+    private LocalDateTime approvedAt;
+    private LocalDateTime rejectedAt;
+    private LocalDateTime cancelledAt;
+    private LocalDateTime paidAt;
+    private LocalDateTime reversedAt;
+
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(nullable = false)
     private LocalDateTime updatedAt;
 
+    @Version
+    private Long version;
+
+    @OneToMany(mappedBy = "payment", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("actionAt ASC")
+    @Builder.Default
+    private List<PaymentHistory> history = new ArrayList<>();
+
     @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
-        if (status == null) status = PaymentStatus.CREATED;
-        if (currency == null) currency = "INR";
+    void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        createdAt = now;
+        updatedAt = now;
+        if (status == null) {
+            status = PaymentStatus.DRAFT;
+        }
+        if (currency == null || currency.isBlank()) {
+            currency = "INR";
+        }
     }
 
     @PreUpdate
-    protected void onUpdate() {
+    void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
 }

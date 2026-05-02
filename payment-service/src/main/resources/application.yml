@@ -1,5 +1,5 @@
 server:
-  port: 8090
+  port: 8089
 
 spring:
   application:
@@ -22,12 +22,11 @@ spring:
   mvc:
     pathmatch:
       use-suffix-pattern: false
-
-# Razorpay credentials
-razorpay:
-  key-id: rzp_test_SiBnzzxQGMrW8N
-  key-secret: 8cMdpkNjQoKmuWM603Io7yaR
-  currency: INR
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
 eureka:
   client:
@@ -54,3 +53,21 @@ springdoc:
     operationsSorter: method
     tagsSorter: alpha
     display-request-duration: true
+
+jwt:
+  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
+
+purchase-service:
+  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8080/api/v1/purchase-orders}
+
+supplier-service:
+  base-url: ${SUPPLIER_SERVICE_BASE_URL:http://localhost:8080/api/v1/suppliers}
+
+stockpro:
+  rabbitmq:
+    payment:
+      exchange: ${PAYMENT_RABBITMQ_EXCHANGE:stockpro.payment.exchange}
+      events-queue: ${PAYMENT_EVENTS_QUEUE:stockpro.payment.events.queue}
+      report-queue: ${PAYMENT_REPORT_QUEUE:stockpro.payment.report.queue}
+      alert-queue: ${PAYMENT_ALERT_QUEUE:stockpro.payment.alert.queue}
+      purchase-queue: ${PAYMENT_PURCHASE_QUEUE:stockpro.payment.purchase.queue}
