@@ -2,7 +2,7 @@ server:
   port: 8080
 
 jwt:
-  secret: my-secret-key-ayush-chouhan-stockpro-secret-key-2024
+  secret: stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c
 
 spring:
   application:
@@ -42,42 +42,105 @@ spring:
         - id: product-service
           uri: lb://PRODUCT-SERVICE
           predicates:
+            - Path=/api/v1/products/**
+
+        - id: product-service-legacy
+          uri: lb://PRODUCT-SERVICE
+          predicates:
             - Path=/products/**
+          filters:
+            - RewritePath=/products(?<segment>/?.*), /api/v1/products${segment}
 
         - id: warehouse-service
           uri: lb://WAREHOUSE-SERVICE
           predicates:
-            - Path=/warehouses/**,/stock/**
+            - Path=/api/v1/warehouses/**,/api/v1/stocks/**
+
+        - id: warehouse-service-legacy-warehouses
+          uri: lb://WAREHOUSE-SERVICE
+          predicates:
+            - Path=/warehouses/**
+          filters:
+            - RewritePath=/warehouses(?<segment>/?.*), /api/v1/warehouses${segment}
+
+        - id: warehouse-service-legacy-stock
+          uri: lb://WAREHOUSE-SERVICE
+          predicates:
+            - Path=/stock/**
+          filters:
+            - RewritePath=/stock(?<segment>/?.*), /api/v1/stocks${segment}
 
         - id: supplier-service
           uri: lb://SUPPLIER-SERVICE
           predicates:
+            - Path=/api/v1/suppliers/**
+
+        - id: supplier-service-legacy
+          uri: lb://SUPPLIER-SERVICE
+          predicates:
             - Path=/suppliers/**
+          filters:
+            - RewritePath=/suppliers(?<segment>/?.*), /api/v1/suppliers${segment}
 
         - id: purchase-service
           uri: lb://PURCHASE-SERVICE
           predicates:
+            - Path=/api/v1/purchase-orders/**
+
+        - id: purchase-service-legacy
+          uri: lb://PURCHASE-SERVICE
+          predicates:
             - Path=/purchase-orders/**
+          filters:
+            - RewritePath=/purchase-orders(?<segment>/?.*), /api/v1/purchase-orders${segment}
 
         - id: movement-service
           uri: lb://MOVEMENT-SERVICE
           predicates:
+            - Path=/api/v1/movements/**
+
+        - id: movement-service-legacy
+          uri: lb://MOVEMENT-SERVICE
+          predicates:
             - Path=/movements/**
+          filters:
+            - RewritePath=/movements(?<segment>/?.*), /api/v1/movements${segment}
 
         - id: report-service
           uri: lb://REPORT-SERVICE
           predicates:
+            - Path=/api/v1/reports/**
+
+        - id: report-service-legacy
+          uri: lb://REPORT-SERVICE
+          predicates:
             - Path=/reports/**
+          filters:
+            - RewritePath=/reports(?<segment>/?.*), /api/v1/reports${segment}
 
         - id: payment-service
           uri: lb://PAYMENT-SERVICE
           predicates:
+            - Path=/api/v1/payments/**
+
+        - id: payment-service-legacy
+          uri: lb://PAYMENT-SERVICE
+          predicates:
             - Path=/payments/**
+          filters:
+            - RewritePath=/payments(?<segment>/?.*), /api/v1/payments${segment}
 
         - id: alert-service
           uri: lb://ALERT-SERVICE
           predicates:
+            - Path=/api/v1/alerts/**
+
+        - id: alert-service-legacy
+          uri: lb://ALERT-SERVICE
+          predicates:
             - Path=/alerts/**
+          filters:
+            - RewritePath=/alerts(?<segment>/?.*), /api/v1/alerts${segment}
 
         # ================= SWAGGER DOC ROUTES =================
         - id: auth-service-docs
@@ -169,3 +232,12 @@ springdoc:
 
   api-docs:
     enabled: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true

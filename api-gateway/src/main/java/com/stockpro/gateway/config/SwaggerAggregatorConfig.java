@@ -53,12 +53,12 @@ public class SwaggerAggregatorConfig {
     private String extractBasePath(String routeId) {
         return switch (routeId) {
             case "auth-service"      -> "/auth";
-            case "product-service"   -> "/products";
+            case "product-service"   -> "/api/v1/products";
             case "supplier-service"  -> "/suppliers";
             case "warehouse-service" -> "/warehouses";
             case "movement-service"  -> "/movements";
             case "purchase-service"  -> "/purchase-orders";
-            case "report-service"    -> "/reports";
+            case "report-service"    -> "/api/v1/reports";
             case "payment-service"   -> "/payments";
             case "alert-service"     -> "/alerts";
             default                  -> "/" + routeId.replace("-service", "s");
