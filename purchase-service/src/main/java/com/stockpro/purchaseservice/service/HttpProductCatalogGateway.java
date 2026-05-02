@@ -16,7 +16,7 @@ public class HttpProductCatalogGateway implements ProductCatalogGateway {
 
     private final RestClient.Builder restClientBuilder;
 
-    @Value("${product-service.base-url:http://localhost:8082/products}")
+    @Value("${product-service.base-url:http://localhost:8080/api/v1/products}")
     private String productServiceBaseUrl;
 
     @Override
@@ -46,5 +46,10 @@ public class HttpProductCatalogGateway implements ProductCatalogGateway {
             thresholds.setProductId(productId);
             return thresholds;
         }
+    }
+
+    @Override
+    public StockProductThresholdDTO getProductDetails(Long productId) {
+        return getProductThresholds(productId);
     }
 }

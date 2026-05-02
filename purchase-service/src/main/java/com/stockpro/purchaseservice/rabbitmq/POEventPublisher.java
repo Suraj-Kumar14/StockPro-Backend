@@ -3,6 +3,7 @@ package com.stockpro.purchaseservice.rabbitmq;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -15,6 +16,18 @@ public class POEventPublisher {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    @Value("${stockpro.rabbitmq.purchase.exchange}")
+    private String exchange;
+
+    @Value("${stockpro.rabbitmq.purchase.routing.pendingApproval}")
+    private String pendingRoutingKey;
+
+    @Value("${stockpro.rabbitmq.purchase.routing.approved}")
+    private String approvedRoutingKey;
+
+    @Value("${stockpro.rabbitmq.purchase.routing.overdue}")
+    private String overdueRoutingKey;
 
     public void publishPOPending(Long poId, Long supplierId,
             Long warehouseId, Long requestedByUserId,
@@ -32,8 +45,8 @@ public class POEventPublisher {
         log.info("Publishing PO_PENDING event for PO: {}", poId);
 
         rabbitTemplate.convertAndSend(
-                RabbitMQConfig.EXCHANGE,
-                RabbitMQConfig.PO_PENDING_KEY,
+                exchange,
+                pendingRoutingKey,
                 event);
     }
 
@@ -54,8 +67,8 @@ public class POEventPublisher {
         log.info("Publishing PO_APPROVED event for PO: {}", poId);
 
         rabbitTemplate.convertAndSend(
-                RabbitMQConfig.EXCHANGE,
-                RabbitMQConfig.PO_APPROVED_KEY,
+                exchange,
+                approvedRoutingKey,
                 event);
 
         log.info("PO_APPROVED event published for PO: {}", poId);
@@ -80,8 +93,8 @@ public class POEventPublisher {
                 poId, daysOverdue);
 
         rabbitTemplate.convertAndSend(
-                RabbitMQConfig.EXCHANGE,
-                RabbitMQConfig.PO_OVERDUE_KEY,
+                exchange,
+                overdueRoutingKey,
                 event);
     }
 }

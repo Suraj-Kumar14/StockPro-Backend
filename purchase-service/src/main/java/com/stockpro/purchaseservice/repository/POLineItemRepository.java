@@ -11,4 +11,6 @@ public interface POLineItemRepository
         extends JpaRepository<POLineItem, Long> {
 
     List<POLineItem> findByPurchaseOrderPoId(Long poId);
+
+    List<POLineItem> findByProductId(Long productId);
 }

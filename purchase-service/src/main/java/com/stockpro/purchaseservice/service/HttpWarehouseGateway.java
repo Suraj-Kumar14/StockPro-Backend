@@ -19,16 +19,21 @@ public class HttpWarehouseGateway implements WarehouseGateway {
 
     private final RestClient.Builder restClientBuilder;
 
-    @Value("${warehouse-service.base-url:http://localhost:8084}")
+    @Value("${warehouse-service.base-url:http://localhost:8080}")
     private String warehouseServiceBaseUrl;
 
     @Override
     public void ensureWarehouseExists(Long warehouseId) {
+        getWarehouse(warehouseId);
+    }
+
+    @Override
+    public WarehouseLookupResponseDTO getWarehouse(Long warehouseId) {
         try {
             WarehouseLookupResponseDTO response = restClientBuilder.baseUrl(warehouseServiceBaseUrl)
                     .build()
                     .get()
-                    .uri("/warehouses/{warehouseId}", warehouseId)
+                    .uri("/api/v1/warehouses/{warehouseId}", warehouseId)
                     .retrieve()
                     .body(WarehouseLookupResponseDTO.class);
             if (response == null || response.getWarehouseId() == null
@@ -36,6 +41,7 @@ public class HttpWarehouseGateway implements WarehouseGateway {
                 throw new IllegalArgumentException(
                         "Warehouse not found with ID: " + warehouseId);
             }
+            return response;
         } catch (RestClientResponseException ex) {
             HttpStatusCode statusCode = ex.getStatusCode();
             if (statusCode.is4xxClientError()) {
@@ -55,16 +61,19 @@ public class HttpWarehouseGateway implements WarehouseGateway {
             StockProductThresholdDTO thresholds) {
         try {
             WarehouseStockUpdateDTO request = WarehouseStockUpdateDTO.builder()
+                    .warehouseId(warehouseId)
                     .productId(productId)
                     .quantity(quantity)
+                    .reason("Purchase order goods receipt")
+                    .notes("Purchase-service synchronous goods receipt")
                     .reorderLevel(thresholds != null ? thresholds.getReorderLevel() : null)
                     .maxStockLevel(thresholds != null ? thresholds.getMaxStockLevel() : null)
                     .build();
 
             restClientBuilder.baseUrl(warehouseServiceBaseUrl)
                     .build()
-                    .put()
-                    .uri("/stock/warehouse/{warehouseId}/update", warehouseId)
+                    .post()
+                    .uri("/api/v1/stocks/receive")
                     .body(request)
                     .retrieve()
                     .toBodilessEntity();

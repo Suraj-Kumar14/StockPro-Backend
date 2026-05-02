@@ -18,11 +18,16 @@ public class HttpSupplierGateway implements SupplierGateway {
 
     private final RestClient.Builder restClientBuilder;
 
-    @Value("${supplier-service.base-url:http://localhost:8087/suppliers}")
+    @Value("${supplier-service.base-url:http://localhost:8080/api/v1/suppliers}")
     private String supplierServiceBaseUrl;
 
     @Override
     public void ensureSupplierExists(Long supplierId) {
+        getSupplier(supplierId);
+    }
+
+    @Override
+    public SupplierLookupResponseDTO getSupplier(Long supplierId) {
         try {
             SupplierLookupResponseDTO response = restClientBuilder.baseUrl(supplierServiceBaseUrl)
                     .build()
@@ -39,6 +44,7 @@ public class HttpSupplierGateway implements SupplierGateway {
                 throw new SupplierNotFoundException(
                         "Supplier is inactive with ID: " + supplierId);
             }
+            return response;
         } catch (RestClientResponseException ex) {
             HttpStatusCode statusCode = ex.getStatusCode();
             if (statusCode.is4xxClientError()) {

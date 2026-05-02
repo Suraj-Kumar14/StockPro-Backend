@@ -6,5 +6,7 @@ import lombok.Data;
 public class SupplierLookupResponseDTO {
 
     private Long supplierId;
+    private String name;
+    private String paymentTerms;
     private Boolean isActive;
 }

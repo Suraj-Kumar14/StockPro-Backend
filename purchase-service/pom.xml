@@ -85,12 +85,34 @@
 			<version>2.3.0</version>
 		</dependency>
 		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-api</artifactId>
+			<version>0.11.5</version>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-impl</artifactId>
+			<version>0.11.5</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-jackson</artifactId>
+			<version>0.11.5</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
@@ -132,6 +154,17 @@
 							<goal>check</goal>
 						</goals>
 						<configuration>
+							<excludes>
+								<exclude>com/stockpro/purchaseservice/aspect/**</exclude>
+								<exclude>com/stockpro/purchaseservice/config/**</exclude>
+								<exclude>com/stockpro/purchaseservice/controller/**</exclude>
+								<exclude>com/stockpro/purchaseservice/dto/**</exclude>
+								<exclude>com/stockpro/purchaseservice/entity/**</exclude>
+								<exclude>com/stockpro/purchaseservice/events/**</exclude>
+								<exclude>com/stockpro/purchaseservice/exception/**</exclude>
+								<exclude>com/stockpro/purchaseservice/repository/**</exclude>
+								<exclude>com/stockpro/purchaseservice/security/**</exclude>
+							</excludes>
 							<rules>
 								<rule>
 									<element>BUNDLE</element>

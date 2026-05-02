@@ -7,6 +7,7 @@ import org.springframework.http.*;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -85,6 +86,24 @@ public class GlobalExceptionHandler {
                         "The purchase order was modified by another transaction. Please retry.",
                         request.getRequestURI()),
                 HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(
+            NoResourceFoundException ex, HttpServletRequest request) {
+        String path = request.getRequestURI();
+        // Log actuator paths at DEBUG level to avoid noisy logs
+        if (path.startsWith("/actuator")) {
+            log.debug("No static resource found for actuator path: {}", path);
+        } else {
+            log.warn("No resource found: {}", path);
+        }
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.NOT_FOUND.value(), "Not Found",
+                        "Resource not found",
+                        path),
+                HttpStatus.NOT_FOUND);
     }
 
     @ExceptionHandler(Exception.class)

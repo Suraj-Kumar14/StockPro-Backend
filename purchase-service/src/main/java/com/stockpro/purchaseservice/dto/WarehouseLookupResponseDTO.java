@@ -6,5 +6,6 @@ import lombok.Data;
 public class WarehouseLookupResponseDTO {
 
     private Long warehouseId;
+    private String name;
     private Boolean isActive;
 }

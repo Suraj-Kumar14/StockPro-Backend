@@ -1,5 +1,5 @@
 server:
-  port: 8086
+  port: 8084
 
 spring:
   application:
@@ -25,10 +25,10 @@ spring:
 
   # RabbitMQ Configuration
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: /
 
 eureka:
@@ -42,7 +42,7 @@ eureka:
 
 logging:
   level:
-    com.stockpro: DEBUG
+    com.stockpro: INFO
   file:
     name: logs/purchase-service.log
   pattern:
@@ -56,3 +56,40 @@ springdoc:
     operationsSorter: method
     tagsSorter: alpha
     display-request-duration: true
+
+jwt:
+  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
+
+product-service:
+  base-url: ${PRODUCT_SERVICE_BASE_URL:http://localhost:8080/api/v1/products}
+
+supplier-service:
+  base-url: ${SUPPLIER_SERVICE_BASE_URL:http://localhost:8080/api/v1/suppliers}
+
+warehouse-service:
+  base-url: ${WAREHOUSE_SERVICE_BASE_URL:http://localhost:8080}
+
+stockpro:
+  rabbitmq:
+    purchase:
+      exchange: ${PURCHASE_RABBITMQ_EXCHANGE:stockpro.purchase.exchange}
+      routing:
+        created: purchase.created
+        updated: purchase.updated
+        submitted: purchase.submitted
+        approved: purchase.approved
+        rejected: purchase.rejected
+        cancelled: purchase.cancelled
+        partiallyReceived: purchase.partially-received
+        fullyReceived: purchase.fully-received
+        overdue: purchase.overdue
+        pendingApproval: purchase.pending-approval
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,caches
+  endpoint:
+    health:
+      show-details: always
