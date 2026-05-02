@@ -1,8 +1,10 @@
 package com.stockpro.supplierservice.repository;
 
 import com.stockpro.supplierservice.entity.Supplier;
+import com.stockpro.supplierservice.entity.SupplierStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -12,7 +14,11 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface SupplierRepository extends JpaRepository<Supplier, Long> {
+public interface SupplierRepository extends JpaRepository<Supplier, Long>, JpaSpecificationExecutor<Supplier> {
+
+    Optional<Supplier> findBySupplierId(Long supplierId);
+
+    Optional<Supplier> findBySupplierCode(String supplierCode);
 
     Optional<Supplier> findByEmail(String email);
 
@@ -32,7 +38,15 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
 
     List<Supplier> findByIsActive(Boolean isActive);
 
+    Page<Supplier> findByIsActive(Boolean isActive, Pageable pageable);
+
+    Page<Supplier> findByStatus(SupplierStatus status, Pageable pageable);
+
+    long countByStatus(SupplierStatus status);
+
     boolean existsByEmail(String email);
+
+    boolean existsBySupplierCode(String supplierCode);
 
     boolean existsByTaxId(String taxId);
 

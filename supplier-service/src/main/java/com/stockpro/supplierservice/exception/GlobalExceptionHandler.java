@@ -3,6 +3,7 @@ package com.stockpro.supplierservice.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -88,6 +89,20 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDeniedException(
+            AccessDeniedException ex,
+            HttpServletRequest request) {
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.FORBIDDEN.value(),
+                "Forbidden",
+                "You are not allowed to perform this action",
+                request.getRequestURI()
+        );
+        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+    }
+
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleOptimisticLockingException(
             OptimisticLockingFailureException ex,
@@ -99,7 +114,7 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now(),
                 HttpStatus.CONFLICT.value(),
                 "Conflict",
-                "The supplier was modified by another transaction. Please retry.",
+                "Supplier was updated by another transaction. Please retry.",
                 request.getRequestURI()
         );
 

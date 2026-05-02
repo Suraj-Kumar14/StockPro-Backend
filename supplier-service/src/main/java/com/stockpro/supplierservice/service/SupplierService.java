@@ -16,6 +16,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 @Service
@@ -128,9 +130,12 @@ public class SupplierService {
         validationService.validateRating(newRating);
 
         Supplier supplier = getSupplier(id);
-        double currentRating = supplier.getRating() == null ? 0.0 : supplier.getRating();
+        BigDecimal currentRating = supplier.getRating() == null ? BigDecimal.ZERO : supplier.getRating();
         int ratingCount = supplier.getRatingCount() == null ? 0 : supplier.getRatingCount();
-        double averageRating = ((currentRating * ratingCount) + newRating) / (ratingCount + 1);
+        BigDecimal averageRating = currentRating
+                .multiply(BigDecimal.valueOf(ratingCount))
+                .add(BigDecimal.valueOf(newRating))
+                .divide(BigDecimal.valueOf(ratingCount + 1L), 4, RoundingMode.HALF_UP);
 
         supplier.setRating(averageRating);
         supplier.setRatingCount(ratingCount + 1);
@@ -228,7 +233,7 @@ public class SupplierService {
         return first != null ? first : second;
     }
 
-    private Double defaultRating(SupplierRequestDTO dto) {
-        return 0.0;
+    private BigDecimal defaultRating(SupplierRequestDTO dto) {
+        return BigDecimal.ZERO;
     }
 }

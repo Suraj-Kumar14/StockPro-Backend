@@ -1,0 +1,11 @@
+package com.stockpro.supplierservice.enums;
+
+public enum SupplierEventType {
+    SUPPLIER_CREATED,
+    SUPPLIER_UPDATED,
+    SUPPLIER_ACTIVATED,
+    SUPPLIER_DEACTIVATED,
+    SUPPLIER_BLACKLISTED,
+    SUPPLIER_RATING_UPDATED,
+    SUPPLIER_PERFORMANCE_UPDATED
+}

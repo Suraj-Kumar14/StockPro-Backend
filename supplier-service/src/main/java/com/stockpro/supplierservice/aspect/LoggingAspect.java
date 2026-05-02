@@ -31,7 +31,7 @@ public class LoggingAspect {
     }
 
     @AfterThrowing(
-        pointcut = "execution(* com.stockpro.supplierservice..*(..))",
+        pointcut = "execution(* com.stockpro.supplierservice.service..*(..)) || execution(* com.stockpro.supplierservice.controller..*(..))",
         throwing = "exception"
     )
     public void logException(JoinPoint joinPoint, Throwable exception) {

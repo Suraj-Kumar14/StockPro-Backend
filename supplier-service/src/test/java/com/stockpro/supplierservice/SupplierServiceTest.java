@@ -17,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -73,7 +74,7 @@ class SupplierServiceTest {
                 .paymentTerms("NET-30")
                 .leadTimeDays(7)
                 .isActive(true)
-                .rating(4.0)
+                .rating(BigDecimal.valueOf(4.0))
                 .ratingCount(2)
                 .totalOrders(10)
                 .build();
@@ -150,7 +151,7 @@ class SupplierServiceTest {
 
         supplierService.updateRating(1L, 5.0);
 
-        assertEquals(13.0 / 3.0, validSupplier.getRating());
+        assertEquals(0, BigDecimal.valueOf(13.0 / 3.0).compareTo(validSupplier.getRating()));
         assertEquals(3, validSupplier.getRatingCount());
         verify(supplierRepository).save(validSupplier);
     }
