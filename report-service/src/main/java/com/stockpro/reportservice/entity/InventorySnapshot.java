@@ -1,7 +1,19 @@
 package com.stockpro.reportservice.entity;
 
-import jakarta.persistence.*;
-import lombok.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -9,14 +21,14 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "inventory_snapshots",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_snapshot_warehouse_product_date",
-                        columnNames = {"warehouseId", "productId", "snapshotDate"})
+                @UniqueConstraint(name = "uk_snapshot_date_product_warehouse",
+                        columnNames = {"snapshotDate", "productId", "warehouseId"})
         },
         indexes = {
         @Index(name = "idx_snapshot_date", columnList = "snapshotDate"),
         @Index(name = "idx_snapshot_warehouse", columnList = "warehouseId"),
         @Index(name = "idx_snapshot_product", columnList = "productId"),
-        @Index(name = "idx_snapshot_warehouse_product_date", columnList = "warehouseId, productId, snapshotDate")
+        @Index(name = "idx_snapshot_date_product_warehouse", columnList = "snapshotDate, productId, warehouseId")
 })
 @Data
 @NoArgsConstructor
@@ -28,24 +40,40 @@ public class InventorySnapshot {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long snapshotId;
 
-    @Version
-    private Long version;
-
+    @NotNull
     @Column(nullable = false)
-    private Long warehouseId;
+    private LocalDate snapshotDate;
 
+    @NotNull
     @Column(nullable = false)
     private Long productId;
 
-    @Column(nullable = false)
-    private Integer quantity;
+    private String productSku;
 
-    // quantity * costPrice at time of snapshot
-    @Column(nullable = false, precision = 14, scale = 2)
-    private BigDecimal stockValue;
+    private String productName;
 
+    @NotNull
     @Column(nullable = false)
-    private LocalDate snapshotDate;
+    private Long warehouseId;
+
+    private String warehouseCode;
+
+    private String warehouseName;
+
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal quantity;
+
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal reservedQuantity;
+
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal availableQuantity;
+
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal unitCost;
+
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal totalValue;
 
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -53,6 +81,8 @@ public class InventorySnapshot {
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
-        if (snapshotDate == null) snapshotDate = LocalDate.now();
+        if (snapshotDate == null) {
+            snapshotDate = LocalDate.now();
+        }
     }
 }

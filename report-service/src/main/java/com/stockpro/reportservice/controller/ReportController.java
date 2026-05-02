@@ -1,181 +1,238 @@
 package com.stockpro.reportservice.controller;
 
-import com.stockpro.reportservice.dto.*;
+import com.stockpro.reportservice.dto.request.ReportFilterRequest;
+import com.stockpro.reportservice.dto.response.AlertSummaryReportResponse;
+import com.stockpro.reportservice.dto.response.DeadStockResponse;
+import com.stockpro.reportservice.dto.response.ExecutiveDashboardResponse;
+import com.stockpro.reportservice.dto.response.InventorySnapshotResponse;
+import com.stockpro.reportservice.dto.response.InventoryTurnoverResponse;
+import com.stockpro.reportservice.dto.response.InventoryValuationResponse;
+import com.stockpro.reportservice.dto.response.LowStockReportItem;
+import com.stockpro.reportservice.dto.response.OverstockReportItem;
+import com.stockpro.reportservice.dto.response.PaymentSummaryReportResponse;
+import com.stockpro.reportservice.dto.response.ProductValuationItem;
+import com.stockpro.reportservice.dto.response.PurchaseSummaryResponse;
+import com.stockpro.reportservice.dto.response.SlowMovingProductResponse;
+import com.stockpro.reportservice.dto.response.StockMovementReportItem;
+import com.stockpro.reportservice.dto.response.StockSummaryResponse;
+import com.stockpro.reportservice.dto.response.SupplierPerformanceReportResponse;
+import com.stockpro.reportservice.dto.response.TopMovingProductResponse;
+import com.stockpro.reportservice.dto.response.WarehouseValuationItem;
+import com.stockpro.reportservice.enums.ExportFormat;
+import com.stockpro.reportservice.security.AuthenticatedUser;
 import com.stockpro.reportservice.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
-
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/reports")
-@Slf4j
-@Validated
-@Tag(name = "Reports & Analytics",
-     description = "APIs for inventory reports and analytics")
+@RequestMapping("/api/v1/reports")
+@RequiredArgsConstructor
+@Tag(name = "Report Service", description = "Role-based inventory, purchase, payment, alert, and dashboard reporting APIs")
+@SecurityRequirement(name = "bearerAuth")
 public class ReportController {
 
-    @Autowired
-    private ReportService reportService;
+    private final ReportService reportService;
 
-    // ==================== SNAPSHOT ====================
-
-    @PostMapping("/snapshot")
-    @Operation(summary = "Take a manual inventory snapshot")
-    public ResponseEntity<InventorySnapshotDTO> takeSnapshot(
-            @RequestParam @NotNull Long warehouseId,
-            @RequestParam @NotNull Long productId,
-            @RequestParam @NotNull @Min(0) Integer quantity,
-            @RequestParam @NotNull @Min(0) BigDecimal stockValue) {
-        return ResponseEntity.ok(
-                reportService.takeSnapshot(
-                        warehouseId, productId, quantity, stockValue));
+    @GetMapping("/inventory/valuation")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    @Operation(summary = "Get inventory valuation report")
+    public InventoryValuationResponse getInventoryValuation(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getInventoryValuation(request);
     }
 
-    @GetMapping("/snapshot/date/{date}")
-    @Operation(summary = "Get snapshots for a specific date")
-    public ResponseEntity<List<InventorySnapshotDTO>> getSnapshotsByDate(
-            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate date) {
-        return ResponseEntity.ok(reportService.getSnapshotsByDate(date));
+    @GetMapping("/inventory/stock-summary")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public StockSummaryResponse getStockSummary(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getStockSummary(request);
     }
 
-    @GetMapping("/snapshot/warehouse/{warehouseId}")
-    @Operation(summary = "Get snapshots for a warehouse")
-    public ResponseEntity<List<InventorySnapshotDTO>> getSnapshotsByWarehouse(
-            @PathVariable Long warehouseId) {
-        return ResponseEntity.ok(
-                reportService.getSnapshotsByWarehouse(warehouseId));
+    @GetMapping("/inventory/product-stock")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public Page<ProductValuationItem> getProductStock(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getProductStockReport(request);
     }
 
-    @GetMapping("/snapshot/date-range")
-    @Operation(summary = "Get snapshots for a date range")
-    public ResponseEntity<List<InventorySnapshotDTO>> getSnapshotsByDateRange(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate endDate) {
-        return ResponseEntity.ok(
-                reportService.getSnapshotsByDateRange(startDate, endDate));
+    @GetMapping("/inventory/warehouse-stock")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public Page<WarehouseValuationItem> getWarehouseStock(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getWarehouseStockReport(request);
     }
 
-    @GetMapping("/snapshot/latest")
-    @Operation(summary = "Get latest snapshot")
-    public ResponseEntity<List<InventorySnapshotDTO>> getLatestSnapshot() {
-        return ResponseEntity.ok(reportService.getLatestSnapshot());
+    @GetMapping("/inventory/low-stock")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public Page<LowStockReportItem> getLowStock(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getLowStockReport(request);
     }
 
-    // ==================== VALUATION ====================
-
-    @GetMapping("/valuation/total")
-    @Operation(summary = "Get total inventory valuation")
-    public ResponseEntity<StockValuationDTO> getTotalStockValue() {
-        return ResponseEntity.ok(reportService.getTotalStockValue());
+    @GetMapping("/inventory/overstock")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public Page<OverstockReportItem> getOverstock(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getOverstockReport(request);
     }
 
-    @GetMapping("/valuation/warehouse/{warehouseId}")
-    @Operation(summary = "Get inventory valuation by warehouse")
-    public ResponseEntity<StockValuationDTO> getStockValueByWarehouse(
-            @PathVariable Long warehouseId) {
-        return ResponseEntity.ok(
-                reportService.getStockValueByWarehouse(warehouseId));
+    @GetMapping("/movements")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    public Page<StockMovementReportItem> getMovements(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getStockMovementReport(request);
     }
 
-    // ==================== TURNOVER ====================
-
-    @GetMapping("/turnover")
-    @Operation(summary = "Get inventory turnover rate")
-    public ResponseEntity<Map<String, Object>> getInventoryTurnover(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate endDate) {
-        return ResponseEntity.ok(
-                reportService.getInventoryTurnover(startDate, endDate));
+    @GetMapping("/movements/turnover")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public List<InventoryTurnoverResponse> getTurnover(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getInventoryTurnoverReport(request);
     }
 
-    // ==================== LOW STOCK ====================
-
-    @GetMapping("/low-stock")
-    @Operation(summary = "Get low stock report")
-    public ResponseEntity<List<InventorySnapshotDTO>> getLowStockReport(
-            @RequestParam(defaultValue = "10") @Min(0) Integer threshold) {
-        return ResponseEntity.ok(reportService.getLowStockReport(threshold));
+    @GetMapping("/movements/top-moving-products")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public List<TopMovingProductResponse> getTopMoving(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getTopMovingProducts(request);
     }
 
-    // ==================== DEAD STOCK ====================
-
-    @GetMapping("/dead-stock")
-    @Operation(summary = "Get dead stock (no movement for N days)")
-    public ResponseEntity<List<DeadStockDTO>> getDeadStock(
-            @RequestParam(required = false) @Min(1) Integer days) {
-        return ResponseEntity.ok(reportService.getDeadStock(days));
+    @GetMapping("/movements/slow-moving-products")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public List<SlowMovingProductResponse> getSlowMoving(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getSlowMovingProducts(request);
     }
 
-    // ==================== TOP / SLOW MOVERS ====================
-
-    @GetMapping("/top-moving")
-    @Operation(summary = "Get top moving products")
-    public ResponseEntity<List<TopMovingProductDTO>> getTopMovingProducts(
-            @RequestParam(defaultValue = "10") @Min(1) Integer limit) {
-        return ResponseEntity.ok(reportService.getTopMovingProducts(limit));
+    @GetMapping("/movements/dead-stock")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public List<DeadStockResponse> getDeadStock(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getDeadStockReport(request);
     }
 
-    @GetMapping("/slow-moving")
-    @Operation(summary = "Get slow moving products")
-    public ResponseEntity<List<TopMovingProductDTO>> getSlowMovingProducts(
-            @RequestParam(required = false) @Min(1) Integer days) {
-        return ResponseEntity.ok(reportService.getSlowMovingProducts(days));
+    @GetMapping("/purchase/summary")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    public PurchaseSummaryResponse getPurchaseSummary(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getPurchaseSummary(request);
     }
 
-    // ==================== PO SUMMARY ====================
-
-    @GetMapping("/po-summary")
-    @Operation(summary = "Get purchase order summary")
-    public ResponseEntity<POSummaryDTO> getPOSummary(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate endDate) {
-        return ResponseEntity.ok(
-                reportService.getPOSummary(startDate, endDate));
+    @GetMapping("/purchase/supplier-performance")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    public Page<SupplierPerformanceReportResponse> getSupplierPerformance(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getSupplierPerformanceReport(request);
     }
 
-    // ==================== MOVEMENT SUMMARY ====================
+    @GetMapping("/purchase/supplier-performance/{supplierId}")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    public SupplierPerformanceReportResponse getSupplierPerformanceById(@PathVariable Long supplierId, @ModelAttribute ReportFilterRequest request) {
+        return reportService.getSupplierPerformance(supplierId, request);
+    }
 
-    @GetMapping("/movement-summary")
-    @Operation(summary = "Get stock movement summary")
-    public ResponseEntity<Map<String, Object>> getMovementSummary(
+    @GetMapping("/payments/summary")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    public PaymentSummaryReportResponse getPaymentSummary(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getPaymentSummary(request);
+    }
+
+    @GetMapping("/alerts/summary")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public AlertSummaryReportResponse getAlertSummary(@ModelAttribute ReportFilterRequest request) {
+        return reportService.getAlertSummary(request);
+    }
+
+    @GetMapping("/dashboard/executive")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ExecutiveDashboardResponse getExecutiveDashboard() {
+        return reportService.getExecutiveDashboard();
+    }
+
+    @GetMapping("/dashboard/my")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER','WAREHOUSE_STAFF','STAFF')")
+    public ExecutiveDashboardResponse getMyDashboard(Authentication authentication) {
+        AuthenticatedUser user = authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser principal ? principal : null;
+        return reportService.getRoleDashboard(user != null ? user.role() : "", user != null ? user.userId() : null);
+    }
+
+    @PostMapping("/snapshots/run")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> runSnapshot(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        reportService.createInventorySnapshotForDate(date != null ? date : LocalDate.now());
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @GetMapping("/snapshots")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public Page<InventorySnapshotResponse> getSnapshots(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return reportService.getInventorySnapshots(date, page, size);
+    }
+
+    @GetMapping("/snapshots/trend")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public List<InventorySnapshotResponse> getSnapshotTrend(
+            @RequestParam(required = false) Long productId,
             @RequestParam(required = false) Long warehouseId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate endDate) {
-        return ResponseEntity.ok(
-                reportService.getStockMovementSummary(
-                        warehouseId, startDate, endDate));
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        return reportService.getSnapshotTrend(productId, warehouseId, fromDate, toDate);
     }
 
-    @GetMapping("/export")
-    @Operation(summary = "Export report data as CSV")
-    public ResponseEntity<String> exportReport(
-            @RequestParam @NotBlank String type) {
-        return ResponseEntity.ok()
-                .header("Content-Type", "text/csv")
-                .header("Content-Disposition",
-                        "attachment; filename=\"" + type + "-report.csv\"")
-                .body(reportService.exportReport(type));
+    @GetMapping("/export/inventory-valuation")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public ResponseEntity<byte[]> exportInventoryValuation(@ModelAttribute ReportFilterRequest request, @RequestParam ExportFormat format) {
+        return fileResponse("inventory-valuation", format, reportService.exportInventoryValuation(request, format));
+    }
+
+    @GetMapping("/export/stock-movements")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    public ResponseEntity<byte[]> exportStockMovements(@ModelAttribute ReportFilterRequest request, @RequestParam ExportFormat format) {
+        return fileResponse("stock-movements", format, reportService.exportStockMovementReport(request, format));
+    }
+
+    @GetMapping("/export/purchase-summary")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    public ResponseEntity<byte[]> exportPurchaseSummary(@ModelAttribute ReportFilterRequest request, @RequestParam ExportFormat format) {
+        return fileResponse("purchase-summary", format, reportService.exportPurchaseSummary(request, format));
+    }
+
+    @GetMapping("/export/supplier-performance")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    public ResponseEntity<byte[]> exportSupplierPerformance(@ModelAttribute ReportFilterRequest request, @RequestParam ExportFormat format) {
+        return fileResponse("supplier-performance", format, reportService.exportSupplierPerformance(request, format));
+    }
+
+    @GetMapping("/export/executive-dashboard")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<byte[]> exportExecutiveDashboard(@RequestParam ExportFormat format) {
+        return fileResponse("executive-dashboard", format, reportService.exportExecutiveDashboard(format));
+    }
+
+    private ResponseEntity<byte[]> fileResponse(String baseName, ExportFormat format, byte[] content) {
+        String extension = switch (format) {
+            case CSV -> "csv";
+            case EXCEL -> "xlsx";
+            case PDF -> "pdf";
+        };
+        MediaType mediaType = switch (format) {
+            case CSV -> MediaType.parseMediaType("text/csv");
+            case EXCEL -> MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            case PDF -> MediaType.APPLICATION_PDF;
+        };
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(mediaType);
+        headers.setContentDisposition(ContentDisposition.attachment().filename(baseName + "-" + LocalDate.now() + "." + extension).build());
+        return ResponseEntity.ok().headers(headers).body(content);
     }
 }

@@ -6,12 +6,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.*;
 import org.springframework.validation.FieldError;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import org.springframework.security.access.AccessDeniedException;
 
 @RestControllerAdvice
 @Slf4j
@@ -32,9 +34,9 @@ public class GlobalExceptionHandler {
             ReportGenerationException ex, HttpServletRequest request) {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
-                        HttpStatus.BAD_GATEWAY.value(), "Bad Gateway",
+                        HttpStatus.SERVICE_UNAVAILABLE.value(), "Service Unavailable",
                         ex.getMessage(), request.getRequestURI()),
-                HttpStatus.BAD_GATEWAY);
+                HttpStatus.SERVICE_UNAVAILABLE);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -77,6 +79,28 @@ public class GlobalExceptionHandler {
                         "Snapshot data was modified concurrently. Please retry.",
                         request.getRequestURI()),
                 HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(
+            NoResourceFoundException ex, HttpServletRequest request) {
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.NOT_FOUND.value(), "Not Found",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(
+            AccessDeniedException ex, HttpServletRequest request) {
+        log.warn("Access denied for path {}: {}", request.getRequestURI(), ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.FORBIDDEN.value(), "Forbidden",
+                        "You do not have permission to access this resource",
+                        request.getRequestURI()),
+                HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(Exception.class)

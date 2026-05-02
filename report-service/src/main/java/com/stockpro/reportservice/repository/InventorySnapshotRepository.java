@@ -23,6 +23,8 @@ public interface InventorySnapshotRepository
 
     List<InventorySnapshot> findBySnapshotDate(LocalDate snapshotDate);
 
+    Page<InventorySnapshot> findBySnapshotDate(LocalDate snapshotDate, Pageable pageable);
+
     List<InventorySnapshot> findBySnapshotDateBetween(
             LocalDate start, LocalDate end);
 
@@ -32,16 +34,18 @@ public interface InventorySnapshotRepository
     List<InventorySnapshot> findByWarehouseIdAndSnapshotDate(
             Long warehouseId, LocalDate snapshotDate);
 
-    Optional<InventorySnapshot> findByWarehouseIdAndProductIdAndSnapshotDate(
-            Long warehouseId, Long productId, LocalDate snapshotDate);
+    Optional<InventorySnapshot> findBySnapshotDateAndProductIdAndWarehouseId(
+            LocalDate snapshotDate, Long productId, Long warehouseId);
 
-    // Total stock value across all warehouses for a date
-    @Query("SELECT COALESCE(SUM(s.stockValue), 0) " +
+    List<InventorySnapshot> findByProductIdAndSnapshotDateBetween(Long productId, LocalDate from, LocalDate to);
+
+    List<InventorySnapshot> findByWarehouseIdAndSnapshotDateBetween(Long warehouseId, LocalDate from, LocalDate to);
+
+    @Query("SELECT COALESCE(SUM(s.totalValue), 0) " +
            "FROM InventorySnapshot s WHERE s.snapshotDate = :date")
     BigDecimal sumTotalStockValue(@Param("date") LocalDate date);
 
-    // Total stock value per warehouse
-    @Query("SELECT COALESCE(SUM(s.stockValue), 0) " +
+    @Query("SELECT COALESCE(SUM(s.totalValue), 0) " +
            "FROM InventorySnapshot s " +
            "WHERE s.warehouseId = :warehouseId " +
            "AND s.snapshotDate = :date")
@@ -60,9 +64,8 @@ public interface InventorySnapshotRepository
 
     List<InventorySnapshot> findBySnapshotDateOrderByWarehouseIdAscProductIdAsc(LocalDate snapshotDate);
 
-    @Query("SELECT COALESCE(SUM(s.stockValue), 0) FROM InventorySnapshot s WHERE s.snapshotDate BETWEEN :startDate AND :endDate")
+    @Query("SELECT COALESCE(SUM(s.totalValue), 0) FROM InventorySnapshot s WHERE s.snapshotDate BETWEEN :startDate AND :endDate")
     BigDecimal sumStockValueBetween(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
 
-    boolean existsByWarehouseIdAndProductIdAndSnapshotDate(
-            Long warehouseId, Long productId, LocalDate snapshotDate);
+    boolean existsBySnapshotDate(LocalDate date);
 }
