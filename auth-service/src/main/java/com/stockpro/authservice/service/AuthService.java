@@ -21,11 +21,16 @@ import com.stockpro.authservice.dto.ResetPasswordRequestDTO;
 import com.stockpro.authservice.dto.UpdateProfileDTO;
 import com.stockpro.authservice.dto.UserRequestDTO;
 import com.stockpro.authservice.dto.UserResponseDTO;
+import com.stockpro.authservice.dto.UserSummaryDTO;
 import com.stockpro.authservice.entity.OtpPurpose;
 import com.stockpro.authservice.entity.OtpToken;
 import com.stockpro.authservice.entity.User;
 import com.stockpro.authservice.entity.UserRole;
+import com.stockpro.authservice.exception.InactiveAccountException;
 import com.stockpro.authservice.exception.InvalidOtpException;
+import com.stockpro.authservice.exception.InvalidCredentialsException;
+import com.stockpro.authservice.exception.ResourceNotFoundException;
+import com.stockpro.authservice.exception.SelfDeactivationNotAllowedException;
 import com.stockpro.authservice.exception.UserAlreadyExistsException;
 import com.stockpro.authservice.repository.OtpTokenRepository;
 import com.stockpro.authservice.repository.UserRepository;
@@ -153,14 +158,14 @@ public class AuthService {
     public LoginResponseDTO login(String email, String password) {
         log.info("Login attempt: {}", email);
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Invalid credentials"));
+                .orElseThrow(() -> new InvalidCredentialsException("Invalid credentials"));
 
         if (!Boolean.TRUE.equals(user.getIsActive())) {
-            throw new RuntimeException("Account is deactivated");
+            throw new InactiveAccountException("Your account is inactive. Please contact administrator.");
         }
 
         if (!isPasswordValid(password, user)) {
-            throw new RuntimeException("Invalid credentials");
+            throw new InvalidCredentialsException("Invalid credentials");
         }
 
         user.setLastLoginAt(LocalDateTime.now());
@@ -175,7 +180,7 @@ public class AuthService {
                 .orElseGet(() -> createGoogleUser(email, name));
 
         if (!Boolean.TRUE.equals(user.getIsActive())) {
-            throw new RuntimeException("Account is deactivated");
+            throw new InactiveAccountException("Your account is inactive. Please contact administrator.");
         }
 
         user.setLastLoginAt(LocalDateTime.now());
@@ -208,13 +213,13 @@ public class AuthService {
 
     public UserResponseDTO getUserProfile(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return mapToDTO(user);
     }
 
     public UserResponseDTO updateProfile(String email, UpdateProfileDTO dto) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setName(dto.getName());
         user.setPhone(dto.getPhone());
         user.setDepartment(dto.getDepartment());
@@ -225,7 +230,7 @@ public class AuthService {
 
     public void changePassword(String email, ChangePasswordDTO dto) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (!passwordEncoder.matches(dto.getOldPassword(), user.getPassword())) {
             throw new RuntimeException("Old password is incorrect");
         }
@@ -239,9 +244,42 @@ public class AuthService {
                 .stream().map(this::mapToDTO).toList();
     }
 
-    public void deactivate(Long id) {
+    public UserResponseDTO getUserById(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+        return mapToDTO(user);
+    }
+
+    public UserSummaryDTO getUserSummary() {
+        List<User> users = userRepository.findAll();
+        long activeUsers = users.stream().filter(user -> Boolean.TRUE.equals(user.getIsActive())).count();
+        long inactiveUsers = users.size() - activeUsers;
+        long adminCount = users.stream().filter(user -> user.getRole() == UserRole.ADMIN).count();
+        long inventoryManagerCount = users.stream().filter(user -> user.getRole() == UserRole.MANAGER).count();
+        long purchaseOfficerCount = users.stream().filter(user -> user.getRole() == UserRole.OFFICER).count();
+        long warehouseStaffCount = users.stream().filter(user -> user.getRole() == UserRole.STAFF).count();
+        LocalDateTime recentLoginCutoff = LocalDateTime.now().minusDays(7);
+        long recentLoginCount = users.stream()
+                .filter(user -> user.getLastLoginAt() != null && !user.getLastLoginAt().isBefore(recentLoginCutoff))
+                .count();
+
+        return new UserSummaryDTO(
+                users.size(),
+                activeUsers,
+                inactiveUsers,
+                adminCount,
+                inventoryManagerCount,
+                purchaseOfficerCount,
+                warehouseStaffCount,
+                recentLoginCount);
+    }
+
+    public void deactivate(Long id, String actorEmail) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+        if (actorEmail != null && actorEmail.equalsIgnoreCase(user.getEmail())) {
+            throw new SelfDeactivationNotAllowedException("You cannot deactivate your own account.");
+        }
         user.setIsActive(false);
         userRepository.save(user);
         log.info("[AUDIT] action=DEACTIVATE userId={} timestamp={}", id, LocalDateTime.now());
@@ -250,7 +288,7 @@ public class AuthService {
 
     public void activate(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
         if (Boolean.TRUE.equals(user.getIsActive())) {
             throw new RuntimeException("User account is already active.");
         }
@@ -261,7 +299,7 @@ public class AuthService {
     }
 
     private LoginResponseDTO issueTokens(User user) {
-        String accessToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+        String accessToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), user.getId());
         String refreshToken = jwtUtil.generateRefreshToken(user.getEmail());
         return new LoginResponseDTO(accessToken, refreshToken);
     }

@@ -172,6 +172,25 @@ public class AuthController {
         return ResponseEntity.ok(authService.getAllUsers());
     }
 
+    @GetMapping("/users/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Get user by id (Admin only)")
+    @ApiResponse(responseCode = "200", description = "User profile")
+    public ResponseEntity<UserResponseDTO> getUserById(
+            @Parameter(description = "User ID", required = true) @PathVariable Long id) {
+        return ResponseEntity.ok(authService.getUserById(id));
+    }
+
+    @GetMapping("/users/summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Get user summary (Admin only)")
+    @ApiResponse(responseCode = "200", description = "User summary counts")
+    public ResponseEntity<UserSummaryDTO> getUserSummary() {
+        return ResponseEntity.ok(authService.getUserSummary());
+    }
+
     @DeleteMapping("/user/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     @SecurityRequirement(name = "bearerAuth")
@@ -179,7 +198,7 @@ public class AuthController {
     @ApiResponse(responseCode = "200", description = "Account deactivated successfully")
     public ResponseEntity<String> deactivateUserLegacy(
             @Parameter(description = "User ID", required = true) @PathVariable Long id) {
-        authService.deactivate(id);
+        authService.deactivate(id, null);
         return ResponseEntity.ok("Account deactivated successfully");
     }
 
@@ -195,7 +214,7 @@ public class AuthController {
             @Parameter(description = "User ID", required = true) @PathVariable Long id,
             Authentication authentication) {
         log.info("[AUDIT] Admin {} deactivating userId={}", authentication.getName(), id);
-        authService.deactivate(id);
+        authService.deactivate(id, authentication.getName());
         return ResponseEntity.ok("User deactivated successfully");
     }
 

@@ -52,12 +52,12 @@ eureka:
     register-with-eureka: true
     fetch-registry: true
   instance:
-    prefer-ip-address: false
+    prefer-ip-address: true
     hostname: localhost
 
 # JWT config
 jwt:
-  secret: my-secret-key-ayush-chouhan-stockpro-secret-key-2024
+  secret: stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c
   expiration: 28800000
   refresh-expiration: 604800000
 

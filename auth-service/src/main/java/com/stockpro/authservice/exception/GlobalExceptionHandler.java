@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -33,12 +34,52 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCredentials(InvalidCredentialsException ex) {
+        log.warn("Invalid credentials: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(ex.getMessage(), HttpStatus.UNAUTHORIZED.value(), LocalDateTime.now()),
+                HttpStatus.UNAUTHORIZED);
+    }
+
+    @ExceptionHandler(InactiveAccountException.class)
+    public ResponseEntity<ErrorResponse> handleInactiveAccount(InactiveAccountException ex) {
+        log.warn("Inactive account access blocked: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(ex.getMessage(), HttpStatus.FORBIDDEN.value(), LocalDateTime.now()),
+                HttpStatus.FORBIDDEN);
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {
+        log.warn("Resource not found: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(ex.getMessage(), HttpStatus.NOT_FOUND.value(), LocalDateTime.now()),
+                HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(SelfDeactivationNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleSelfDeactivation(SelfDeactivationNotAllowedException ex) {
+        log.warn("User action blocked: {}", ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST.value(), LocalDateTime.now()),
+                HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
         ex.getBindingResult().getFieldErrors()
                 .forEach(error -> errors.put(error.getField(), error.getDefaultMessage()));
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
+        log.debug("Resource not found: {}", ex.getResourcePath());
+        return new ResponseEntity<>(
+                new ErrorResponse("Resource not found", HttpStatus.NOT_FOUND.value(), LocalDateTime.now()),
+                HttpStatus.NOT_FOUND);
     }
 
   

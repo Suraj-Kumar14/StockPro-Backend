@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -71,15 +72,25 @@ public class JwtFilter extends OncePerRequestFilter {
                 && SecurityContextHolder.getContext().getAuthentication() == null) {
 
             String role = jwtUtil.extractRole(token);
-            List<SimpleGrantedAuthority> authorities = List.of(
-                    new SimpleGrantedAuthority("ROLE_" + role)
-            );
+            String normalizedRole = normalizeRole(role);
+            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+            if (normalizedRole != null) {
+                authorities.add(new SimpleGrantedAuthority("ROLE_" + normalizedRole));
+                authorities.add(new SimpleGrantedAuthority(normalizedRole));
+            }
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(username, null, authorities);
             SecurityContextHolder.getContext().setAuthentication(authentication);
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private String normalizeRole(String role) {
+        if (role == null || role.isBlank()) {
+            return null;
+        }
+        return role.startsWith("ROLE_") ? role.substring("ROLE_".length()) : role;
     }
 
     private boolean isPublicPath(String path) {

@@ -10,7 +10,10 @@ import com.stockpro.authservice.entity.OtpPurpose;
 import com.stockpro.authservice.entity.OtpToken;
 import com.stockpro.authservice.entity.User;
 import com.stockpro.authservice.entity.UserRole;
+import com.stockpro.authservice.exception.InactiveAccountException;
 import com.stockpro.authservice.exception.InvalidOtpException;
+import com.stockpro.authservice.exception.InvalidCredentialsException;
+import com.stockpro.authservice.exception.SelfDeactivationNotAllowedException;
 import com.stockpro.authservice.exception.UserAlreadyExistsException;
 import com.stockpro.authservice.repository.OtpTokenRepository;
 import com.stockpro.authservice.repository.UserRepository;
@@ -91,14 +94,14 @@ class AuthServiceTest {
     void login_shouldReturnTokens_whenCredentialsValid() {
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("Password@123", user.getPassword())).thenReturn(true);
-        when(jwtUtil.generateToken("user@example.com", "STAFF")).thenReturn("access-token");
+        when(jwtUtil.generateToken("user@example.com", "STAFF", 1L)).thenReturn("access-token");
         when(jwtUtil.generateRefreshToken("user@example.com")).thenReturn("refresh-token");
 
         LoginResponseDTO response = authService.login("user@example.com", "Password@123");
 
         assertEquals("access-token", response.getAccessToken());
         assertEquals("refresh-token", response.getRefreshToken());
-        verify(jwtUtil).generateToken("user@example.com", "STAFF");
+        verify(jwtUtil).generateToken("user@example.com", "STAFF", 1L);
         verify(jwtUtil).generateRefreshToken("user@example.com");
         verify(userRepository).save(user);
     }
@@ -108,7 +111,7 @@ class AuthServiceTest {
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("bad-password", user.getPassword())).thenReturn(false);
 
-        RuntimeException exception = assertThrows(RuntimeException.class,
+        InvalidCredentialsException exception = assertThrows(InvalidCredentialsException.class,
                 () -> authService.login("user@example.com", "bad-password"));
 
         assertEquals("Invalid credentials", exception.getMessage());
@@ -118,10 +121,21 @@ class AuthServiceTest {
     void login_shouldThrowException_whenUserNotFound() {
         when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
 
-        RuntimeException exception = assertThrows(RuntimeException.class,
+        InvalidCredentialsException exception = assertThrows(InvalidCredentialsException.class,
                 () -> authService.login("missing@example.com", "Password@123"));
 
         assertEquals("Invalid credentials", exception.getMessage());
+    }
+
+    @Test
+    void login_shouldRejectInactiveUser() {
+        user.setIsActive(false);
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+
+        InactiveAccountException exception = assertThrows(InactiveAccountException.class,
+                () -> authService.login("user@example.com", "Password@123"));
+
+        assertEquals("Your account is inactive. Please contact administrator.", exception.getMessage());
     }
 
     @Test
@@ -243,7 +257,7 @@ class AuthServiceTest {
     @Test
     void handleGoogleLogin_shouldReturnTokens_whenExistingUserFound() {
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
-        when(jwtUtil.generateToken("user@example.com", "STAFF")).thenReturn("access-token");
+        when(jwtUtil.generateToken("user@example.com", "STAFF", 1L)).thenReturn("access-token");
         when(jwtUtil.generateRefreshToken("user@example.com")).thenReturn("refresh-token");
 
         LoginResponseDTO response = authService.handleGoogleLogin("user@example.com", "User Example");
@@ -257,7 +271,7 @@ class AuthServiceTest {
         when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
         when(passwordEncoder.encode(anyString())).thenReturn("$2a$google");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(jwtUtil.generateToken("new@example.com", "STAFF")).thenReturn("access-token");
+        when(jwtUtil.generateToken("new@example.com", "STAFF", null)).thenReturn("access-token");
         when(jwtUtil.generateRefreshToken("new@example.com")).thenReturn("refresh-token");
 
         LoginResponseDTO response = authService.handleGoogleLogin("new@example.com", "Google User");
@@ -267,6 +281,40 @@ class AuthServiceTest {
         verify(userRepository, times(2)).save(userCaptor.capture());
         assertTrue(userCaptor.getAllValues().get(0).getPassword().startsWith("$2a$"));
         assertEquals(UserRole.STAFF, userCaptor.getAllValues().get(0).getRole());
+    }
+
+    @Test
+    void deactivate_shouldRejectSelfDeactivation() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        SelfDeactivationNotAllowedException exception = assertThrows(SelfDeactivationNotAllowedException.class,
+                () -> authService.deactivate(1L, "user@example.com"));
+
+        assertEquals("You cannot deactivate your own account.", exception.getMessage());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void getUserSummary_shouldReturnCounts() {
+        User admin = new User();
+        admin.setId(2L);
+        admin.setName("Admin");
+        admin.setEmail("admin@example.com");
+        admin.setRole(UserRole.ADMIN);
+        admin.setIsActive(true);
+        admin.setLastLoginAt(LocalDateTime.now());
+
+        user.setLastLoginAt(LocalDateTime.now());
+        when(userRepository.findAll()).thenReturn(List.of(user, admin));
+
+        var summary = authService.getUserSummary();
+
+        assertEquals(2, summary.getTotalUsers());
+        assertEquals(2, summary.getActiveUsers());
+        assertEquals(0, summary.getInactiveUsers());
+        assertEquals(1, summary.getAdminCount());
+        assertEquals(1, summary.getWarehouseStaffCount());
+        assertEquals(2, summary.getRecentLoginCount());
     }
 
     private OtpToken passwordResetOtp(String otp) {

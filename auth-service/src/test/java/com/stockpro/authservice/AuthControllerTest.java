@@ -9,9 +9,13 @@ import com.stockpro.authservice.dto.MessageResponseDTO;
 import com.stockpro.authservice.dto.OtpVerificationRequestDTO;
 import com.stockpro.authservice.dto.RegisterResponseDTO;
 import com.stockpro.authservice.dto.ResetPasswordRequestDTO;
+import com.stockpro.authservice.dto.UserResponseDTO;
+import com.stockpro.authservice.dto.UserSummaryDTO;
 import com.stockpro.authservice.dto.UserRequestDTO;
 import com.stockpro.authservice.entity.UserRole;
 import com.stockpro.authservice.exception.GlobalExceptionHandler;
+import com.stockpro.authservice.exception.InactiveAccountException;
+import com.stockpro.authservice.exception.InvalidCredentialsException;
 import com.stockpro.authservice.security.JwtFilter;
 import com.stockpro.authservice.security.JwtUtil;
 import com.stockpro.authservice.security.OAuth2AuthenticationFailureHandler;
@@ -31,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -84,13 +89,29 @@ class AuthControllerTest {
         request.setPassword("wrong-password");
 
         when(authService.login(anyString(), anyString()))
-                .thenThrow(new RuntimeException("Invalid credentials"));
+                .thenThrow(new InvalidCredentialsException("Invalid credentials"));
 
         mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(request)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("Invalid credentials"));
+    }
+
+    @Test
+    void login_shouldReturnForbidden_whenAccountInactive() throws Exception {
+        LoginRequestDTO request = new LoginRequestDTO();
+        request.setEmail("user@example.com");
+        request.setPassword("Password@123");
+
+        when(authService.login(anyString(), anyString()))
+                .thenThrow(new InactiveAccountException("Your account is inactive. Please contact administrator."));
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Your account is inactive. Please contact administrator."));
     }
 
     @Test
@@ -171,5 +192,40 @@ class AuthControllerTest {
                         .content(objectMapper.writeValueAsBytes(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("OTP verified successfully"));
+    }
+
+    @Test
+    void getUserById_shouldReturnUser_whenAdminRequests() throws Exception {
+        UserResponseDTO user = new UserResponseDTO();
+        user.setUserId(7L);
+        user.setName("User Example");
+        user.setEmail("user@example.com");
+        user.setRole(UserRole.STAFF);
+        user.setIsActive(true);
+
+        when(authService.getUserById(7L)).thenReturn(user);
+
+        mockMvc.perform(get("/auth/users/7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(7))
+                .andExpect(jsonPath("$.email").value("user@example.com"));
+    }
+
+    @Test
+    void getUserSummary_shouldReturnSummary_whenAdminRequests() throws Exception {
+        when(authService.getUserSummary()).thenReturn(new UserSummaryDTO(10, 8, 2, 1, 3, 2, 4, 6));
+
+        mockMvc.perform(get("/auth/users/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalUsers").value(10))
+                .andExpect(jsonPath("$.activeUsers").value(8))
+                .andExpect(jsonPath("$.warehouseStaffCount").value(4));
+    }
+
+    @Test
+    void unknownActuatorEndpoint_shouldReturnNotFound() throws Exception {
+        mockMvc.perform(get("/actuator/metrics"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Resource not found"));
     }
 }

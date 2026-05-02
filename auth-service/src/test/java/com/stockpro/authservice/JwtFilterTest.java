@@ -88,6 +88,31 @@ class JwtFilterTest {
     }
 
     @Test
+    void doFilter_shouldNormalizePrefixedRole_whenTokenContainsRolePrefix() throws Exception {
+        JwtFilter filter = new JwtFilter();
+        ReflectionTestUtils.setField(filter, "jwtUtil", jwtUtil);
+
+        when(jwtUtil.isBlacklisted("prefixed-token")).thenReturn(false);
+        when(jwtUtil.extractUsername("prefixed-token")).thenReturn("admin@example.com");
+        when(jwtUtil.validateToken("prefixed-token")).thenReturn(true);
+        when(jwtUtil.extractRole("prefixed-token")).thenReturn("ROLE_ADMIN");
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/auth/users");
+        request.addHeader("Authorization", "Bearer prefixed-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertNotNull(authentication);
+        assertTrue(authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN")));
+        assertTrue(authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ADMIN")));
+    }
+
+    @Test
     void doFilter_shouldReject_whenTokenBlacklisted() throws Exception {
         JwtFilter filter = new JwtFilter();
         ReflectionTestUtils.setField(filter, "jwtUtil", jwtUtil);

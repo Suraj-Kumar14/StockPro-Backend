@@ -22,20 +22,20 @@ class JwtUtilTest {
 
 	@Test
 	void generateToken_ReturnsNonNull() {
-		String token = jwtUtil.generateToken("test@gmail.com", "STAFF");
+		String token = jwtUtil.generateToken("test@gmail.com", "STAFF", 10L);
 		assertNotNull(token);
 		assertFalse(token.isEmpty());
 	}
 
 	@Test
 	void generateToken_ExtractUsernameCorrect() {
-		String token = jwtUtil.generateToken("test@gmail.com", "STAFF");
+		String token = jwtUtil.generateToken("test@gmail.com", "STAFF", 10L);
 		assertEquals("test@gmail.com", jwtUtil.extractUsername(token));
 	}
 
 	@Test
 	void generateToken_ExtractRoleCorrect() {
-		String token = jwtUtil.generateToken("test@gmail.com", "ADMIN");
+		String token = jwtUtil.generateToken("test@gmail.com", "ADMIN", 10L);
 		assertEquals("ADMIN", jwtUtil.extractRole(token));
 	}
 
@@ -47,13 +47,13 @@ class JwtUtilTest {
 
 	@Test
 	void generateToken_TypeIsAccess() {
-		String token = jwtUtil.generateToken("test@gmail.com", "STAFF");
+		String token = jwtUtil.generateToken("test@gmail.com", "STAFF", 10L);
 		assertEquals("ACCESS", jwtUtil.extractType(token));
 	}
 
 	@Test
 	void validateToken_ValidToken_ReturnsTrue() {
-		String token = jwtUtil.generateToken("test@gmail.com", "STAFF");
+		String token = jwtUtil.generateToken("test@gmail.com", "STAFF", 10L);
 		assertTrue(jwtUtil.validateToken(token));
 	}
 
@@ -64,14 +64,14 @@ class JwtUtilTest {
 
 	@Test
 	void validateToken_BlacklistedToken_ReturnsFalse() {
-		String token = jwtUtil.generateToken("test@gmail.com", "STAFF");
+		String token = jwtUtil.generateToken("test@gmail.com", "STAFF", 10L);
 		jwtUtil.blacklistToken(token);
 		assertFalse(jwtUtil.validateToken(token));
 	}
 
 	@Test
 	void blacklistToken_TokenIsBlacklisted() {
-		String token = jwtUtil.generateToken("test@gmail.com", "STAFF");
+		String token = jwtUtil.generateToken("test@gmail.com", "STAFF", 10L);
 		assertFalse(jwtUtil.isBlacklisted(token));
 		jwtUtil.blacklistToken(token);
 		assertTrue(jwtUtil.isBlacklisted(token));
