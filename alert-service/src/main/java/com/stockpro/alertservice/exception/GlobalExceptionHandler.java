@@ -1,18 +1,20 @@
 package com.stockpro.alertservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 @Slf4j
@@ -22,51 +24,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAlertNotFoundException(
             AlertNotFoundException ex,
             HttpServletRequest request) {
-        
-        log.error("Alert not found: {}", ex.getMessage());
-        
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.NOT_FOUND.value(),
-                "Not Found",
-                ex.getMessage(),
-                request.getRequestURI()
-        );
-        
-        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+        log.warn("Alert not found: {}", ex.getMessage());
+        return error(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
     @ExceptionHandler(InvalidAlertException.class)
     public ResponseEntity<ErrorResponse> handleInvalidAlertException(
             InvalidAlertException ex,
             HttpServletRequest request) {
-
-        log.error("Invalid alert request: {}", ex.getMessage());
-
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
-                "Bad Request",
-                ex.getMessage(),
-                request.getRequestURI()
-        );
-
-        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+        log.warn("Invalid alert request: {}", ex.getMessage());
+        return error(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidationExceptions(
-            MethodArgumentNotValidException ex) {
-        
-        log.error("Validation error: {}", ex.getMessage());
-        
+    public ResponseEntity<Map<String, String>> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        log.warn("Validation error: {}", ex.getMessage());
         Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
-        
+        ex.getBindingResult().getAllErrors().forEach(error -> errors.put(((FieldError) error).getField(), error.getDefaultMessage()));
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
     }
 
@@ -74,35 +48,43 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleOptimisticLockingException(
             OptimisticLockingFailureException ex,
             HttpServletRequest request) {
+        log.warn("Concurrent alert update conflict: {}", ex.getMessage());
+        return error(HttpStatus.CONFLICT, "The alert was modified by another transaction. Please retry.", request);
+    }
 
-        log.error("Concurrent alert update conflict: {}", ex.getMessage());
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> handleAuthenticationException(
+            AuthenticationException ex,
+            HttpServletRequest request) {
+        return error(HttpStatus.UNAUTHORIZED, "Unauthorized", request);
+    }
 
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.CONFLICT.value(),
-                "Conflict",
-                "The alert was modified by another transaction. Please retry.",
-                request.getRequestURI()
-        );
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDeniedException(
+            AccessDeniedException ex,
+            HttpServletRequest request) {
+        return error(HttpStatus.FORBIDDEN, "You are not allowed to access this alert", request);
+    }
 
-        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(
+            NoResourceFoundException ex,
+            HttpServletRequest request) {
+        log.debug("Resource not found: {}", ex.getResourcePath());
+        return error(HttpStatus.NOT_FOUND, "Resource not found", request);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGlobalException(
             Exception ex,
             HttpServletRequest request) {
-        
         log.error("Unexpected error: {}", ex.getMessage(), ex);
-        
-        ErrorResponse error = new ErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "Internal Server Error",
-                "An unexpected error occurred",
-                request.getRequestURI()
-        );
-        
-        return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);
+    }
+
+    private ResponseEntity<ErrorResponse> error(HttpStatus status, String message, HttpServletRequest request) {
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(), status.value(), status.getReasonPhrase(), message, request.getRequestURI()),
+                status);
     }
 }

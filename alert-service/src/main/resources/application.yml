@@ -1,14 +1,14 @@
 server:
-  port: 8088
+  port: 8087
 
 spring:
   application:
     name: ALERT-SERVICE
 
   datasource:
-    url: jdbc:mysql://localhost:3306/alert_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
-    username: root
-    password: Suraj@123
+    url: ${ALERT_DB_URL:jdbc:mysql://localhost:3306/alert_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${ALERT_DB_USERNAME:root}
+    password: ${ALERT_DB_PASSWORD:Suraj@123}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -24,10 +24,10 @@ spring:
       use-suffix-pattern: false
 
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: /
     listener:
       simple:
@@ -38,8 +38,8 @@ spring:
           multiplier: 2.0
 
   mail:
-    host: smtp.gmail.com
-    port: 587
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:surajkr1122003@gmail.com}
     password: ${MAIL_PASSWORD:kyydpmjoefdmacdh}
     properties:
@@ -48,12 +48,12 @@ spring:
           auth: true
           starttls:
             enable: true
-            required: true
+            required: false
 
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
     register-with-eureka: true
     fetch-registry: true
   instance:
@@ -67,7 +67,6 @@ logging:
   pattern:
     file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
 
-# ✅ ADD THIS AT THE BOTTOM
 springdoc:
   api-docs:
     path: /v3/api-docs
@@ -76,3 +75,58 @@ springdoc:
     operationsSorter: method
     tagsSorter: alpha
     display-request-duration: true
+
+jwt:
+  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,caches
+  endpoint:
+    health:
+      show-details: always
+
+stockpro:
+  alert:
+    mail:
+      enabled: ${ALERT_MAIL_ENABLED:false}
+      from-address: ${ALERT_FROM_EMAIL:noreply@stockpro.local}
+    expiry-cron: ${ALERT_EXPIRY_CRON:0 0/30 * * * *}
+  rabbitmq:
+    alert:
+      exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
+      events-queue: ${ALERT_EVENTS_QUEUE:stockpro.alert.events.queue}
+      email-queue: ${ALERT_EMAIL_QUEUE:stockpro.alert.email.queue}
+      audit-queue: ${ALERT_AUDIT_QUEUE:stockpro.alert.audit.queue}
+    warehouse:
+      exchange: ${WAREHOUSE_RABBITMQ_EXCHANGE:stockpro.warehouse.exchange}
+      low:
+        queue: ${ALERT_WAREHOUSE_LOW_QUEUE:stockpro.alert.warehouse.low-stock.queue}
+        routing-key: ${WAREHOUSE_LOW_ROUTING_KEY:stock.low}
+      overstock:
+        queue: ${ALERT_WAREHOUSE_OVERSTOCK_QUEUE:stockpro.alert.warehouse.overstock.queue}
+        routing-key: ${WAREHOUSE_OVERSTOCK_ROUTING_KEY:stock.overstock}
+    purchase:
+      exchange: ${PURCHASE_RABBITMQ_EXCHANGE:stockpro.purchase.exchange}
+      pending:
+        queue: ${ALERT_PURCHASE_PENDING_QUEUE:stockpro.alert.purchase.pending-approval.queue}
+        routing-key: ${PURCHASE_PENDING_ROUTING_KEY:purchase.pending-approval}
+      approved:
+        queue: ${ALERT_PURCHASE_APPROVED_QUEUE:stockpro.alert.purchase.approved.queue}
+        routing-key: ${PURCHASE_APPROVED_ROUTING_KEY:purchase.approved}
+      overdue:
+        queue: ${ALERT_PURCHASE_OVERDUE_QUEUE:stockpro.alert.purchase.overdue.queue}
+        routing-key: ${PURCHASE_OVERDUE_ROUTING_KEY:purchase.overdue}
+    supplier:
+      exchange: ${SUPPLIER_RABBIT_EXCHANGE:stockpro.supplier.exchange}
+      alert:
+        queue: ${ALERT_SUPPLIER_QUEUE:stockpro.alert.supplier.queue}
+        deactivated-routing-key: ${SUPPLIER_DEACTIVATED_ROUTING_KEY:supplier.deactivated}
+        blacklisted-routing-key: ${SUPPLIER_BLACKLISTED_ROUTING_KEY:supplier.blacklisted}
+    movement:
+      exchange: ${MOVEMENT_RABBITMQ_EXCHANGE:stockpro.movement.exchange}
+      alert:
+        queue: ${ALERT_MOVEMENT_QUEUE:stockpro.alert.movement.queue}
+        routing-key: ${MOVEMENT_ALERT_ROUTING_KEY:movement.*}

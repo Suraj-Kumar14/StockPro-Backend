@@ -1,54 +1,52 @@
 package com.stockpro.alertservice.repository;
 
 import com.stockpro.alertservice.entity.Alert;
-import com.stockpro.alertservice.entity.AlertType;
-import com.stockpro.alertservice.entity.Severity;
+import com.stockpro.alertservice.enums.AlertSeverity;
+import com.stockpro.alertservice.enums.AlertStatus;
+import com.stockpro.alertservice.enums.AlertType;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-import java.time.LocalDateTime;
-import java.util.List;
+public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecificationExecutor<Alert> {
 
-@Repository
-public interface AlertRepository extends JpaRepository<Alert, Long> {
+    Optional<Alert> findByAlertId(Long alertId);
 
-    List<Alert> findByRecipientIdAndIsArchivedFalse(Long recipientId);
+    Optional<Alert> findByAlertNumber(String alertNumber);
 
-    List<Alert> findByRecipientIdAndIsRead(Long recipientId, Boolean isRead);
+    boolean existsByAlertNumber(String alertNumber);
 
-    List<Alert> findByRecipientIdAndIsAcknowledged(Long recipientId, Boolean isAcknowledged);
+    boolean existsByCorrelationIdAndTypeAndRecipientId(String correlationId, AlertType type, Long recipientId);
 
-    List<Alert> findByRecipientIdAndIsReadAndIsArchivedFalse(Long recipientId, Boolean isRead);
+    boolean existsByCorrelationIdAndTypeAndRecipientRole(String correlationId, AlertType type, String recipientRole);
 
-    List<Alert> findByRecipientIdAndIsAcknowledgedAndIsArchivedFalse(Long recipientId, Boolean isAcknowledged);
+    Page<Alert> findByRecipientId(Long recipientId, Pageable pageable);
 
-    List<Alert> findByTypeAndIsArchivedFalse(AlertType type);
+    Page<Alert> findByRecipientRole(String recipientRole, Pageable pageable);
 
-    List<Alert> findBySeverityAndIsArchivedFalse(Severity severity);
+    Page<Alert> findByRecipientIdAndIsReadFalse(Long recipientId, Pageable pageable);
 
-    List<Alert> findByRelatedProductIdAndIsArchivedFalse(Long productId);
+    Page<Alert> findByRecipientIdAndIsAcknowledgedFalse(Long recipientId, Pageable pageable);
 
-    List<Alert> findByRelatedWarehouseIdAndIsArchivedFalse(Long warehouseId);
+    Page<Alert> findByType(AlertType type, Pageable pageable);
 
-    Long countByRecipientIdAndIsReadAndIsArchivedFalse(Long recipientId, Boolean isRead);
+    Page<Alert> findBySeverity(AlertSeverity severity, Pageable pageable);
 
-    Long countByIsAcknowledgedAndIsArchivedFalse(Boolean isAcknowledged);
+    Page<Alert> findByStatus(AlertStatus status, Pageable pageable);
 
-    Page<Alert> findByRecipientIdAndIsArchivedFalse(Long recipientId, Pageable pageable);
+    List<Alert> findByExpiresAtBeforeAndStatusNot(LocalDateTime now, AlertStatus status);
 
-    @Query("SELECT a FROM Alert a WHERE a.recipientId = :recipientId AND a.isRead = false AND a.isArchived = false ORDER BY a.createdAt DESC")
-    List<Alert> findUnreadAlertsByRecipient(@Param("recipientId") Long recipientId);
+    long countByRecipientIdAndIsReadFalse(Long recipientId);
 
-    @Query("SELECT a FROM Alert a WHERE a.recipientId = :recipientId AND a.isAcknowledged = false AND a.severity = 'CRITICAL' AND a.isArchived = false ORDER BY a.createdAt DESC")
-    List<Alert> findUnacknowledgedCriticalAlerts(@Param("recipientId") Long recipientId);
+    long countByRecipientRoleAndIsReadFalse(String recipientRole);
 
-    @Query("SELECT a FROM Alert a WHERE a.createdAt >= :startDate AND a.isArchived = false ORDER BY a.createdAt DESC")
-    List<Alert> findRecentAlerts(@Param("startDate") LocalDateTime startDate);
+    long countBySeverity(AlertSeverity severity);
 
-    @Query("SELECT a FROM Alert a WHERE a.isAcknowledged = false AND a.isArchived = false ORDER BY a.createdAt DESC")
-    List<Alert> findUnacknowledgedAlerts();
+    long countByType(AlertType type);
+
+    Optional<Alert> findTopByAlertNumberStartingWithOrderByAlertNumberDesc(String prefix);
 }
