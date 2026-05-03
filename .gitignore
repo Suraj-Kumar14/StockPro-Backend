@@ -1,8 +1,18 @@
 /.metadata/
 
 # Logs
-logs/
+
 **/logs/
-*.log
-.idea/
 .project
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Logs
+logs/
+*.log
+
+# Maven build output
+target/
+*/target/

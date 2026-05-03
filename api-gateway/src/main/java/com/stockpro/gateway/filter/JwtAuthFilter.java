@@ -22,8 +22,16 @@ import java.util.List;
 @Slf4j
 public class JwtAuthFilter implements GlobalFilter, Ordered {
     private static final List<String> OPEN_PATH_PREFIXES = List.of(
+            "/api/v1/auth/login",
+            "/api/v1/auth/register",
+            "/api/v1/auth/register-request",
+            "/api/v1/auth/forgot-password",
+            "/api/v1/auth/send-otp",
+            "/api/v1/auth/verify-otp",
+            "/api/v1/auth/reset-password",
             "/auth/login",
             "/auth/register",
+            "/auth/register-request",
             "/auth/forgot-password",
             "/auth/send-otp",
             "/auth/verify-otp",
@@ -31,7 +39,11 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             "/oauth2/",
             "/login/oauth2/",
             "/swagger-ui",
-            "/actuator/**",
+            "/actuator",
+            "/actuator/health",
+            "/actuator/info",
+            "/actuator/gateway",
+            "/actuator/metrics",
             "/webjars/",
             "/v3/api-docs",
             "/alert-service/v3/api-docs",
@@ -57,7 +69,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         // Skip JWT check for open paths
         if (isOpenPath(path)) {
-            log.debug("Open path — skipping JWT: {}", path);
+            log.debug("Open path - skipping JWT: {}", path);
             return chain.filter(exchange);
         }
 

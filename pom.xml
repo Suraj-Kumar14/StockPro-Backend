@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.stockpro</groupId>
+    <artifactId>inventory-management-system</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>StockPro Inventory Management System</name>
+    <description>Aggregator project for StockPro Spring Boot microservices</description>
+
+    <modules>
+        <module>Admin-server</module>
+        <module>alert-service</module>
+        <module>api-gateway</module>
+        <module>auth-service</module>
+        <module>eureka-server</module>
+        <module>movement-service</module>
+        <module>payment-service</module>
+        <module>product-service</module>
+        <module>purchase-service</module>
+        <module>report-service</module>
+        <module>supplier-service</module>
+        <module>warehouse-service</module>
+    </modules>
+
+</project>

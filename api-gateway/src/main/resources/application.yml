@@ -2,7 +2,7 @@ server:
   port: 8080
 
 jwt:
-  secret: stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c
+  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
 
 spring:
   application:
@@ -18,6 +18,7 @@ spring:
           '[/**]':
             allowedOrigins:
               - "http://localhost:4200"
+              - "http://localhost:4201"
             allowedMethods:
               - GET
               - POST
@@ -34,6 +35,13 @@ spring:
 
       routes:
         # ================= NORMAL ROUTES =================
+        - id: auth-service-api-v1
+          uri: lb://AUTH-SERVICE
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            - RewritePath=/api/v1/auth(?<segment>/?.*), /auth${segment}
+
         - id: auth-service
           uri: lb://AUTH-SERVICE
           predicates:
@@ -233,10 +241,31 @@ springdoc:
   api-docs:
     enabled: true
 
+management:
+  info:
+    env:
+      enabled: true
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,gateway,metrics
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+info:
+  app:
+    name: ${spring.application.name}
+    description: StockPro API Gateway
+    port: ${server.port}
+
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka
+      defaultZone: http://localhost:8761/eureka/
     register-with-eureka: true
     fetch-registry: true
   instance:
