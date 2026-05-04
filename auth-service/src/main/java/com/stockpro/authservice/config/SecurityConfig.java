@@ -44,7 +44,15 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
-            "/v3/api-docs.yaml"
+            "/v3/api-docs.yaml",
+            "/api/v1/auth/login",
+            "/api/v1/auth/register",
+            "/api/v1/auth/register-request",
+            "/api/v1/auth/refresh-token",
+            "/api/v1/auth/health",
+            "/actuator/**",
+            "/oauth2/**",
+            "/login/oauth2/**"
     };
 
     @Bean

@@ -16,4 +16,8 @@ public class UserResponseDTO {
     private String department;
     private Boolean isActive;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private LocalDateTime lastLoginAt;
+    private String roleLabel;
+    private String provider;
 }

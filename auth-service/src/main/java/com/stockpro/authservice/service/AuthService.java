@@ -11,7 +11,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.stockpro.authservice.dto.AdminUpdateUserRequestDTO;
 import com.stockpro.authservice.dto.ChangePasswordDTO;
+import com.stockpro.authservice.dto.CreateUserRequestDTO;
 import com.stockpro.authservice.dto.ForgotPasswordRequestDTO;
 import com.stockpro.authservice.dto.LoginResponseDTO;
 import com.stockpro.authservice.dto.MessageResponseDTO;
@@ -50,6 +52,9 @@ public class AuthService {
 
     @Value("${app.otp.expiry-minutes}")
     private long otpExpiryMinutes;
+
+    @Value("${jwt.expiration}")
+    private long jwtExpirationMs;
 
     public AuthService(
             UserRepository userRepository,
@@ -199,6 +204,9 @@ public class AuthService {
         String email = jwtUtil.extractUsername(refreshToken);
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            throw new InactiveAccountException("Your account is inactive. Please contact administrator.");
+        }
 
         jwtUtil.blacklistToken(refreshToken);
 
@@ -231,7 +239,10 @@ public class AuthService {
     public void changePassword(String email, ChangePasswordDTO dto) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (!passwordEncoder.matches(dto.getOldPassword(), user.getPassword())) {
+        if (dto.getConfirmPassword() != null && !dto.getConfirmPassword().equals(dto.getNewPassword())) {
+            throw new RuntimeException("New password and confirm password do not match");
+        }
+        if (!passwordEncoder.matches(dto.getEffectiveCurrentPassword(), user.getPassword())) {
             throw new RuntimeException("Old password is incorrect");
         }
         user.setPassword(passwordEncoder.encode(dto.getNewPassword()));
@@ -242,6 +253,18 @@ public class AuthService {
     public List<UserResponseDTO> getAllUsers() {
         return userRepository.findAll()
                 .stream().map(this::mapToDTO).toList();
+    }
+
+    public List<UserResponseDTO> searchUsers(String keyword, UserRole role, Boolean isActive) {
+        List<User> users = (keyword == null || keyword.isBlank())
+                ? userRepository.findAll()
+                : userRepository.findByNameContainingIgnoreCaseOrEmailContainingIgnoreCase(keyword.trim(), keyword.trim());
+
+        return users.stream()
+                .filter(user -> role == null || user.getRole() == role)
+                .filter(user -> isActive == null || Boolean.TRUE.equals(user.getIsActive()) == isActive)
+                .map(this::mapToDTO)
+                .toList();
     }
 
     public UserResponseDTO getUserById(Long id) {
@@ -274,6 +297,50 @@ public class AuthService {
                 recentLoginCount);
     }
 
+    public UserResponseDTO createUser(CreateUserRequestDTO dto) {
+        if (userRepository.existsByEmail(dto.getEmail())) {
+            throw new UserAlreadyExistsException("Email already exists");
+        }
+        if (dto.getConfirmPassword() != null && !dto.getConfirmPassword().equals(dto.getPassword())) {
+            throw new RuntimeException("Password and confirm password do not match");
+        }
+
+        User user = new User();
+        user.setName(dto.getName());
+        user.setEmail(dto.getEmail());
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user.setPhone(dto.getPhone());
+        user.setRole(dto.getRole());
+        user.setDepartment(dto.getDepartment());
+        user.setIsActive(dto.getIsActive() == null ? true : dto.getIsActive());
+
+        User savedUser = userRepository.save(user);
+        log.info("[AUDIT] action=CREATE_USER userId={} role={}", savedUser.getId(), savedUser.getRole());
+        return mapToDTO(savedUser);
+    }
+
+    public UserResponseDTO updateUser(Long id, AdminUpdateUserRequestDTO dto, String actorEmail) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+        if (actorEmail != null
+                && actorEmail.equalsIgnoreCase(user.getEmail())
+                && Boolean.FALSE.equals(dto.getIsActive())) {
+            throw new SelfDeactivationNotAllowedException("You cannot deactivate your own account.");
+        }
+
+        user.setName(dto.getName());
+        user.setPhone(dto.getPhone());
+        user.setRole(dto.getRole());
+        user.setDepartment(dto.getDepartment());
+        if (dto.getIsActive() != null) {
+            user.setIsActive(dto.getIsActive());
+        }
+
+        User savedUser = userRepository.save(user);
+        log.info("[AUDIT] action=UPDATE_USER userId={} actor={}", id, actorEmail);
+        return mapToDTO(savedUser);
+    }
+
     public void deactivate(Long id, String actorEmail) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
@@ -301,7 +368,7 @@ public class AuthService {
     private LoginResponseDTO issueTokens(User user) {
         String accessToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), user.getId());
         String refreshToken = jwtUtil.generateRefreshToken(user.getEmail());
-        return new LoginResponseDTO(accessToken, refreshToken);
+        return new LoginResponseDTO(accessToken, refreshToken, jwtExpirationMs / 1000, mapToDTO(user));
     }
 
     private boolean isPasswordValid(String rawPassword, User user) {
@@ -335,6 +402,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
         user.setRole(UserRole.STAFF);
         user.setIsActive(true);
+        user.setProvider("GOOGLE");
         User savedUser = userRepository.save(user);
         log.info("Created new Google-authenticated user: {}", email);
         return savedUser;
@@ -402,6 +470,19 @@ public class AuthService {
         dto.setDepartment(user.getDepartment());
         dto.setIsActive(user.getIsActive());
         dto.setCreatedAt(user.getCreatedAt());
+        dto.setUpdatedAt(user.getUpdatedAt());
+        dto.setLastLoginAt(user.getLastLoginAt());
+        dto.setRoleLabel(toRoleLabel(user.getRole()));
+        dto.setProvider(user.getProvider());
         return dto;
+    }
+
+    private String toRoleLabel(UserRole role) {
+        return switch (role) {
+            case ADMIN -> "Administrator";
+            case MANAGER -> "Inventory Manager";
+            case OFFICER -> "Purchase Officer";
+            case STAFF -> "Warehouse Staff";
+        };
     }
 }

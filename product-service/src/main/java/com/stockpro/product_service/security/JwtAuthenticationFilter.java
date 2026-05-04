@@ -22,7 +22,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	private static final List<String> PUBLIC_PATH_PREFIXES = List.of(
 			"/swagger-ui",
 			"/swagger-ui.html",
-			"/v3/api-docs");
+			"/v3/api-docs",
+            "/actuator/health",
+            "/actuator/info");
 
 	private final String secret;
 
@@ -36,6 +38,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
         if (isPublicPath(request.getRequestURI())
+                || "OPTIONS".equalsIgnoreCase(request.getMethod())
                 || SecurityContextHolder.getContext().getAuthentication() != null) {
             filterChain.doFilter(request, response);
             return;
@@ -51,12 +54,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Long userId = claims.get("userId", Long.class);
 
                 if (email != null && role != null) {
+                    String authority = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+
                     AuthenticatedUser principal = new AuthenticatedUser(userId, email, role, token);
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
                                     principal,
                                     token,
-                                    List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                                    List.of(new SimpleGrantedAuthority(authority)));
+
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
             } catch (Exception ex) {

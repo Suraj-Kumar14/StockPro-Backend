@@ -79,7 +79,29 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
   health:
     redis:
       enabled: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev,local
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,beans,loggers,mappings,threaddump,heapdump,caches,configprops
+  endpoint:
+    health:
+      show-details: always
+    env:
+      show-values: when_authorized
+    configprops:
+      show-values: when_authorized

@@ -3,6 +3,7 @@ package com.stockpro.authservice.controller;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -10,6 +11,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import com.stockpro.authservice.dto.*;
+import com.stockpro.authservice.entity.UserRole;
 import com.stockpro.authservice.service.AuthService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -168,8 +170,11 @@ public class AuthController {
     @SecurityRequirement(name = "bearerAuth")
     @Operation(summary = "Get all users (Admin only)")
     @ApiResponse(responseCode = "200", description = "List of all users")
-    public ResponseEntity<List<UserResponseDTO>> getAllUsers() {
-        return ResponseEntity.ok(authService.getAllUsers());
+    public ResponseEntity<List<UserResponseDTO>> getAllUsers(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) UserRole role,
+            @RequestParam(required = false) Boolean isActive) {
+        return ResponseEntity.ok(authService.searchUsers(keyword, role, isActive));
     }
 
     @GetMapping("/users/{id}")
@@ -189,6 +194,29 @@ public class AuthController {
     @ApiResponse(responseCode = "200", description = "User summary counts")
     public ResponseEntity<UserSummaryDTO> getUserSummary() {
         return ResponseEntity.ok(authService.getUserSummary());
+    }
+
+    @PostMapping("/users")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Create user account (Admin only)")
+    @ApiResponse(responseCode = "201", description = "User created successfully",
+                 content = @Content(schema = @Schema(implementation = UserResponseDTO.class)))
+    public ResponseEntity<UserResponseDTO> createUser(@Valid @RequestBody CreateUserRequestDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(authService.createUser(dto));
+    }
+
+    @PutMapping("/users/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Update user account (Admin only)")
+    @ApiResponse(responseCode = "200", description = "User updated successfully",
+                 content = @Content(schema = @Schema(implementation = UserResponseDTO.class)))
+    public ResponseEntity<UserResponseDTO> updateUser(
+            @Parameter(description = "User ID", required = true) @PathVariable Long id,
+            @Valid @RequestBody AdminUpdateUserRequestDTO dto,
+            Authentication authentication) {
+        return ResponseEntity.ok(authService.updateUser(id, dto, authentication.getName()));
     }
 
     @DeleteMapping("/user/{id}")
@@ -218,6 +246,16 @@ public class AuthController {
         return ResponseEntity.ok("User deactivated successfully");
     }
 
+    @PatchMapping("/users/{id}/deactivate")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Deactivate a user account (Admin only)")
+    public ResponseEntity<String> deactivateUserPatch(
+            @Parameter(description = "User ID", required = true) @PathVariable Long id,
+            Authentication authentication) {
+        return deactivateUser(id, authentication);
+    }
+
     @PutMapping("/users/{id}/activate")
     @PreAuthorize("hasRole('ADMIN')")
     @SecurityRequirement(name = "bearerAuth")
@@ -232,5 +270,15 @@ public class AuthController {
         log.info("[AUDIT] Admin {} activating userId={}", authentication.getName(), id);
         authService.activate(id);
         return ResponseEntity.ok("User activated successfully");
+    }
+
+    @PatchMapping("/users/{id}/activate")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Activate a deactivated user account (Admin only)")
+    public ResponseEntity<String> activateUserPatch(
+            @Parameter(description = "User ID", required = true) @PathVariable Long id,
+            Authentication authentication) {
+        return activateUser(id, authentication);
     }
 }

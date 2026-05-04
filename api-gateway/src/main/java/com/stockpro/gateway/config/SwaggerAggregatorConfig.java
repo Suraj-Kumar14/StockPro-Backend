@@ -1,11 +1,11 @@
 package com.stockpro.gateway.config;
 
 import org.springdoc.core.models.GroupedOpenApi;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cloud.gateway.route.RouteDefinition;
 import org.springframework.cloud.gateway.route.RouteDefinitionLocator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,20 +21,15 @@ import java.util.List;
 @Configuration
 public class SwaggerAggregatorConfig {
 
-    private final ObjectProvider<RouteDefinitionLocator> locatorProvider;
+    private final RouteDefinitionLocator locator;
 
-    public SwaggerAggregatorConfig(ObjectProvider<RouteDefinitionLocator> locatorProvider) {
-        this.locatorProvider = locatorProvider;
+    public SwaggerAggregatorConfig(@Lazy RouteDefinitionLocator locator) {
+        this.locator = locator;
     }
 
     @Bean
     public List<GroupedOpenApi> apis() {
         List<GroupedOpenApi> groups = new ArrayList<>();
-        RouteDefinitionLocator locator = locatorProvider.getIfAvailable();
-        if (locator == null) {
-            return groups;
-        }
-
         List<RouteDefinition> definitions = locator.getRouteDefinitions().collectList().block();
 
         if (definitions != null) {
