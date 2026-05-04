@@ -23,6 +23,8 @@ import com.stockpro.authservice.service.OtpMailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -40,6 +42,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -315,6 +319,44 @@ class AuthServiceTest {
         assertEquals(1, summary.getAdminCount());
         assertEquals(1, summary.getWarehouseStaffCount());
         assertEquals(2, summary.getRecentLoginCount());
+    }
+
+    @Test
+    void getUsersPage_shouldSearchByTextAndIgnoreAllFilters() {
+        user.setName("Suraj Admin");
+        user.setEmail("suraj.admin@stockpro.com");
+        user.setPhone("9876543201");
+        user.setDepartment("Administration");
+        user.setRole(UserRole.ADMIN);
+
+        when(userRepository.searchUsers(eq("Suraj"), isNull(), isNull(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(user)));
+
+        var result = authService.getUsersPage(0, 50, "  Suraj  ", "ALL", "ALL");
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals("Suraj Admin", result.getContent().get(0).getName());
+        verify(userRepository).searchUsers(eq("Suraj"), isNull(), isNull(), any(Pageable.class));
+    }
+
+    @Test
+    void getUsersPage_shouldMapRoleAndActiveStatusFilters() {
+        when(userRepository.searchUsers(isNull(), eq(UserRole.MANAGER), eq(Boolean.TRUE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(user)));
+
+        authService.getUsersPage(0, 50, "", "manager", "active");
+
+        verify(userRepository).searchUsers(isNull(), eq(UserRole.MANAGER), eq(Boolean.TRUE), any(Pageable.class));
+    }
+
+    @Test
+    void getUsersPage_shouldMapInactiveStatusFilter() {
+        when(userRepository.searchUsers(isNull(), isNull(), eq(Boolean.FALSE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        authService.getUsersPage(0, 50, null, null, "INACTIVE");
+
+        verify(userRepository).searchUsers(isNull(), isNull(), eq(Boolean.FALSE), any(Pageable.class));
     }
 
     private OtpToken passwordResetOtp(String otp) {

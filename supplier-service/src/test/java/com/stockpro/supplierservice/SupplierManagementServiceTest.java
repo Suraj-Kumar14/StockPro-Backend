@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -76,7 +77,7 @@ class SupplierManagementServiceTest {
 
     @Test
     void createSupplier_shouldCreateSupplier_whenValidRequest() {
-        when(supplierRepository.findBySupplierCode("SUP-20260501-0001")).thenReturn(Optional.empty());
+        when(supplierRepository.findBySupplierCode(anyString())).thenReturn(Optional.empty());
         when(supplierRepository.findByEmailIgnoreCase("acme@example.com")).thenReturn(Optional.empty());
         when(supplierRepository.existsBySupplierCode(any())).thenReturn(false);
         when(supplierRepository.save(any(Supplier.class))).thenReturn(supplier);

@@ -22,6 +22,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -98,9 +99,18 @@ public class WarehouseManagementService {
     }
 
     public Page<WarehouseResponse> getAllWarehouses(Boolean isActive, int page, int size, String sortBy, String sortDir) {
+        return getAllWarehouses(isActive, null, null, null, null, page, size, sortBy, sortDir);
+    }
+
+    public Page<WarehouseResponse> getAllWarehouses(Boolean isActive, String search, String status, String city, String state, int page, int size, String sortBy, String sortDir) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(resolveSortDirection(sortDir), resolveSortField(sortBy)));
-        Page<Warehouse> warehouses = isActive == null ? warehouseRepository.findAll(pageable) : warehouseRepository.findByIsActive(isActive, pageable);
+        Specification<Warehouse> filters = warehouseFilters(isActive, search, status, city, state);
+        Page<Warehouse> warehouses = filters == null ? warehouseRepository.findAll(pageable) : warehouseRepository.findAll(filters, pageable);
         return warehouses.map(this::toResponse);
+    }
+
+    public List<WarehouseResponse> getActiveWarehouses() {
+        return warehouseRepository.findByIsActive(true).stream().map(this::toResponse).toList();
     }
 
     @Transactional
@@ -154,6 +164,16 @@ public class WarehouseManagementService {
 
     public List<WarehouseResponse> getWarehousesByManager(Long managerId) {
         return warehouseRepository.findByManagerId(managerId).stream().map(this::toResponse).toList();
+    }
+
+    @Transactional
+    public WarehouseResponse assignManager(Long warehouseId, Long managerId, Long actorId) {
+        Warehouse warehouse = getWarehouseEntity(warehouseId);
+        warehouse.setManagerId(managerId);
+        warehouse.setUpdatedBy(actorId);
+        Warehouse updated = warehouseRepository.save(warehouse);
+        publishWarehouseEvent(warehouseUpdatedRouting, "WAREHOUSE_UPDATED", updated, actorId);
+        return toResponse(updated);
     }
 
     public WarehouseSummaryResponse getWarehouseSummary() {
@@ -262,5 +282,57 @@ public class WarehouseManagementService {
         }
 
         return resolvedField;
+    }
+
+    private Specification<Warehouse> warehouseFilters(Boolean isActive, String search, String status, String city, String state) {
+        Specification<Warehouse> spec = null;
+        Boolean activeFilter = isActive != null ? isActive : statusToActive(status);
+
+        if (activeFilter != null) {
+            spec = and(spec, (root, query, cb) -> cb.equal(root.get("isActive"), activeFilter));
+        }
+
+        String searchTerm = normalizeOptional(search);
+        if (searchTerm != null) {
+            String pattern = "%" + searchTerm.toLowerCase(Locale.ROOT) + "%";
+            spec = and(spec, (root, query, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("name")), pattern),
+                    cb.like(cb.lower(root.get("code")), pattern),
+                    cb.like(cb.lower(root.get("location")), pattern),
+                    cb.like(cb.lower(root.get("address")), pattern),
+                    cb.like(cb.lower(root.get("city")), pattern),
+                    cb.like(cb.lower(root.get("state")), pattern),
+                    cb.like(cb.lower(root.get("country")), pattern)));
+        }
+
+        String cityFilter = normalizeOptional(city);
+        if (cityFilter != null) {
+            spec = and(spec, (root, query, cb) -> cb.equal(cb.lower(root.get("city")), cityFilter.toLowerCase(Locale.ROOT)));
+        }
+
+        String stateFilter = normalizeOptional(state);
+        if (stateFilter != null) {
+            spec = and(spec, (root, query, cb) -> cb.equal(cb.lower(root.get("state")), stateFilter.toLowerCase(Locale.ROOT)));
+        }
+
+        return spec;
+    }
+
+    private Specification<Warehouse> and(Specification<Warehouse> current, Specification<Warehouse> next) {
+        return current == null ? next : current.and(next);
+    }
+
+    private Boolean statusToActive(String status) {
+        String normalizedStatus = normalizeOptional(status);
+        if (normalizedStatus == null || "ALL".equalsIgnoreCase(normalizedStatus)) {
+            return null;
+        }
+        if ("ACTIVE".equalsIgnoreCase(normalizedStatus)) {
+            return true;
+        }
+        if ("INACTIVE".equalsIgnoreCase(normalizedStatus)) {
+            return false;
+        }
+        throw new IllegalArgumentException("Invalid status '" + status + "'. Allowed values: ACTIVE, INACTIVE, ALL");
     }
 }

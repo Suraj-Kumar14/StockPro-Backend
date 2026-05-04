@@ -35,11 +35,13 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/api/v1/products")
 @Validated
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "Products", description = "Product management APIs for the StockPro inventory catalog")
 @SecurityRequirement(name = "bearerAuth")
 public class ProductController {
@@ -163,6 +165,7 @@ public class ProductController {
     public ResponseEntity<ProductResponse> updateProduct(
             @PathVariable Long productId,
             @Valid @RequestBody UpdateProductRequest request) {
+        log.info("[PRODUCT UPDATE CONTROLLER] id={}, request={}", productId, request);
         Long actorId = currentUserContext.getActorId();
         return ResponseEntity.ok(productService.updateProduct(productId, request, actorId));
     }

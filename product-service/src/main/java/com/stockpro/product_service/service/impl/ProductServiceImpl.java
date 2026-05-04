@@ -167,8 +167,14 @@ public class ProductServiceImpl implements ProductService {
     @Override
     @Transactional
     public ProductResponse updateProduct(Long productId, UpdateProductRequest request, Long actorId) {
-        log.info("Product update started for productId={}", productId);
+        log.info("[PRODUCT UPDATE SERVICE START] id={}", productId);
+        int initializedVersions = productRepository.initializeNullVersion(productId);
+        if (initializedVersions > 0) {
+            log.info("Initialized missing product version before update. productId={}", productId);
+        }
         Product product = findProduct(productId);
+        log.info("[PRODUCT UPDATE EXISTING] id={}, sku={}, barcode={}",
+                product.getProductId(), product.getSku(), product.getBarcode());
         String oldSnapshot = snapshot(product);
 
         UpdateProductRequest sanitizedRequest = productValidationService.sanitize(request);
@@ -198,8 +204,10 @@ public class ProductServiceImpl implements ProductService {
         }
         product.setUpdatedBy(actorId);
 
+        log.info("[PRODUCT UPDATE BEFORE SAVE] id={}, sku={}, name={}",
+                product.getProductId(), product.getSku(), product.getName());
         Product updatedProduct = productRepository.save(product);
-        log.info("Product updated successfully for productId={}", productId);
+        log.info("[PRODUCT UPDATE SAVED] id={}", updatedProduct.getProductId());
         audit(actorId, "PRODUCT_UPDATED", productId, oldSnapshot, snapshot(updatedProduct));
         productEventPublisher.publishProductUpdated(buildEvent(
                 updatedProduct,

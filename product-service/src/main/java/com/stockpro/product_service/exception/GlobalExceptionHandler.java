@@ -3,6 +3,7 @@ package com.stockpro.product_service.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -62,6 +63,17 @@ public class GlobalExceptionHandler {
             ConstraintViolationException ex,
             HttpServletRequest request) {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(
+            DataIntegrityViolationException ex,
+            HttpServletRequest request) {
+        log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        return buildErrorResponse(
+                HttpStatus.CONFLICT,
+                "Product data conflicts with existing records or database constraints",
+                request);
     }
 
     @ExceptionHandler(AuthenticationException.class)

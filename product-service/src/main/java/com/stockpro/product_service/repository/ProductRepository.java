@@ -7,7 +7,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.stockpro.product_service.entity.Product;
@@ -16,6 +18,10 @@ import com.stockpro.product_service.entity.Product;
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
     Optional<Product> findByProductId(Long productId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "update products set version = 0 where product_id = :productId and version is null", nativeQuery = true)
+    int initializeNullVersion(@Param("productId") Long productId);
 
     Optional<Product> findBySkuIgnoreCase(String sku);
 

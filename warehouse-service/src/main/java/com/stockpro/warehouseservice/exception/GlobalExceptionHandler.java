@@ -114,11 +114,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResourceFound(
             NoResourceFoundException ex, HttpServletRequest request) {
-        log.error("NoResourceFoundException: {}", ex.getMessage());
+        String path = request.getRequestURI();
+        if (path.startsWith("/actuator/")) {
+            log.warn("Actuator endpoint not available: {}", path);
+        } else {
+            log.warn("Resource not found: {}", path);
+        }
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
                         HttpStatus.NOT_FOUND.value(), "Not Found",
-                        ex.getMessage(), request.getRequestURI()),
+                        "Resource not found", path),
                 HttpStatus.NOT_FOUND);
     }
 

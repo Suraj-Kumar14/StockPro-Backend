@@ -1,5 +1,7 @@
 package com.stockpro.product_service.service;
 
+import java.util.concurrent.CompletableFuture;
+
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -66,6 +68,10 @@ public class RabbitMQProductEventPublisher implements ProductEventPublisher {
     }
 
     private void publish(String routingKey, ProductLifecycleEvent event, String eventLabel) {
+        CompletableFuture.runAsync(() -> send(routingKey, event, eventLabel));
+    }
+
+    private void send(String routingKey, ProductLifecycleEvent event, String eventLabel) {
         try {
             rabbitTemplate.convertAndSend(exchange, routingKey, event);
             log.info("RabbitMQ product event published successfully eventType={} productId={} routingKey={}",

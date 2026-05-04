@@ -458,7 +458,12 @@ public class AuthService {
     }
 
     private String normalizeSearch(String search) {
-        return search == null ? null : search.trim();
+        if (search == null) {
+            return null;
+        }
+
+        String trimmed = search.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private String normalizeOptional(String value) {
@@ -471,15 +476,19 @@ public class AuthService {
     }
 
     private UserRole parseRole(String role) {
-        if (role == null || role.isBlank()) {
+        if (role == null || role.isBlank() || "ALL".equalsIgnoreCase(role.trim())) {
             return null;
         }
 
-        return UserRole.valueOf(role.trim().toUpperCase());
+        try {
+            return UserRole.valueOf(role.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new RuntimeException("Invalid role filter: " + role);
+        }
     }
 
     private Boolean parseStatus(String status) {
-        if (status == null || status.isBlank()) {
+        if (status == null || status.isBlank() || "ALL".equalsIgnoreCase(status.trim())) {
             return null;
         }
 

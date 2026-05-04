@@ -5,12 +5,12 @@ import com.stockpro.warehouseservice.controller.StockLevelController;
 import com.stockpro.warehouseservice.controller.WarehouseController;
 import com.stockpro.warehouseservice.dto.StockLevelResponseDTO;
 import com.stockpro.warehouseservice.dto.StockTransferDTO;
-import com.stockpro.warehouseservice.dto.WarehouseRequestDTO;
-import com.stockpro.warehouseservice.dto.WarehouseResponseDTO;
+import com.stockpro.warehouseservice.dto.request.CreateWarehouseRequest;
+import com.stockpro.warehouseservice.dto.response.WarehouseResponse;
 import com.stockpro.warehouseservice.exception.GlobalExceptionHandler;
 import com.stockpro.warehouseservice.exception.InsufficientStockException;
 import com.stockpro.warehouseservice.service.StockLevelService;
-import com.stockpro.warehouseservice.service.WarehouseService;
+import com.stockpro.warehouseservice.service.WarehouseManagementService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -24,6 +24,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,32 +46,40 @@ class WarehouseControllerTest {
     private ObjectMapper objectMapper;
 
     @MockBean
-    private WarehouseService warehouseService;
+    private WarehouseManagementService warehouseManagementService;
 
     @MockBean
     private StockLevelService stockLevelService;
 
     @Test
     void createWarehouse_shouldReturnCreated_whenRequestIsValid() throws Exception {
-        WarehouseRequestDTO request = new WarehouseRequestDTO();
+        CreateWarehouseRequest request = new CreateWarehouseRequest();
         request.setName("Central Warehouse");
+        request.setCode("WH-CENTRAL");
         request.setLocation("Delhi");
         request.setAddress("Sector 12");
+        request.setCity("Delhi");
+        request.setState("Delhi");
+        request.setCountry("India");
         request.setManagerId(7L);
         request.setCapacity(500);
         request.setPhone("9876543210");
 
-        WarehouseResponseDTO response = WarehouseResponseDTO.builder()
+        WarehouseResponse response = WarehouseResponse.builder()
                 .warehouseId(1L)
                 .name("Central Warehouse")
+                .code("WH-CENTRAL")
                 .location("Delhi")
+                .city("Delhi")
+                .state("Delhi")
+                .country("India")
                 .capacity(500)
                 .isActive(true)
                 .build();
 
-        when(warehouseService.createWarehouse(any(WarehouseRequestDTO.class))).thenReturn(response);
+        when(warehouseManagementService.createWarehouse(any(CreateWarehouseRequest.class), isNull())).thenReturn(response);
 
-        mockMvc.perform(post("/warehouses")
+        mockMvc.perform(post("/api/v1/warehouses")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -151,17 +160,21 @@ class WarehouseControllerTest {
 
     @Test
     void getWarehouseById_shouldReturnWarehouse_whenWarehouseExists() throws Exception {
-        WarehouseResponseDTO response = WarehouseResponseDTO.builder()
+        WarehouseResponse response = WarehouseResponse.builder()
                 .warehouseId(5L)
                 .name("South Hub")
+                .code("WH-SOUTH")
                 .location("Chennai")
+                .city("Chennai")
+                .state("Tamil Nadu")
+                .country("India")
                 .capacity(300)
                 .isActive(true)
                 .build();
 
-        when(warehouseService.getWarehouseById(eq(5L))).thenReturn(response);
+        when(warehouseManagementService.getWarehouseById(eq(5L))).thenReturn(response);
 
-        mockMvc.perform(get("/warehouses/5"))
+        mockMvc.perform(get("/api/v1/warehouses/5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.warehouseId").value(5L))
                 .andExpect(jsonPath("$.name").value("South Hub"));

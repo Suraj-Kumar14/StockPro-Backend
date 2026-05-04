@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 @ExtendWith(MockitoExtension.class)
 class WarehouseManagementServiceTest {
@@ -56,13 +58,13 @@ class WarehouseManagementServiceTest {
                 .isActive(true)
                 .build();
 
-        when(warehouseRepository.findByIsActive(any(), any(Pageable.class)))
+        when(warehouseRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(warehouse)));
 
         warehouseManagementService.getAllWarehouses(true, 0, 100, "warehouseName", "asc");
 
         PageRequest expected = PageRequest.of(0, 100, org.springframework.data.domain.Sort.by("name").ascending());
-        verify(warehouseRepository).findByIsActive(true, expected);
+        verify(warehouseRepository).findAll(any(Specification.class), eq(expected));
     }
 
     @Test
