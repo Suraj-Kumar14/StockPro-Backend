@@ -31,8 +31,15 @@ eureka:
       defaultZone: http://localhost:8761/eureka
     register-with-eureka: true
     fetch-registry: true
+    healthcheck:
+      enabled: true
   instance:
-    prefer-ip-address: true
+    prefer-ip-address: false
+    hostname: localhost
+    instance-id: ${spring.application.name}:${server.port}
+    home-page-url: http://localhost:${server.port}/
+    status-page-url: http://localhost:${server.port}/actuator/info
+    health-check-url: http://localhost:${server.port}/actuator/health
 
 logging:
   level:
@@ -55,7 +62,7 @@ warehouse-service:
   base-url: ${WAREHOUSE_SERVICE_BASE_URL:http://localhost:8080/stock}
 
 purchase-service:
-  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8080/purchase-orders}
+  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8080/api/v1/purchase-orders}
 
 auth-service:
   base-url: ${AUTH_SERVICE_BASE_URL:http://localhost:8080/auth}
@@ -79,25 +86,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: when_authorized
-  health:
-    redis:
-      enabled: false
-
----
-spring:
-  config:
-    activate:
-      on-profile: dev,local
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,env,beans,loggers,mappings,threaddump,heapdump,caches,configprops
+        include: health,info,metrics,loggers,env,beans,mappings,threaddump,caches,scheduledtasks,configprops
   endpoint:
     health:
       show-details: always
@@ -105,3 +94,6 @@ management:
       show-values: when_authorized
     configprops:
       show-values: when_authorized
+  health:
+    redis:
+      enabled: false

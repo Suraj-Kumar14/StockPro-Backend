@@ -12,6 +12,8 @@ import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import com.stockpro.warehouseservice.repository.WarehouseRepository;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,20 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Slf4j
 public class WarehouseManagementService {
+    private static final Map<String, String> SORT_FIELD_ALIASES = Map.ofEntries(
+            Map.entry("warehouseid", "warehouseId"),
+            Map.entry("id", "warehouseId"),
+            Map.entry("name", "name"),
+            Map.entry("warehousename", "name"),
+            Map.entry("code", "code"),
+            Map.entry("warehousecode", "code"),
+            Map.entry("location", "location"),
+            Map.entry("managerid", "managerId"),
+            Map.entry("capacity", "capacity"),
+            Map.entry("usedcapacity", "usedCapacity"),
+            Map.entry("isactive", "isActive"),
+            Map.entry("createdat", "createdAt"),
+            Map.entry("updatedat", "updatedAt"));
 
     private final WarehouseRepository warehouseRepository;
     private final StockLevelRepository stockLevelRepository;
@@ -75,7 +91,7 @@ public class WarehouseManagementService {
     }
 
     public Page<WarehouseResponse> getAllWarehouses(Boolean isActive, int page, int size, String sortBy, String sortDir) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC, sortBy));
+        Pageable pageable = PageRequest.of(page, size, Sort.by(resolveSortDirection(sortDir), resolveSortField(sortBy)));
         Page<Warehouse> warehouses = isActive == null ? warehouseRepository.findAll(pageable) : warehouseRepository.findByIsActive(isActive, pageable);
         return warehouses.map(this::toResponse);
     }
@@ -199,5 +215,22 @@ public class WarehouseManagementService {
 
     private int defaultIfNull(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private Sort.Direction resolveSortDirection(String sortDir) {
+        return "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
+    }
+
+    private String resolveSortField(String sortBy) {
+        String requestedField = sortBy == null || sortBy.isBlank() ? "name" : sortBy.trim();
+        String normalizedField = requestedField.toLowerCase(Locale.ROOT).replace("_", "");
+        String resolvedField = SORT_FIELD_ALIASES.get(normalizedField);
+
+        if (resolvedField == null) {
+            throw new IllegalArgumentException(
+                    "Invalid sortBy '" + requestedField + "'. Allowed values: warehouseId, name, code, location, managerId, capacity, usedCapacity, isActive, createdAt, updatedAt");
+        }
+
+        return resolvedField;
     }
 }

@@ -1,9 +1,8 @@
 package com.stockpro.product_service.exception;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -14,9 +13,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.ConstraintViolationException;
-import lombok.extern.slf4j.Slf4j;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestControllerAdvice
 @Slf4j
@@ -49,10 +48,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
+
         ex.getBindingResult().getAllErrors().forEach(error -> {
             String fieldName = ((FieldError) error).getField();
             errors.put(fieldName, error.getDefaultMessage());
         });
+
         return ResponseEntity.badRequest().body(errors);
     }
 
@@ -81,7 +82,8 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleNoResourceFoundException(
             NoResourceFoundException ex,
             HttpServletRequest request) {
-        log.warn("Resource not found: {}", ex.getResourcePath());
+
+        log.debug("Resource not found: {}", request.getRequestURI());
         return buildErrorResponse(HttpStatus.NOT_FOUND, "Resource not found", request);
     }
 
@@ -89,7 +91,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleGlobalException(
             Exception ex,
             HttpServletRequest request) {
-        log.error("Unhandled exception", ex);
+        log.error("Unexpected error: {}", ex.getMessage(), ex);
         return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);
     }
 
@@ -97,12 +99,14 @@ public class GlobalExceptionHandler {
             HttpStatus status,
             String message,
             HttpServletRequest request) {
+
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 status.value(),
                 status.getReasonPhrase(),
                 message,
                 request.getRequestURI());
+
         return new ResponseEntity<>(error, status);
     }
 }

@@ -43,6 +43,22 @@ import org.springframework.transaction.annotation.Transactional;
 public class PurchaseOrderManagementService {
 
     private static final EnumSet<POStatus> OVERDUE_STATUSES = EnumSet.of(POStatus.APPROVED, POStatus.PARTIALLY_RECEIVED);
+    private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
+            "poId",
+            "poNumber",
+            "supplierId",
+            "warehouseId",
+            "createdById",
+            "status",
+            "totalAmount",
+            "orderDate",
+            "expectedDate",
+            "submittedAt",
+            "approvedAt",
+            "receivedAt",
+            "createdAt",
+            "updatedAt"
+    );
 
     private final PurchaseOrderRepository purchaseOrderRepository;
     private final POLineItemRepository poLineItemRepository;
@@ -104,6 +120,13 @@ public class PurchaseOrderManagementService {
 
     public Page<PurchaseOrderResponse> getAllPurchaseOrders(int page, int size, String sortBy, String sortDir) {
         return purchaseOrderRepository.findAll(pageable(page, size, sortBy, sortDir)).map(this::toResponse);
+    }
+
+    public List<PurchaseOrderResponse> getPurchaseOrdersByStatus(POStatus status) {
+        List<POStatus> statuses = normalizeStatus(status) == POStatus.RECEIVED
+                ? List.of(POStatus.RECEIVED, POStatus.FULLY_RECEIVED)
+                : List.of(normalizeStatus(status));
+        return purchaseOrderRepository.findAllByStatusIn(statuses).stream().map(this::toResponse).toList();
     }
 
     public Page<PurchaseOrderResponse> searchPurchaseOrders(String keyword, Long supplierId, Long warehouseId, POStatus status,
@@ -251,13 +274,13 @@ public class PurchaseOrderManagementService {
 
     public PurchaseOrderSummaryResponse getPurchaseOrderSummary() {
         List<PurchaseOrder> orders = purchaseOrderRepository.findAll();
-        BigDecimal totalValue = orders.stream().map(PurchaseOrder::getTotalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalValue = orders.stream().map(po -> defaultMoney(po.getTotalAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal pendingValue = orders.stream()
                 .filter(po -> normalizeStatus(po.getStatus()) == POStatus.PENDING_APPROVAL)
-                .map(PurchaseOrder::getTotalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(po -> defaultMoney(po.getTotalAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal receivedValue = orders.stream()
                 .filter(po -> normalizeStatus(po.getStatus()) == POStatus.RECEIVED)
-                .map(PurchaseOrder::getTotalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(po -> defaultMoney(po.getTotalAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         long overdue = orders.stream().filter(this::isOverdue).count();
         return new PurchaseOrderSummaryResponse(
                 orders.size(),
@@ -278,18 +301,22 @@ public class PurchaseOrderManagementService {
     public PurchaseAnalyticsResponse getPurchaseAnalytics(LocalDate fromDate, LocalDate toDate) {
         List<PurchaseOrder> orders = purchaseOrderRepository.findAll();
         if (fromDate != null) {
-            orders = orders.stream().filter(po -> !po.getCreatedAt().toLocalDate().isBefore(fromDate)).toList();
+            orders = orders.stream()
+                    .filter(po -> po.getCreatedAt() != null && !po.getCreatedAt().toLocalDate().isBefore(fromDate))
+                    .toList();
         }
         if (toDate != null) {
-            orders = orders.stream().filter(po -> !po.getCreatedAt().toLocalDate().isAfter(toDate)).toList();
+            orders = orders.stream()
+                    .filter(po -> po.getCreatedAt() != null && !po.getCreatedAt().toLocalDate().isAfter(toDate))
+                    .toList();
         }
         BigDecimal totalSpend = orders.stream()
                 .filter(po -> normalizeStatus(po.getStatus()) == POStatus.RECEIVED)
-                .map(PurchaseOrder::getTotalAmount)
+                .map(po -> defaultMoney(po.getTotalAmount()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal monthlySpend = orders.stream()
-                .filter(po -> YearMonth.from(po.getCreatedAt()).equals(YearMonth.now()))
-                .map(PurchaseOrder::getTotalAmount)
+                .filter(po -> po.getCreatedAt() != null && YearMonth.from(po.getCreatedAt()).equals(YearMonth.now()))
+                .map(po -> defaultMoney(po.getTotalAmount()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         List<String> topSuppliers = orders.stream()
                 .collect(java.util.stream.Collectors.groupingBy(PurchaseOrder::getSupplierId, java.util.stream.Collectors.counting()))
@@ -423,6 +450,7 @@ public class PurchaseOrderManagementService {
     }
 
     private void publish(PurchaseOrder purchaseOrder, POStatus oldStatus, POStatus newStatus, Long actorId, String routingKey, String reason) {
+        String normalizedStatus = normalizeStatus(purchaseOrder.getStatus()).name();
         purchaseEventPublisher.publish(routingKey, new PurchaseEvent(
                 UUID.randomUUID().toString(),
                 routingKey,
@@ -430,7 +458,7 @@ public class PurchaseOrderManagementService {
                 purchaseOrder.getPoNumber(),
                 purchaseOrder.getSupplierId(),
                 purchaseOrder.getWarehouseId(),
-                normalizeStatus(purchaseOrder.getStatus()).name(),
+                normalizedStatus,
                 oldStatus != null ? normalizeStatus(oldStatus).name() : null,
                 newStatus != null ? normalizeStatus(newStatus).name() : null,
                 purchaseOrder.getTotalAmount(),
@@ -447,12 +475,14 @@ public class PurchaseOrderManagementService {
                                 item.getUnitCost()))
                         .toList(),
                 null,
-                Map.of("purchaseOrderId", purchaseOrder.getPoId(), "status", normalizeStatus(purchaseOrder.getStatus()).name())));
+                Map.of("purchaseOrderId", purchaseOrder.getPoId(), "status", normalizedStatus)));
     }
 
     private PurchaseOrderResponse toResponse(PurchaseOrder purchaseOrder) {
         SupplierLookupResponseDTO supplier = null;
         WarehouseLookupResponseDTO warehouse = null;
+        List<POLineItem> lineItems = purchaseOrder.getLineItems() != null ? purchaseOrder.getLineItems() : List.of();
+        POStatus normalizedStatus = normalizeStatus(purchaseOrder.getStatus());
         try { supplier = supplierGateway.getSupplier(purchaseOrder.getSupplierId()); } catch (Exception ignored) { }
         try { warehouse = warehouseGateway.getWarehouse(purchaseOrder.getWarehouseId()); } catch (Exception ignored) { }
         return new PurchaseOrderResponse(
@@ -466,7 +496,7 @@ public class PurchaseOrderManagementService {
                 null,
                 purchaseOrder.getApprovedBy(),
                 null,
-                normalizeStatus(purchaseOrder.getStatus()).name(),
+                normalizedStatus != null ? normalizedStatus.name() : null,
                 defaultMoney(purchaseOrder.getSubtotalAmount()),
                 defaultMoney(purchaseOrder.getTaxAmount()),
                 defaultMoney(purchaseOrder.getDiscountAmount()),
@@ -487,7 +517,7 @@ public class PurchaseOrderManagementService {
                 purchaseOrder.getCreatedAt(),
                 purchaseOrder.getUpdatedAt(),
                 isOverdue(purchaseOrder),
-                purchaseOrder.getLineItems().stream().map(this::toLineItemResponse).toList(),
+                lineItems.stream().map(this::toLineItemResponse).toList(),
                 historyRepository.findByPurchaseOrderIdOrderByActionAtAsc(purchaseOrder.getPoId()).stream().map(this::toHistoryResponse).toList());
     }
 
@@ -517,7 +547,23 @@ public class PurchaseOrderManagementService {
     }
 
     private Pageable pageable(int page, int size, String sortBy, String sortDir) {
-        return PageRequest.of(page, size, Sort.by("desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC, sortBy));
+        String resolvedSortBy = normalizeSortBy(sortBy);
+        return PageRequest.of(page, size, Sort.by("desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC, resolvedSortBy));
+    }
+
+    private String normalizeSortBy(String sortBy) {
+        String requestedSortBy = sortBy == null || sortBy.isBlank() ? "createdAt" : sortBy.trim();
+
+        return switch (requestedSortBy) {
+            case "purchaseOrderId" -> "poId";
+            case "expectedDeliveryDate" -> "expectedDate";
+            default -> {
+                if (!ALLOWED_SORT_FIELDS.contains(requestedSortBy)) {
+                    throw new IllegalArgumentException("Invalid purchase order sort field: " + requestedSortBy);
+                }
+                yield requestedSortBy;
+            }
+        };
     }
 
     private String generatePoNumber() {
@@ -537,6 +583,7 @@ public class PurchaseOrderManagementService {
     private boolean isOverdue(PurchaseOrder purchaseOrder) {
         return purchaseOrder.getExpectedDate() != null
                 && purchaseOrder.getExpectedDate().isBefore(LocalDate.now())
+                && normalizeStatus(purchaseOrder.getStatus()) != null
                 && OVERDUE_STATUSES.contains(normalizeStatus(purchaseOrder.getStatus()));
     }
 

@@ -8,12 +8,17 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.stockpro.authservice.dto.AdminChangeUserRoleRequestDTO;
+import com.stockpro.authservice.dto.AdminCreateUserRequestDTO;
 import com.stockpro.authservice.dto.AdminUpdateUserRequestDTO;
 import com.stockpro.authservice.dto.ChangePasswordDTO;
-import com.stockpro.authservice.dto.CreateUserRequestDTO;
 import com.stockpro.authservice.dto.ForgotPasswordRequestDTO;
 import com.stockpro.authservice.dto.LoginResponseDTO;
 import com.stockpro.authservice.dto.MessageResponseDTO;
@@ -52,9 +57,6 @@ public class AuthService {
 
     @Value("${app.otp.expiry-minutes}")
     private long otpExpiryMinutes;
-
-    @Value("${jwt.expiration}")
-    private long jwtExpirationMs;
 
     public AuthService(
             UserRepository userRepository,
@@ -204,9 +206,6 @@ public class AuthService {
         String email = jwtUtil.extractUsername(refreshToken);
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        if (!Boolean.TRUE.equals(user.getIsActive())) {
-            throw new InactiveAccountException("Your account is inactive. Please contact administrator.");
-        }
 
         jwtUtil.blacklistToken(refreshToken);
 
@@ -239,10 +238,7 @@ public class AuthService {
     public void changePassword(String email, ChangePasswordDTO dto) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (dto.getConfirmPassword() != null && !dto.getConfirmPassword().equals(dto.getNewPassword())) {
-            throw new RuntimeException("New password and confirm password do not match");
-        }
-        if (!passwordEncoder.matches(dto.getEffectiveCurrentPassword(), user.getPassword())) {
+        if (!passwordEncoder.matches(dto.getOldPassword(), user.getPassword())) {
             throw new RuntimeException("Old password is incorrect");
         }
         user.setPassword(passwordEncoder.encode(dto.getNewPassword()));
@@ -250,27 +246,59 @@ public class AuthService {
         log.info("Password changed for: {}", email);
     }
 
-    public List<UserResponseDTO> getAllUsers() {
-        return userRepository.findAll()
-                .stream().map(this::mapToDTO).toList();
-    }
-
-    public List<UserResponseDTO> searchUsers(String keyword, UserRole role, Boolean isActive) {
-        List<User> users = (keyword == null || keyword.isBlank())
-                ? userRepository.findAll()
-                : userRepository.findByNameContainingIgnoreCaseOrEmailContainingIgnoreCase(keyword.trim(), keyword.trim());
-
-        return users.stream()
-                .filter(user -> role == null || user.getRole() == role)
-                .filter(user -> isActive == null || Boolean.TRUE.equals(user.getIsActive()) == isActive)
-                .map(this::mapToDTO)
-                .toList();
+    public Page<UserResponseDTO> getUsersPage(int page, int size, String search, String role, String status) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return userRepository.searchUsers(normalizeSearch(search), parseRole(role), parseStatus(status), pageable)
+                .map(this::mapToDTO);
     }
 
     public UserResponseDTO getUserById(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
         return mapToDTO(user);
+    }
+
+    public UserResponseDTO createAdminUser(AdminCreateUserRequestDTO dto) {
+        if (userRepository.existsByEmail(dto.getEmail())) {
+            throw new UserAlreadyExistsException("Email already exists");
+        }
+
+        User user = new User();
+        user.setName(dto.getName().trim());
+        user.setEmail(dto.getEmail().trim().toLowerCase());
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user.setPhone(normalizeOptional(dto.getPhone()));
+        user.setRole(dto.getRole());
+        user.setDepartment(normalizeOptional(dto.getDepartment()));
+        user.setIsActive(dto.getIsActive() == null ? Boolean.TRUE : dto.getIsActive());
+
+        return mapToDTO(userRepository.save(user));
+    }
+
+    public UserResponseDTO updateAdminUser(Long id, AdminUpdateUserRequestDTO dto) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+
+        user.setName(dto.getName().trim());
+        user.setPhone(normalizeOptional(dto.getPhone()));
+        user.setDepartment(normalizeOptional(dto.getDepartment()));
+        if (dto.getIsActive() != null) {
+            user.setIsActive(dto.getIsActive());
+        }
+
+        return mapToDTO(userRepository.save(user));
+    }
+
+    public UserResponseDTO changeUserRole(Long id, AdminChangeUserRoleRequestDTO dto, String actorEmail) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+
+        if (actorEmail != null && actorEmail.equalsIgnoreCase(user.getEmail()) && dto.getRole() != UserRole.ADMIN) {
+            throw new RuntimeException("You cannot change your own admin role.");
+        }
+
+        user.setRole(dto.getRole());
+        return mapToDTO(userRepository.save(user));
     }
 
     public UserSummaryDTO getUserSummary() {
@@ -295,50 +323,6 @@ public class AuthService {
                 purchaseOfficerCount,
                 warehouseStaffCount,
                 recentLoginCount);
-    }
-
-    public UserResponseDTO createUser(CreateUserRequestDTO dto) {
-        if (userRepository.existsByEmail(dto.getEmail())) {
-            throw new UserAlreadyExistsException("Email already exists");
-        }
-        if (dto.getConfirmPassword() != null && !dto.getConfirmPassword().equals(dto.getPassword())) {
-            throw new RuntimeException("Password and confirm password do not match");
-        }
-
-        User user = new User();
-        user.setName(dto.getName());
-        user.setEmail(dto.getEmail());
-        user.setPassword(passwordEncoder.encode(dto.getPassword()));
-        user.setPhone(dto.getPhone());
-        user.setRole(dto.getRole());
-        user.setDepartment(dto.getDepartment());
-        user.setIsActive(dto.getIsActive() == null ? true : dto.getIsActive());
-
-        User savedUser = userRepository.save(user);
-        log.info("[AUDIT] action=CREATE_USER userId={} role={}", savedUser.getId(), savedUser.getRole());
-        return mapToDTO(savedUser);
-    }
-
-    public UserResponseDTO updateUser(Long id, AdminUpdateUserRequestDTO dto, String actorEmail) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
-        if (actorEmail != null
-                && actorEmail.equalsIgnoreCase(user.getEmail())
-                && Boolean.FALSE.equals(dto.getIsActive())) {
-            throw new SelfDeactivationNotAllowedException("You cannot deactivate your own account.");
-        }
-
-        user.setName(dto.getName());
-        user.setPhone(dto.getPhone());
-        user.setRole(dto.getRole());
-        user.setDepartment(dto.getDepartment());
-        if (dto.getIsActive() != null) {
-            user.setIsActive(dto.getIsActive());
-        }
-
-        User savedUser = userRepository.save(user);
-        log.info("[AUDIT] action=UPDATE_USER userId={} actor={}", id, actorEmail);
-        return mapToDTO(savedUser);
     }
 
     public void deactivate(Long id, String actorEmail) {
@@ -368,7 +352,7 @@ public class AuthService {
     private LoginResponseDTO issueTokens(User user) {
         String accessToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), user.getId());
         String refreshToken = jwtUtil.generateRefreshToken(user.getEmail());
-        return new LoginResponseDTO(accessToken, refreshToken, jwtExpirationMs / 1000, mapToDTO(user));
+        return new LoginResponseDTO(accessToken, refreshToken);
     }
 
     private boolean isPasswordValid(String rawPassword, User user) {
@@ -402,7 +386,6 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
         user.setRole(UserRole.STAFF);
         user.setIsActive(true);
-        user.setProvider("GOOGLE");
         User savedUser = userRepository.save(user);
         log.info("Created new Google-authenticated user: {}", email);
         return savedUser;
@@ -470,19 +453,40 @@ public class AuthService {
         dto.setDepartment(user.getDepartment());
         dto.setIsActive(user.getIsActive());
         dto.setCreatedAt(user.getCreatedAt());
-        dto.setUpdatedAt(user.getUpdatedAt());
         dto.setLastLoginAt(user.getLastLoginAt());
-        dto.setRoleLabel(toRoleLabel(user.getRole()));
-        dto.setProvider(user.getProvider());
         return dto;
     }
 
-    private String toRoleLabel(UserRole role) {
-        return switch (role) {
-            case ADMIN -> "Administrator";
-            case MANAGER -> "Inventory Manager";
-            case OFFICER -> "Purchase Officer";
-            case STAFF -> "Warehouse Staff";
+    private String normalizeSearch(String search) {
+        return search == null ? null : search.trim();
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private UserRole parseRole(String role) {
+        if (role == null || role.isBlank()) {
+            return null;
+        }
+
+        return UserRole.valueOf(role.trim().toUpperCase());
+    }
+
+    private Boolean parseStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return null;
+        }
+
+        return switch (status.trim().toUpperCase()) {
+            case "ACTIVE" -> Boolean.TRUE;
+            case "INACTIVE" -> Boolean.FALSE;
+            default -> throw new RuntimeException("Invalid status filter: " + status);
         };
     }
 }

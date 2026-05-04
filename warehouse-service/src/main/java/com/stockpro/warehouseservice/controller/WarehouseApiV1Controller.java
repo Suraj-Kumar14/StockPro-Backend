@@ -40,7 +40,7 @@ public class WarehouseApiV1Controller {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','OFFICER','STAFF')")
     public Page<WarehouseResponse> getWarehouses(
             @RequestParam(required = false) Boolean isActive,
             @RequestParam(defaultValue = "0") int page,

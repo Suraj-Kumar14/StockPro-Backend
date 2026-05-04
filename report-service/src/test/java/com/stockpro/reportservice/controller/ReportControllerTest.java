@@ -52,6 +52,24 @@ class ReportControllerTest {
     }
 
     @Test
+    @WithMockUser(roles = "MANAGER")
+    void getWarehouseStock_shouldReturn200ForManager() throws Exception {
+        when(reportService.getWarehouseStockReport(any())).thenReturn(org.springframework.data.domain.Page.empty());
+
+        mockMvc.perform(get("/api/v1/reports/inventory/warehouse-stock"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "STAFF")
+    void getWarehouseStock_shouldReturn200ForStaff() throws Exception {
+        when(reportService.getWarehouseStockReport(any())).thenReturn(org.springframework.data.domain.Page.empty());
+
+        mockMvc.perform(get("/api/v1/reports/inventory/warehouse-stock"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     @WithMockUser(roles = "ADMIN")
     void getExecutiveDashboard_shouldReturn200ForAdmin() throws Exception {
         when(reportService.getExecutiveDashboard()).thenReturn(new ExecutiveDashboardResponse(

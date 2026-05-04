@@ -109,7 +109,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneral(
             Exception ex, HttpServletRequest request) {
-        log.error("Unexpected error: {}", ex.getMessage(), ex);
+        log.error("Unhandled exception on path {}: {}", request.getRequestURI(), ex.getMessage(), ex);
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
                         HttpStatus.INTERNAL_SERVER_ERROR.value(),

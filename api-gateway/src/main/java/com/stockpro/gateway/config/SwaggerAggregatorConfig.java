@@ -57,7 +57,7 @@ public class SwaggerAggregatorConfig {
             case "supplier-service"  -> "/suppliers";
             case "warehouse-service" -> "/warehouses";
             case "movement-service"  -> "/movements";
-            case "purchase-service"  -> "/purchase-orders";
+            case "purchase-service"  -> "/api/v1/purchase-orders";
             case "report-service"    -> "/api/v1/reports";
             case "payment-service"   -> "/payments";
             case "alert-service"     -> "/alerts";

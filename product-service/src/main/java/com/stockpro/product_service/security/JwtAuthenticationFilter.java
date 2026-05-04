@@ -1,14 +1,5 @@
 package com.stockpro.product_service.security;
 
-import java.io.IOException;
-import java.security.Key;
-import java.util.List;
-
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.filter.OncePerRequestFilter;
-
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -16,52 +7,66 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.Key;
+import java.util.List;
 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-	private static final List<String> PUBLIC_PATH_PREFIXES = List.of(
-			"/swagger-ui",
-			"/swagger-ui.html",
-			"/v3/api-docs",
-            "/actuator/health",
-            "/actuator/info");
+    private static final List<String> PUBLIC_PATH_PREFIXES = List.of(
+            "/swagger-ui",
+            "/swagger-ui.html",
+            "/v3/api-docs",
+            "/actuator"
+    );
 
-	private final String secret;
+    private final String secret;
 
-	public JwtAuthenticationFilter(String secret) {
-		this.secret = secret;
-	}
+    public JwtAuthenticationFilter(String secret) {
+        this.secret = secret;
+    }
 
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
-        if (isPublicPath(request.getRequestURI())
-                || "OPTIONS".equalsIgnoreCase(request.getMethod())
+
+        String path = request.getRequestURI();
+
+        if (HttpMethod.OPTIONS.matches(request.getMethod())
+                || isPublicPath(path)
                 || SecurityContextHolder.getContext().getAuthentication() != null) {
             filterChain.doFilter(request, response);
             return;
         }
 
         String authorizationHeader = request.getHeader("Authorization");
+
         if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
             try {
                 String token = authorizationHeader.substring(7);
                 Claims claims = parseClaims(token);
+
                 String email = claims.getSubject();
                 String role = claims.get("role", String.class);
                 Long userId = claims.get("userId", Long.class);
 
                 if (email != null && role != null) {
-                    String authority = role.startsWith("ROLE_") ? role : "ROLE_" + role;
-
                     AuthenticatedUser principal = new AuthenticatedUser(userId, email, role, token);
+
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
                                     principal,
                                     token,
-                                    List.of(new SimpleGrantedAuthority(authority)));
+                                    List.of(new SimpleGrantedAuthority("ROLE_" + role)));
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
@@ -75,7 +80,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private Claims parseClaims(String token) {
-        Key key = Keys.hmacShaKeyFor(secret.getBytes());
+        Key key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+
         return Jwts.parserBuilder()
                 .setSigningKey(key)
                 .build()

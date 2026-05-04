@@ -73,6 +73,12 @@ public class PurchaseOrderApiV1Controller {
         return purchaseOrderManagementService.getPurchaseOrderByNumber(poNumber);
     }
 
+    @GetMapping("/status/{status}")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','OFFICER','STAFF')")
+    public List<PurchaseOrderResponse> getByStatus(@PathVariable POStatus status) {
+        return purchaseOrderManagementService.getPurchaseOrdersByStatus(status);
+    }
+
     @PostMapping("/{id}/submit")
     @PreAuthorize("hasAnyRole('OFFICER','ADMIN')")
     public PurchaseOrderResponse submit(@PathVariable Long id, @RequestBody(required = false) SubmitPurchaseOrderRequest request, Authentication authentication) {

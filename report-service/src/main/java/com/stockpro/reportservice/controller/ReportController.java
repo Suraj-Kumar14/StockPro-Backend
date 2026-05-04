@@ -61,7 +61,7 @@ public class ReportController {
     }
 
     @GetMapping("/inventory/stock-summary")
-    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER','WAREHOUSE_STAFF','STAFF')")
     public StockSummaryResponse getStockSummary(@ModelAttribute ReportFilterRequest request) {
         return reportService.getStockSummary(request);
     }
@@ -73,13 +73,13 @@ public class ReportController {
     }
 
     @GetMapping("/inventory/warehouse-stock")
-    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','WAREHOUSE_STAFF','STAFF')")
     public Page<WarehouseValuationItem> getWarehouseStock(@ModelAttribute ReportFilterRequest request) {
         return reportService.getWarehouseStockReport(request);
     }
 
     @GetMapping("/inventory/low-stock")
-    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER','WAREHOUSE_STAFF','STAFF')")
     public Page<LowStockReportItem> getLowStock(@ModelAttribute ReportFilterRequest request) {
         return reportService.getLowStockReport(request);
     }

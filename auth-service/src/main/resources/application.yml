@@ -23,18 +23,18 @@ spring:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID:87009973241-6k21kq749h6p4d5f61m39nbkr4lhbud3.apps.googleusercontent.com}
-            client-secret: ${GOOGLE_CLIENT_SECRET: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}
-            redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/login/oauth2/code/google}
+            client-id: ${GOOGLE_CLIENT_ID:72085009922-uj1d6o04b2920a0gabn54ln2aq2ie8jt.apps.googleusercontent.com}
+            client-secret: ${GOOGLE_CLIENT_SECRET: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}
+            redirect-uri: http://localhost:8080/login/oauth2/code/google
             scope:
               - openid
               - profile
               - email
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
-    username: ${SPRING_DATASOURCE_USERNAME:root}
-    password: ${SPRING_DATASOURCE_PASSWORD:Suraj@123}
+    url: jdbc:mysql://localhost:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: Suraj@123
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -57,9 +57,9 @@ eureka:
 
 # JWT config
 jwt:
-  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
-  expiration: ${JWT_EXPIRATION_MS:28800000}
-  refresh-expiration: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+  secret: stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c
+  expiration: 28800000
+  refresh-expiration: 604800000
 
 logging:
   level:
@@ -70,7 +70,7 @@ logging:
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:4200}
   otp:
-    expiry-minutes: ${OTP_EXPIRY_MINUTES:5}
+    expiry-minutes: ${OTP_EXPIRY_MINUTES:10}
   mail:
     from: ${MAIL_FROM:surajkr1122003@gmail.com}
 

@@ -2,7 +2,7 @@ server:
   port: 8080
 
 jwt:
-  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
+  secret: stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c
 
 spring:
   application:
@@ -39,7 +39,7 @@ spring:
           predicates:
             - Path=/auth/**,/oauth2/**,/login/oauth2/**
 
-        - id: auth-service-api-v1
+        - id: auth-service-v1
           uri: lb://AUTH-SERVICE
           predicates:
             - Path=/api/v1/auth/**
@@ -50,13 +50,6 @@ spring:
           uri: lb://PRODUCT-SERVICE
           predicates:
             - Path=/api/v1/products/**
-
-        - id: product-service-actuator
-          uri: lb://PRODUCT-SERVICE
-          predicates:
-            - Path=/product-service/actuator/**
-          filters:
-            - RewritePath=/product-service/actuator(?<segment>/?.*), /actuator${segment}
 
         - id: product-service-legacy
           uri: lb://PRODUCT-SERVICE
@@ -100,13 +93,6 @@ spring:
           uri: lb://PURCHASE-SERVICE
           predicates:
             - Path=/api/v1/purchase-orders/**
-
-        - id: purchase-service-legacy
-          uri: lb://PURCHASE-SERVICE
-          predicates:
-            - Path=/purchase-orders/**
-          filters:
-            - RewritePath=/purchase-orders(?<segment>/?.*), /api/v1/purchase-orders${segment}
 
         - id: movement-service
           uri: lb://MOVEMENT-SERVICE

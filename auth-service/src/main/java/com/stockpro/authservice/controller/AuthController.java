@@ -3,7 +3,7 @@ package com.stockpro.authservice.controller;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -11,7 +11,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import com.stockpro.authservice.dto.*;
-import com.stockpro.authservice.entity.UserRole;
 import com.stockpro.authservice.service.AuthService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -170,11 +169,45 @@ public class AuthController {
     @SecurityRequirement(name = "bearerAuth")
     @Operation(summary = "Get all users (Admin only)")
     @ApiResponse(responseCode = "200", description = "List of all users")
-    public ResponseEntity<List<UserResponseDTO>> getAllUsers(
-            @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) UserRole role,
-            @RequestParam(required = false) Boolean isActive) {
-        return ResponseEntity.ok(authService.searchUsers(keyword, role, isActive));
+    public ResponseEntity<Page<UserResponseDTO>> getAllUsers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(authService.getUsersPage(page, size, search, role, status));
+    }
+
+    @PostMapping("/users")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Create a user account (Admin only)")
+    @ApiResponse(responseCode = "200", description = "User created successfully")
+    public ResponseEntity<UserResponseDTO> createUser(@Valid @RequestBody AdminCreateUserRequestDTO dto) {
+        return ResponseEntity.ok(authService.createAdminUser(dto));
+    }
+
+    @PutMapping("/users/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Update a user account (Admin only)")
+    @ApiResponse(responseCode = "200", description = "User updated successfully")
+    public ResponseEntity<UserResponseDTO> updateUser(
+            @Parameter(description = "User ID", required = true) @PathVariable Long id,
+            @Valid @RequestBody AdminUpdateUserRequestDTO dto) {
+        return ResponseEntity.ok(authService.updateAdminUser(id, dto));
+    }
+
+    @PatchMapping("/users/{id}/role")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Change user role (Admin only)")
+    @ApiResponse(responseCode = "200", description = "User role updated successfully")
+    public ResponseEntity<UserResponseDTO> changeUserRole(
+            @Parameter(description = "User ID", required = true) @PathVariable Long id,
+            @Valid @RequestBody AdminChangeUserRoleRequestDTO dto,
+            Authentication authentication) {
+        return ResponseEntity.ok(authService.changeUserRole(id, dto, authentication.getName()));
     }
 
     @GetMapping("/users/{id}")
@@ -194,29 +227,6 @@ public class AuthController {
     @ApiResponse(responseCode = "200", description = "User summary counts")
     public ResponseEntity<UserSummaryDTO> getUserSummary() {
         return ResponseEntity.ok(authService.getUserSummary());
-    }
-
-    @PostMapping("/users")
-    @PreAuthorize("hasRole('ADMIN')")
-    @SecurityRequirement(name = "bearerAuth")
-    @Operation(summary = "Create user account (Admin only)")
-    @ApiResponse(responseCode = "201", description = "User created successfully",
-                 content = @Content(schema = @Schema(implementation = UserResponseDTO.class)))
-    public ResponseEntity<UserResponseDTO> createUser(@Valid @RequestBody CreateUserRequestDTO dto) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.createUser(dto));
-    }
-
-    @PutMapping("/users/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    @SecurityRequirement(name = "bearerAuth")
-    @Operation(summary = "Update user account (Admin only)")
-    @ApiResponse(responseCode = "200", description = "User updated successfully",
-                 content = @Content(schema = @Schema(implementation = UserResponseDTO.class)))
-    public ResponseEntity<UserResponseDTO> updateUser(
-            @Parameter(description = "User ID", required = true) @PathVariable Long id,
-            @Valid @RequestBody AdminUpdateUserRequestDTO dto,
-            Authentication authentication) {
-        return ResponseEntity.ok(authService.updateUser(id, dto, authentication.getName()));
     }
 
     @DeleteMapping("/user/{id}")
@@ -275,7 +285,7 @@ public class AuthController {
     @PatchMapping("/users/{id}/activate")
     @PreAuthorize("hasRole('ADMIN')")
     @SecurityRequirement(name = "bearerAuth")
-    @Operation(summary = "Activate a deactivated user account (Admin only)")
+    @Operation(summary = "Activate a user account (Admin only)")
     public ResponseEntity<String> activateUserPatch(
             @Parameter(description = "User ID", required = true) @PathVariable Long id,
             Authentication authentication) {
