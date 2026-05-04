@@ -30,6 +30,8 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             "/auth/reset-password",
             "/oauth2/",
             "/login/oauth2/",
+            "/actuator/health",
+            "/actuator/info",
             "/swagger-ui",
             "/webjars/",
             "/v3/api-docs",
@@ -54,14 +56,14 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         log.debug("Gateway request: {} {}", request.getMethod(), path);
 
-        // Skip JWT check for open paths
-        if (isOpenPath(path)) {
-            log.debug("Open path — skipping JWT: {}", path);
+        // Handle CORS preflight
+        if (request.getMethod().name().equals("OPTIONS")) {
             return chain.filter(exchange);
         }
 
-        // Handle CORS preflight
-        if (request.getMethod().name().equals("OPTIONS")) {
+        // Skip JWT check for open paths
+        if (isOpenPath(path)) {
+            log.debug("Open path - skipping JWT: {}", path);
             return chain.filter(exchange);
         }
 

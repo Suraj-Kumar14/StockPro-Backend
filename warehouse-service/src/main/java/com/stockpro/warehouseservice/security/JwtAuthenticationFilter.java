@@ -20,7 +20,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final List<String> PUBLIC_PATH_PREFIXES = List.of(
             "/swagger-ui",
             "/swagger-ui.html",
-            "/v3/api-docs");
+            "/v3/api-docs",
+            "/actuator/health",
+            "/actuator/info");
 
     private final String secret;
 
@@ -33,7 +35,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
-        if (isPublicPath(request.getRequestURI())
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())
+                || isPublicPath(request.getRequestURI())
                 || SecurityContextHolder.getContext().getAuthentication() != null) {
             filterChain.doFilter(request, response);
             return;

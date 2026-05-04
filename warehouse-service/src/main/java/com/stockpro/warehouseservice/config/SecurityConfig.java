@@ -22,7 +22,6 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
-            "/actuator",
             "/v3/api-docs.yaml"
     };
 
@@ -38,6 +37,7 @@ public class SecurityConfig {
                     .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                    .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                     .requestMatchers(SWAGGER_WHITELIST).permitAll()
                     .anyRequest().authenticated())
             .exceptionHandling(handling -> handling

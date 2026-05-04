@@ -32,7 +32,8 @@ public class JwtFilter extends OncePerRequestFilter {
             "/login/oauth2/",
             "/v3/api-docs",
             "/swagger-ui",
-            "/actuator"
+            "/actuator/health",
+            "/actuator/info"
     };
 
     @Autowired

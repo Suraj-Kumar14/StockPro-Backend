@@ -59,6 +59,7 @@ public class SecurityConfig {
                     .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                    .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                     .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                     .anyRequest().authenticated()
             )
