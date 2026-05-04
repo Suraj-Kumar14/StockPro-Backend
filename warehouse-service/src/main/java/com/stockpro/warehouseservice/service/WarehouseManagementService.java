@@ -37,6 +37,9 @@ public class WarehouseManagementService {
             Map.entry("code", "code"),
             Map.entry("warehousecode", "code"),
             Map.entry("location", "location"),
+            Map.entry("city", "city"),
+            Map.entry("state", "state"),
+            Map.entry("country", "country"),
             Map.entry("managerid", "managerId"),
             Map.entry("capacity", "capacity"),
             Map.entry("usedcapacity", "usedCapacity"),
@@ -59,18 +62,22 @@ public class WarehouseManagementService {
 
     @Transactional
     public WarehouseResponse createWarehouse(CreateWarehouseRequest request, Long actorId) {
-        if (warehouseRepository.existsByCode(request.getCode())) {
+        String code = normalizeRequired(request.getCode()).toUpperCase(Locale.ROOT);
+        if (warehouseRepository.existsByCode(code)) {
             throw new IllegalArgumentException("Warehouse code already exists");
         }
         Warehouse warehouse = Warehouse.builder()
-                .name(request.getName())
-                .code(request.getCode())
-                .location(request.getLocation())
-                .address(request.getAddress())
+                .name(normalizeRequired(request.getName()))
+                .code(code)
+                .location(normalizeRequired(request.getLocation()))
+                .address(normalizeOptional(request.getAddress()))
+                .city(normalizeRequired(request.getCity()))
+                .state(normalizeRequired(request.getState()))
+                .country(normalizeRequired(request.getCountry()))
                 .managerId(request.getManagerId())
                 .capacity(request.getCapacity())
                 .usedCapacity(0)
-                .phone(request.getPhone())
+                .phone(normalizeOptional(request.getPhone()))
                 .isActive(true)
                 .createdBy(actorId)
                 .updatedBy(actorId)
@@ -103,12 +110,20 @@ public class WarehouseManagementService {
         if (request.getCapacity() < actualUsedCapacity) {
             throw new CapacityExceededException("Warehouse capacity exceeded");
         }
-        warehouse.setName(request.getName());
-        warehouse.setLocation(request.getLocation());
-        warehouse.setAddress(request.getAddress());
+        String code = normalizeRequired(request.getCode()).toUpperCase(Locale.ROOT);
+        if (!code.equalsIgnoreCase(warehouse.getCode()) && warehouseRepository.existsByCode(code)) {
+            throw new IllegalArgumentException("Warehouse code already exists");
+        }
+        warehouse.setName(normalizeRequired(request.getName()));
+        warehouse.setCode(code);
+        warehouse.setLocation(normalizeRequired(request.getLocation()));
+        warehouse.setAddress(normalizeOptional(request.getAddress()));
+        warehouse.setCity(normalizeRequired(request.getCity()));
+        warehouse.setState(normalizeRequired(request.getState()));
+        warehouse.setCountry(normalizeRequired(request.getCountry()));
         warehouse.setManagerId(request.getManagerId());
         warehouse.setCapacity(request.getCapacity());
-        warehouse.setPhone(request.getPhone());
+        warehouse.setPhone(normalizeOptional(request.getPhone()));
         warehouse.setIsActive(request.getIsActive() == null ? warehouse.getIsActive() : request.getIsActive());
         warehouse.setUsedCapacity(actualUsedCapacity);
         warehouse.setUpdatedBy(actorId);
@@ -177,6 +192,9 @@ public class WarehouseManagementService {
                 .code(warehouse.getCode())
                 .location(warehouse.getLocation())
                 .address(warehouse.getAddress())
+                .city(warehouse.getCity())
+                .state(warehouse.getState())
+                .country(warehouse.getCountry())
                 .managerId(warehouse.getManagerId())
                 .capacity(capacity)
                 .usedCapacity(usedCapacity)
@@ -217,6 +235,18 @@ public class WarehouseManagementService {
         return value == null ? 0 : value;
     }
 
+    private String normalizeRequired(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String normalizeOptional(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private Sort.Direction resolveSortDirection(String sortDir) {
         return "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
     }
@@ -228,7 +258,7 @@ public class WarehouseManagementService {
 
         if (resolvedField == null) {
             throw new IllegalArgumentException(
-                    "Invalid sortBy '" + requestedField + "'. Allowed values: warehouseId, name, code, location, managerId, capacity, usedCapacity, isActive, createdAt, updatedAt");
+                    "Invalid sortBy '" + requestedField + "'. Allowed values: warehouseId, name, code, location, city, state, country, managerId, capacity, usedCapacity, isActive, createdAt, updatedAt");
         }
 
         return resolvedField;

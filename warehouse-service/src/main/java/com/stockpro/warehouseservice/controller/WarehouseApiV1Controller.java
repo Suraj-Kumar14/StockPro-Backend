@@ -34,7 +34,7 @@ public class WarehouseApiV1Controller {
     private final WarehouseManagementService warehouseManagementService;
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<WarehouseResponse> createWarehouse(@Valid @RequestBody CreateWarehouseRequest request, Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED).body(warehouseManagementService.createWarehouse(request, actorId(authentication)));
     }
@@ -63,19 +63,19 @@ public class WarehouseApiV1Controller {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public WarehouseResponse updateWarehouse(@PathVariable Long id, @Valid @RequestBody UpdateWarehouseRequest request, Authentication authentication) {
         return warehouseManagementService.updateWarehouse(id, request, actorId(authentication));
     }
 
     @PatchMapping("/{id}/deactivate")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public WarehouseResponse deactivateWarehouse(@PathVariable Long id, Authentication authentication) {
         return warehouseManagementService.deactivateWarehouse(id, actorId(authentication));
     }
 
     @PatchMapping("/{id}/activate")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public WarehouseResponse activateWarehouse(@PathVariable Long id, Authentication authentication) {
         return warehouseManagementService.activateWarehouse(id, actorId(authentication));
     }

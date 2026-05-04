@@ -31,6 +31,15 @@ public class Warehouse {
 	@Column(length = 300)
 	private String address;
 
+	@Column(length = 100)
+	private String city;
+
+	@Column(length = 100)
+	private String state;
+
+	@Column(length = 100)
+	private String country;
+
 	// ID of the manager user (from auth-service)
 	private Long managerId;
 

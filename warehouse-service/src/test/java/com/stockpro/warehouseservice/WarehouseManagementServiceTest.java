@@ -1,11 +1,17 @@
 package com.stockpro.warehouseservice;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stockpro.warehouseservice.dto.request.CreateWarehouseRequest;
+import com.stockpro.warehouseservice.dto.request.UpdateWarehouseRequest;
+import com.stockpro.warehouseservice.dto.response.WarehouseResponse;
 import com.stockpro.warehouseservice.entity.Warehouse;
 import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import com.stockpro.warehouseservice.repository.WarehouseRepository;
@@ -23,6 +29,8 @@ import org.springframework.data.domain.Pageable;
 
 @ExtendWith(MockitoExtension.class)
 class WarehouseManagementServiceTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
     private WarehouseRepository warehouseRepository;
@@ -75,7 +83,75 @@ class WarehouseManagementServiceTest {
                 () -> warehouseManagementService.getAllWarehouses(true, 0, 20, "foo", "asc"));
 
         assertEquals(
-                "Invalid sortBy 'foo'. Allowed values: warehouseId, name, code, location, managerId, capacity, usedCapacity, isActive, createdAt, updatedAt",
+                "Invalid sortBy 'foo'. Allowed values: warehouseId, name, code, location, city, state, country, managerId, capacity, usedCapacity, isActive, createdAt, updatedAt",
                 exception.getMessage());
+    }
+
+    @Test
+    void createWarehouseRequest_shouldAcceptFrontendWarehouseFieldAliases() throws Exception {
+        String json = """
+                {
+                  "warehouseName": "Main Warehouse",
+                  "warehouseCode": "WH-MAIN-001",
+                  "location": "Bhopal, Madhya Pradesh",
+                  "address": "Industrial Area, Govindpura",
+                  "city": "Bhopal",
+                  "state": "Madhya Pradesh",
+                  "country": "India",
+                  "capacity": 10000,
+                  "managerId": 2,
+                  "phone": "9876543211",
+                  "active": true
+                }
+                """;
+
+        CreateWarehouseRequest request = objectMapper.readValue(json, CreateWarehouseRequest.class);
+
+        assertEquals("Main Warehouse", request.getName());
+        assertEquals("WH-MAIN-001", request.getCode());
+        assertTrue(request.getIsActive());
+    }
+
+    @Test
+    void updateWarehouseRequest_shouldAcceptFrontendActiveAlias() throws Exception {
+        String json = """
+                {
+                  "warehouseName": "Main Central Warehouse",
+                  "warehouseCode": "WH-MAIN-001",
+                  "location": "Bhopal, Madhya Pradesh",
+                  "city": "Bhopal",
+                  "state": "Madhya Pradesh",
+                  "country": "India",
+                  "capacity": 12000,
+                  "active": false
+                }
+                """;
+
+        UpdateWarehouseRequest request = objectMapper.readValue(json, UpdateWarehouseRequest.class);
+
+        assertEquals("Main Central Warehouse", request.getName());
+        assertEquals("WH-MAIN-001", request.getCode());
+        assertEquals(false, request.getIsActive());
+    }
+
+    @Test
+    void warehouseResponse_shouldExposeTableFriendlyAliases() throws Exception {
+        WarehouseResponse response = WarehouseResponse.builder()
+                .warehouseId(1L)
+                .name("Main Central Warehouse")
+                .code("WH-MAIN-001")
+                .capacity(12000)
+                .usedCapacity(3000)
+                .utilizationPercentage(25.0)
+                .isActive(true)
+                .build();
+
+        JsonNode json = objectMapper.valueToTree(response);
+
+        assertEquals(1L, json.get("id").asLong());
+        assertEquals("Main Central Warehouse", json.get("warehouseName").asText());
+        assertEquals("WH-MAIN-001", json.get("warehouseCode").asText());
+        assertTrue(json.get("active").asBoolean());
+        assertEquals(25.0, json.get("utilization").asDouble());
     }
 }
