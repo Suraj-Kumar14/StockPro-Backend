@@ -2,7 +2,7 @@ server:
   port: 8080
 
 jwt:
-  secret: stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c
+  secret: ${JWT_SECRET}
 
 spring:
   application:

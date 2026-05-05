@@ -7,8 +7,8 @@ spring:
 
   datasource:
     url: ${ALERT_DB_URL:jdbc:mysql://localhost:3306/alert_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
-    username: ${ALERT_DB_USERNAME:root}
-    password: ${ALERT_DB_PASSWORD:Suraj@123}
+    username: ${ALERT_DB_USERNAME}
+    password: ${ALERT_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -26,8 +26,8 @@ spring:
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
     virtual-host: /
     listener:
       simple:
@@ -40,8 +40,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:surajkr1122003@gmail.com}
-    password: ${MAIL_PASSWORD:kyydpmjoefdmacdh}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
@@ -77,7 +77,7 @@ springdoc:
     display-request-duration: true
 
 jwt:
-  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
+  secret: ${JWT_SECRET}
 
 management:
   endpoints:

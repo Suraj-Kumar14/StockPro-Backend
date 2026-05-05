@@ -6,6 +6,7 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -23,6 +24,24 @@ public class GlobalExceptionHandler {
         log.error("UserAlreadyExistsException: {}", ex.getMessage());
         return new ResponseEntity<>(
                 new ErrorResponse(ex.getMessage(), HttpStatus.CONFLICT.value(), LocalDateTime.now()),
+                HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex) {
+        log.error("DataIntegrityViolationException: {}", ex.getMessage());
+        String message = ex.getMostSpecificCause() != null
+                ? ex.getMostSpecificCause().getMessage()
+                : ex.getMessage();
+
+        if (message != null && message.toLowerCase().contains("email")) {
+            return new ResponseEntity<>(
+                    new ErrorResponse("Email is already registered", HttpStatus.CONFLICT.value(), LocalDateTime.now()),
+                    HttpStatus.CONFLICT);
+        }
+
+        return new ResponseEntity<>(
+                new ErrorResponse("Duplicate or invalid data", HttpStatus.CONFLICT.value(), LocalDateTime.now()),
                 HttpStatus.CONFLICT);
     }
 

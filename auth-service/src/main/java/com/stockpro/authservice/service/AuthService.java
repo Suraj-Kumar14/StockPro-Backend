@@ -72,15 +72,13 @@ public class AuthService {
     }
 
     public RegisterResponseDTO register(UserRequestDTO dto) {
-        log.info("Registering user with OTP verification: {}", dto.getEmail());
-        if (userRepository.existsByEmail(dto.getEmail())) {
-            throw new UserAlreadyExistsException("Email already exists");
-        }
+        String email = assertEmailAvailable(dto.getEmail());
+        log.info("Registering user with OTP verification: {}", email);
 
-        clearActiveOtps(dto.getEmail(), OtpPurpose.SIGNUP_VERIFICATION);
+        clearActiveOtps(email, OtpPurpose.SIGNUP_VERIFICATION);
 
         OtpToken otpToken = new OtpToken();
-        otpToken.setEmail(dto.getEmail());
+        otpToken.setEmail(email);
         otpToken.setOtpCode(generateOtp());
         otpToken.setPurpose(OtpPurpose.SIGNUP_VERIFICATION);
         otpToken.setName(dto.getName());
@@ -90,27 +88,26 @@ public class AuthService {
         otpToken.setDepartment(dto.getDepartment());
         otpToken.setExpiresAt(LocalDateTime.now().plusMinutes(otpExpiryMinutes));
         otpTokenRepository.save(otpToken);
-        log.info("OTP generated for signup: {}", dto.getEmail());
+        log.info("OTP generated for signup: {}", email);
 
-        otpMailService.sendSignupOtp(dto.getEmail(), otpToken.getOtpCode());
-        log.info("OTP sent for signup: {}", dto.getEmail());
+        otpMailService.sendSignupOtp(email, otpToken.getOtpCode());
+        log.info("OTP sent for signup: {}", email);
 
         return new RegisterResponseDTO(null, "OTP sent to your email. Please verify to complete registration.");
     }
 
     public RegisterResponseDTO verifyOtp(OtpVerificationRequestDTO dto) {
-        log.info("Verifying OTP for: {}", dto.getEmail());
+        String email = normalizeEmail(dto.getEmail());
+        log.info("Verifying OTP for: {}", email);
 
-        OtpToken otpToken = findLatestValidOtp(dto.getEmail(), dto.getOtp());
+        OtpToken otpToken = findLatestValidOtp(email, dto.getOtp());
 
         if (otpToken.getPurpose() == OtpPurpose.SIGNUP_VERIFICATION) {
-            if (userRepository.existsByEmail(dto.getEmail())) {
-                throw new UserAlreadyExistsException("Email already exists");
-            }
+            email = assertEmailAvailable(otpToken.getEmail());
 
             User user = new User();
             user.setName(otpToken.getName());
-            user.setEmail(otpToken.getEmail());
+            user.setEmail(email);
             user.setPassword(otpToken.getPasswordHash());
             user.setPhone(otpToken.getPhone());
             user.setRole(otpToken.getRole());
@@ -118,21 +115,22 @@ public class AuthService {
             User savedUser = userRepository.save(user);
 
             consumeOtp(otpToken);
-            clearActiveOtps(dto.getEmail(), OtpPurpose.SIGNUP_VERIFICATION);
+            clearActiveOtps(email, OtpPurpose.SIGNUP_VERIFICATION);
 
-            log.info("User registered successfully after OTP verification: {}", dto.getEmail());
+            log.info("User registered successfully after OTP verification: {}", email);
             return new RegisterResponseDTO(savedUser.getId(), "User registered successfully");
         }
 
-        log.info("Password reset OTP verified successfully: {}", dto.getEmail());
+        log.info("Password reset OTP verified successfully: {}", email);
         return new RegisterResponseDTO(null, "OTP verified successfully");
     }
 
     public MessageResponseDTO forgotPassword(ForgotPasswordRequestDTO dto) {
-        log.info("Forgot password requested for: {}", dto.getEmail());
-        clearActiveOtps(dto.getEmail(), OtpPurpose.PASSWORD_RESET);
+        String email = normalizeEmail(dto.getEmail());
+        log.info("Forgot password requested for: {}", email);
+        clearActiveOtps(email, OtpPurpose.PASSWORD_RESET);
 
-        userRepository.findByEmail(dto.getEmail()).ifPresent(user -> {
+        userRepository.findByEmailIgnoreCase(email).ifPresent(user -> {
             OtpToken otpToken = new OtpToken();
             otpToken.setEmail(user.getEmail());
             otpToken.setOtpCode(generateOtp());
@@ -148,23 +146,25 @@ public class AuthService {
     }
 
     public MessageResponseDTO resetPassword(ResetPasswordRequestDTO dto) {
-        log.info("Resetting password with OTP for: {}", dto.getEmail());
-        User user = userRepository.findByEmail(dto.getEmail())
+        String email = normalizeEmail(dto.getEmail());
+        log.info("Resetting password with OTP for: {}", email);
+        User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new InvalidOtpException("Invalid OTP"));
 
-        OtpToken otpToken = getValidOtp(dto.getEmail(), dto.getOtp(), OtpPurpose.PASSWORD_RESET);
+        OtpToken otpToken = getValidOtp(email, dto.getOtp(), OtpPurpose.PASSWORD_RESET);
         user.setPassword(passwordEncoder.encode(dto.getNewPassword()));
         userRepository.save(user);
 
         consumeOtp(otpToken);
-        clearActiveOtps(dto.getEmail(), OtpPurpose.PASSWORD_RESET);
+        clearActiveOtps(email, OtpPurpose.PASSWORD_RESET);
 
         return new MessageResponseDTO("Password updated successfully");
     }
 
     public LoginResponseDTO login(String email, String password) {
-        log.info("Login attempt: {}", email);
-        User user = userRepository.findByEmail(email)
+        String normalizedEmail = normalizeEmail(email);
+        log.info("Login attempt: {}", normalizedEmail);
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new InvalidCredentialsException("Invalid credentials"));
 
         if (!Boolean.TRUE.equals(user.getIsActive())) {
@@ -178,13 +178,14 @@ public class AuthService {
         user.setLastLoginAt(LocalDateTime.now());
         userRepository.save(user);
 
-        log.info("Login successful: {}", email);
+        log.info("Login successful: {}", normalizedEmail);
         return issueTokens(user);
     }
 
     public LoginResponseDTO handleGoogleLogin(String email, String name) {
-        User user = userRepository.findByEmail(email)
-                .orElseGet(() -> createGoogleUser(email, name));
+        String normalizedEmail = normalizeEmail(email);
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseGet(() -> createGoogleUser(normalizedEmail, name));
 
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             throw new InactiveAccountException("Your account is inactive. Please contact administrator.");
@@ -203,8 +204,8 @@ public class AuthService {
         if (!"REFRESH".equals(type)) {
             throw new RuntimeException("Not a refresh token");
         }
-        String email = jwtUtil.extractUsername(refreshToken);
-        User user = userRepository.findByEmail(email)
+        String email = normalizeEmail(jwtUtil.extractUsername(refreshToken));
+        User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         jwtUtil.blacklistToken(refreshToken);
@@ -219,31 +220,34 @@ public class AuthService {
     }
 
     public UserResponseDTO getUserProfile(String email) {
-        User user = userRepository.findByEmail(email)
+        String normalizedEmail = normalizeEmail(email);
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return mapToDTO(user);
     }
 
     public UserResponseDTO updateProfile(String email, UpdateProfileDTO dto) {
-        User user = userRepository.findByEmail(email)
+        String normalizedEmail = normalizeEmail(email);
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setName(dto.getName());
         user.setPhone(dto.getPhone());
         user.setDepartment(dto.getDepartment());
         userRepository.save(user);
-        log.info("Profile updated for: {}", email);
+        log.info("Profile updated for: {}", normalizedEmail);
         return mapToDTO(user);
     }
 
     public void changePassword(String email, ChangePasswordDTO dto) {
-        User user = userRepository.findByEmail(email)
+        String normalizedEmail = normalizeEmail(email);
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (!passwordEncoder.matches(dto.getOldPassword(), user.getPassword())) {
             throw new RuntimeException("Old password is incorrect");
         }
         user.setPassword(passwordEncoder.encode(dto.getNewPassword()));
         userRepository.save(user);
-        log.info("Password changed for: {}", email);
+        log.info("Password changed for: {}", normalizedEmail);
     }
 
     public Page<UserResponseDTO> getUsersPage(int page, int size, String search, String role, String status) {
@@ -259,13 +263,11 @@ public class AuthService {
     }
 
     public UserResponseDTO createAdminUser(AdminCreateUserRequestDTO dto) {
-        if (userRepository.existsByEmail(dto.getEmail())) {
-            throw new UserAlreadyExistsException("Email already exists");
-        }
+        String email = assertEmailAvailable(dto.getEmail());
 
         User user = new User();
         user.setName(dto.getName().trim());
-        user.setEmail(dto.getEmail().trim().toLowerCase());
+        user.setEmail(email);
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setPhone(normalizeOptional(dto.getPhone()));
         user.setRole(dto.getRole());
@@ -473,6 +475,28 @@ public class AuthService {
 
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String assertEmailAvailable(String rawEmail) {
+        String email = normalizeEmail(rawEmail);
+
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException("Email is required");
+        }
+
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new UserAlreadyExistsException("Email is already registered");
+        }
+
+        return email;
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+
+        return email.trim().toLowerCase();
     }
 
     private UserRole parseRole(String role) {

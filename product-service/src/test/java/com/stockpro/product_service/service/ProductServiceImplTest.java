@@ -26,6 +26,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
 
 import com.stockpro.product_service.dto.request.CreateProductRequest;
 import com.stockpro.product_service.dto.request.UpdateProductRequest;
