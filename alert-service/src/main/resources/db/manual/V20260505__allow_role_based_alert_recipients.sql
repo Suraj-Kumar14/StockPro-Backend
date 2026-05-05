@@ -1,0 +1,2 @@
+ALTER TABLE alerts
+MODIFY COLUMN recipient_id BIGINT NULL;

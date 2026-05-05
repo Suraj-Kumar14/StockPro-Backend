@@ -49,7 +49,7 @@ public class PurchaseOrder {
     private Long receivedBy;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(name = "status", nullable = false, length = 50)
     @Builder.Default
     private POStatus status = POStatus.DRAFT;
 

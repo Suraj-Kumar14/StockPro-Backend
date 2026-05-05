@@ -18,19 +18,19 @@ public class PurchaseOrderWorkflow {
     }
 
     public void assertCanApprove(PurchaseOrderStateSnapshot snapshot) {
-        assertState(snapshot.status(), POStatus.PENDING,
-                "Only PENDING POs can be approved");
+        assertState(snapshot.status(), POStatus.PENDING_APPROVAL,
+                "Only PENDING_APPROVAL POs can be approved");
     }
 
     public void assertCanReject(PurchaseOrderStateSnapshot snapshot) {
-        assertState(snapshot.status(), POStatus.PENDING,
-                "Only PENDING POs can be rejected");
+        assertState(snapshot.status(), POStatus.PENDING_APPROVAL,
+                "Only PENDING_APPROVAL POs can be rejected");
     }
 
     public void assertCanCancel(PurchaseOrderStateSnapshot snapshot) {
-        if (snapshot.status() != POStatus.DRAFT && snapshot.status() != POStatus.PENDING) {
+        if (snapshot.status() != POStatus.DRAFT && snapshot.status() != POStatus.PENDING_APPROVAL) {
             throw new InvalidPOStateException(
-                    "Only DRAFT or PENDING POs can be cancelled. Current: " + snapshot.status());
+                    "Only DRAFT or PENDING_APPROVAL POs can be cancelled. Current: " + snapshot.status());
         }
     }
 

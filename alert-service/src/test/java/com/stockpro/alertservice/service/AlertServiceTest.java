@@ -17,6 +17,7 @@ import com.stockpro.alertservice.enums.AlertChannel;
 import com.stockpro.alertservice.enums.AlertSeverity;
 import com.stockpro.alertservice.enums.AlertStatus;
 import com.stockpro.alertservice.enums.AlertType;
+import com.stockpro.alertservice.events.PurchaseAlertEvent;
 import com.stockpro.alertservice.events.StockAlertEvent;
 import com.stockpro.alertservice.mail.EmailNotificationService;
 import com.stockpro.alertservice.rabbitmq.AlertEventPublisher;
@@ -188,5 +189,53 @@ class AlertServiceTest {
         ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
         verify(alertRepository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
         assertEquals(AlertSeverity.CRITICAL, captor.getAllValues().get(0).getSeverity());
+    }
+
+    @Test
+    void createAlertFromPurchaseEvent_shouldCreatePendingApprovalAlertsForAdminAndManager() {
+        PurchaseAlertEvent event = new PurchaseAlertEvent();
+        event.setEventType("purchase.pending-approval");
+        event.setPurchaseOrderId(44L);
+        event.setPurchaseOrderNumber("PO-20260505-0001");
+        event.setMessage("Purchase Order PO-20260505-0001 is pending approval.");
+        event.setCorrelationId("purchase.pending-approval:44:7");
+        event.setCreatedBy(7L);
+
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("purchase.pending-approval:44:7:MANAGER", AlertType.PO_APPROVAL_PENDING, "MANAGER"))
+                .thenReturn(false);
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("purchase.pending-approval:44:7:ADMIN", AlertType.PO_APPROVAL_PENDING, "ADMIN"))
+                .thenReturn(false);
+        when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
+        when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        alertService.createAlertFromPurchaseEvent(event);
+
+        ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
+        verify(alertRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertEquals("MANAGER", captor.getAllValues().get(0).getRecipientRole());
+        assertEquals("ADMIN", captor.getAllValues().get(1).getRecipientRole());
+        assertEquals("/purchase-orders/44", captor.getAllValues().get(0).getActionUrl());
+        assertEquals(AlertType.PO_APPROVAL_PENDING, captor.getAllValues().get(0).getType());
+    }
+
+    @Test
+    void createAlertFromPurchaseEvent_shouldFallBackToStatusWhenEventTypeMissing() {
+        PurchaseAlertEvent event = new PurchaseAlertEvent();
+        event.setPurchaseOrderId(45L);
+        event.setPurchaseOrderNumber("PO-20260505-0002");
+        event.setStatus("PENDING_APPROVAL");
+
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("PURCHASE_ORDER_PENDING_APPROVAL:45:-:MANAGER", AlertType.PO_APPROVAL_PENDING, "MANAGER"))
+                .thenReturn(false);
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("PURCHASE_ORDER_PENDING_APPROVAL:45:-:ADMIN", AlertType.PO_APPROVAL_PENDING, "ADMIN"))
+                .thenReturn(false);
+        when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
+        when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        alertService.createAlertFromPurchaseEvent(event);
+
+        ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
+        verify(alertRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertEquals("Purchase order PO-20260505-0002 is pending approval.", captor.getAllValues().get(0).getMessage());
     }
 }

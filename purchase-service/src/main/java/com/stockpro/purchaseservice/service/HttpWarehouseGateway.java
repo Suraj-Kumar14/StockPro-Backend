@@ -16,10 +16,17 @@ import org.springframework.web.client.RestClientResponseException;
 @Slf4j
 @RequiredArgsConstructor
 public class HttpWarehouseGateway implements WarehouseGateway {
+    private static final String[] WAREHOUSE_SERVICE_PATH_SUFFIXES = {
+            "/api/v1/warehouses",
+            "/warehouses",
+            "/api/v1/stocks",
+            "/stock"
+    };
 
     private final RestClient.Builder restClientBuilder;
+    private final DownstreamAuthSupport downstreamAuthSupport;
 
-    @Value("${warehouse-service.base-url:http://localhost:8080}")
+    @Value("${warehouse-service.base-url:http://localhost:8080/api/v1/warehouses}")
     private String warehouseServiceBaseUrl;
 
     @Override
@@ -30,10 +37,11 @@ public class HttpWarehouseGateway implements WarehouseGateway {
     @Override
     public WarehouseLookupResponseDTO getWarehouse(Long warehouseId) {
         try {
-            WarehouseLookupResponseDTO response = restClientBuilder.baseUrl(warehouseServiceBaseUrl)
+            WarehouseLookupResponseDTO response = restClientBuilder.baseUrl(resolveServiceRootUrl())
                     .build()
                     .get()
                     .uri("/api/v1/warehouses/{warehouseId}", warehouseId)
+                    .headers(downstreamAuthSupport::apply)
                     .retrieve()
                     .body(WarehouseLookupResponseDTO.class);
             if (response == null || response.getWarehouseId() == null
@@ -44,6 +52,9 @@ public class HttpWarehouseGateway implements WarehouseGateway {
             return response;
         } catch (RestClientResponseException ex) {
             HttpStatusCode statusCode = ex.getStatusCode();
+            if (statusCode.value() == 401 || statusCode.value() == 403) {
+                throw new IllegalStateException("Warehouse-service authorization failed", ex);
+            }
             if (statusCode.is4xxClientError()) {
                 throw new IllegalArgumentException(
                         "Warehouse not found with ID: " + warehouseId);
@@ -70,10 +81,11 @@ public class HttpWarehouseGateway implements WarehouseGateway {
                     .maxStockLevel(thresholds != null ? thresholds.getMaxStockLevel() : null)
                     .build();
 
-            restClientBuilder.baseUrl(warehouseServiceBaseUrl)
+            restClientBuilder.baseUrl(resolveServiceRootUrl())
                     .build()
                     .post()
                     .uri("/api/v1/stocks/receive")
+                    .headers(downstreamAuthSupport::apply)
                     .body(request)
                     .retrieve()
                     .toBodilessEntity();
@@ -86,5 +98,23 @@ public class HttpWarehouseGateway implements WarehouseGateway {
                     warehouseId, productId, ex.getMessage());
             throw new IllegalStateException("Warehouse stock update failed", ex);
         }
+    }
+
+    private String resolveServiceRootUrl() {
+        String normalizedBaseUrl = trimTrailingSlash(warehouseServiceBaseUrl);
+        for (String suffix : WAREHOUSE_SERVICE_PATH_SUFFIXES) {
+            if (normalizedBaseUrl.endsWith(suffix)) {
+                return normalizedBaseUrl.substring(0, normalizedBaseUrl.length() - suffix.length());
+            }
+        }
+        return normalizedBaseUrl;
+    }
+
+    private String trimTrailingSlash(String value) {
+        String normalized = value == null ? "" : value.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 }

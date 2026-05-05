@@ -2,8 +2,10 @@ package com.stockpro.purchaseservice.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.*;
+import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
@@ -74,6 +76,23 @@ public class GlobalExceptionHandler {
                         HttpStatus.BAD_REQUEST.value(), "Bad Request",
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler({DataIntegrityViolationException.class, JpaSystemException.class})
+    public ResponseEntity<ErrorResponse> handlePersistenceFailure(
+            RuntimeException ex, HttpServletRequest request) {
+        log.error("Persistence failure on path {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        String message = "Purchase order data could not be saved. Please verify the database schema is up to date.";
+        if (ex.getMessage() != null && ex.getMessage().contains("status")) {
+            message = "Purchase order status could not be saved. Please update the purchase_orders.status column schema.";
+        }
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                        "Internal Server Error",
+                        message,
+                        request.getRequestURI()),
+                HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     @ExceptionHandler(OptimisticLockingFailureException.class)

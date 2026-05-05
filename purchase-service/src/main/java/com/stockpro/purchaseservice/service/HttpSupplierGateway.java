@@ -17,6 +17,7 @@ import org.springframework.web.client.RestClientResponseException;
 public class HttpSupplierGateway implements SupplierGateway {
 
     private final RestClient.Builder restClientBuilder;
+    private final DownstreamAuthSupport downstreamAuthSupport;
 
     @Value("${supplier-service.base-url:http://localhost:8080/api/v1/suppliers}")
     private String supplierServiceBaseUrl;
@@ -33,6 +34,7 @@ public class HttpSupplierGateway implements SupplierGateway {
                     .build()
                     .get()
                     .uri("/{supplierId}", supplierId)
+                    .headers(downstreamAuthSupport::apply)
                     .retrieve()
                     .body(SupplierLookupResponseDTO.class);
 
@@ -47,6 +49,9 @@ public class HttpSupplierGateway implements SupplierGateway {
             return response;
         } catch (RestClientResponseException ex) {
             HttpStatusCode statusCode = ex.getStatusCode();
+            if (statusCode.value() == 401 || statusCode.value() == 403) {
+                throw new IllegalStateException("Supplier-service authorization failed", ex);
+            }
             if (statusCode.is4xxClientError()) {
                 throw new SupplierNotFoundException(
                         "Supplier not found with ID: " + supplierId);

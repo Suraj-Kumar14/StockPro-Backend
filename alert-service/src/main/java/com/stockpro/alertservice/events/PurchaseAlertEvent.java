@@ -13,12 +13,16 @@ public class PurchaseAlertEvent {
     @JsonAlias({"poNumber"})
     private String purchaseOrderNumber;
     private Long recipientId;
-    @JsonAlias({"requestedByUserId"})
+    @JsonAlias({"requestedByUserId", "actorId", "createdById"})
     private Long createdBy;
     private LocalDate expectedDate;
     @JsonAlias({"daysOverdue"})
     private Integer daysOverdue;
+    @JsonAlias({"reason"})
     private String message;
     private String sourceService;
     private String correlationId;
+    private String status;
+    private String oldStatus;
+    private String newStatus;
 }

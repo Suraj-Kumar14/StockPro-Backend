@@ -157,7 +157,7 @@ public class PurchaseOrderManagementService {
         POStatus oldStatus = purchaseOrder.getStatus();
         purchaseOrder.setStatus(POStatus.PENDING_APPROVAL);
         purchaseOrder.setSubmittedAt(LocalDateTime.now());
-        PurchaseOrder saved = purchaseOrderRepository.save(purchaseOrder);
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(purchaseOrder);
         saveHistory(saved.getPoId(), PurchaseOrderAction.SUBMITTED, oldStatus, saved.getStatus(), actorId, request != null ? request.remarks() : null);
         publish(saved, oldStatus, saved.getStatus(), actorId, submittedRouting, null);
         publish(saved, oldStatus, saved.getStatus(), actorId, pendingApprovalRouting, "Pending approval");
@@ -167,7 +167,7 @@ public class PurchaseOrderManagementService {
     @Transactional
     public PurchaseOrderResponse approvePurchaseOrder(Long poId, ApprovePurchaseOrderRequest request, Long actorId) {
         PurchaseOrder purchaseOrder = getEntity(poId);
-        ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_APPROVAL, POStatus.PENDING), "approve");
+        ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_APPROVAL), "approve");
         POStatus oldStatus = purchaseOrder.getStatus();
         purchaseOrder.setStatus(POStatus.APPROVED);
         purchaseOrder.setApprovedBy(actorId);
@@ -182,7 +182,7 @@ public class PurchaseOrderManagementService {
     @Transactional
     public PurchaseOrderResponse rejectPurchaseOrder(Long poId, RejectPurchaseOrderRequest request, Long actorId) {
         PurchaseOrder purchaseOrder = getEntity(poId);
-        ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_APPROVAL, POStatus.PENDING), "reject");
+        ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_APPROVAL), "reject");
         POStatus oldStatus = purchaseOrder.getStatus();
         purchaseOrder.setStatus(POStatus.REJECTED);
         purchaseOrder.setRejectedBy(actorId);
@@ -588,7 +588,6 @@ public class PurchaseOrderManagementService {
     }
 
     private POStatus normalizeStatus(POStatus status) {
-        if (status == POStatus.PENDING) return POStatus.PENDING_APPROVAL;
         if (status == POStatus.FULLY_RECEIVED) return POStatus.RECEIVED;
         return status;
     }

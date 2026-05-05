@@ -291,10 +291,10 @@ public class AlertService {
 
     @Transactional
     public void createAlertFromPurchaseEvent(PurchaseAlertEvent event) {
-        if (event == null || event.getEventType() == null) {
+        if (event == null || !hasPurchaseAlertSignal(event)) {
             return;
         }
-        String eventType = event.getEventType().toUpperCase(Locale.ROOT);
+        String eventType = normalizedPurchaseEventType(event);
         String sourceService = defaultSourceService(event.getSourceService(), "purchase-service");
         String baseCorrelationId = defaultCorrelationId(event.getCorrelationId(), eventType, event.getPurchaseOrderId(), event.getCreatedBy());
         if (eventType.contains("PENDING")) {
@@ -306,7 +306,7 @@ public class AlertService {
                         builder.referenceType("PURCHASE_ORDER");
                         builder.referenceId(stringify(event.getPurchaseOrderId()));
                         builder.referenceNumber(event.getPurchaseOrderNumber());
-                        builder.actionUrl("/purchase-orders/approvals");
+                        builder.actionUrl(purchaseOrderActionUrl(event));
                     });
             createRoleAlertFromEvent("ADMIN", AlertType.PO_APPROVAL_PENDING, AlertSeverity.INFO,
                     "Purchase Order Pending Approval",
@@ -316,7 +316,7 @@ public class AlertService {
                         builder.referenceType("PURCHASE_ORDER");
                         builder.referenceId(stringify(event.getPurchaseOrderId()));
                         builder.referenceNumber(event.getPurchaseOrderNumber());
-                        builder.actionUrl("/purchase-orders/approvals");
+                        builder.actionUrl(purchaseOrderActionUrl(event));
                     });
         } else if (eventType.contains("OVERDUE")) {
             for (String role : List.of("OFFICER", "MANAGER", "ADMIN")) {
@@ -703,6 +703,42 @@ public class AlertService {
 
     private String defaultMessage(PurchaseAlertEvent event, String fallback) {
         return notBlank(event.getMessage()) ? event.getMessage() : fallback;
+    }
+
+    private boolean hasPurchaseAlertSignal(PurchaseAlertEvent event) {
+        return event.getEventType() != null
+                || notBlank(event.getNewStatus())
+                || notBlank(event.getStatus())
+                || notBlank(event.getOldStatus());
+    }
+
+    private String normalizedPurchaseEventType(PurchaseAlertEvent event) {
+        if (notBlank(event.getEventType())) {
+            return event.getEventType().toUpperCase(Locale.ROOT);
+        }
+        if ("PENDING_APPROVAL".equalsIgnoreCase(event.getNewStatus()) || "PENDING_APPROVAL".equalsIgnoreCase(event.getStatus())) {
+            return "PURCHASE_ORDER_PENDING_APPROVAL";
+        }
+        if ("APPROVED".equalsIgnoreCase(event.getNewStatus()) || "APPROVED".equalsIgnoreCase(event.getStatus())) {
+            return "PURCHASE_ORDER_APPROVED";
+        }
+        if ("REJECTED".equalsIgnoreCase(event.getNewStatus()) || "REJECTED".equalsIgnoreCase(event.getStatus())) {
+            return "PURCHASE_ORDER_REJECTED";
+        }
+        if ("RECEIVED".equalsIgnoreCase(event.getNewStatus()) || "FULLY_RECEIVED".equalsIgnoreCase(event.getNewStatus())
+                || "RECEIVED".equalsIgnoreCase(event.getStatus()) || "FULLY_RECEIVED".equalsIgnoreCase(event.getStatus())) {
+            return "PURCHASE_ORDER_RECEIVED";
+        }
+        if ("PARTIALLY_RECEIVED".equalsIgnoreCase(event.getNewStatus()) || "PARTIALLY_RECEIVED".equalsIgnoreCase(event.getStatus())) {
+            return "PURCHASE_ORDER_PARTIALLY_RECEIVED";
+        }
+        return safe(event.getEventType()).toUpperCase(Locale.ROOT);
+    }
+
+    private String purchaseOrderActionUrl(PurchaseAlertEvent event) {
+        return event.getPurchaseOrderId() != null
+                ? "/purchase-orders/" + event.getPurchaseOrderId()
+                : "/purchase-orders/approvals";
     }
 
     private AlertChannel defaultChannel(AlertSeverity severity, AlertChannel requestedChannel) {

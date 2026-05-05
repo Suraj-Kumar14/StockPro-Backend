@@ -15,41 +15,46 @@ import org.springframework.web.client.RestClientResponseException;
 public class HttpProductCatalogGateway implements ProductCatalogGateway {
 
     private final RestClient.Builder restClientBuilder;
+    private final DownstreamAuthSupport downstreamAuthSupport;
 
     @Value("${product-service.base-url:http://localhost:8080/api/v1/products}")
     private String productServiceBaseUrl;
 
     @Override
     public StockProductThresholdDTO getProductThresholds(Long productId) {
+        return fetchProduct(productId);
+    }
+
+    @Override
+    public StockProductThresholdDTO getProductDetails(Long productId) {
+        return fetchProduct(productId);
+    }
+
+    private StockProductThresholdDTO fetchProduct(Long productId) {
         try {
             StockProductThresholdDTO response = restClientBuilder.baseUrl(productServiceBaseUrl)
                     .build()
                     .get()
                     .uri("/{productId}", productId)
+                    .headers(downstreamAuthSupport::apply)
                     .retrieve()
                     .body(StockProductThresholdDTO.class);
             if (response == null) {
-                StockProductThresholdDTO thresholds = new StockProductThresholdDTO();
-                thresholds.setProductId(productId);
-                return thresholds;
+                throw new IllegalArgumentException("Product not found with ID: " + productId);
             }
             return response;
         } catch (RestClientResponseException ex) {
-            log.warn("Product threshold lookup failed for product {}: {}", productId, ex.getMessage());
-            StockProductThresholdDTO thresholds = new StockProductThresholdDTO();
-            thresholds.setProductId(productId);
-            return thresholds;
+            if (ex.getStatusCode().value() == 401 || ex.getStatusCode().value() == 403) {
+                throw new IllegalStateException("Product-service authorization failed", ex);
+            }
+            if (ex.getStatusCode().is4xxClientError()) {
+                throw new IllegalArgumentException("Product not found with ID: " + productId);
+            }
+            throw new IllegalStateException("Product-service unavailable", ex);
         } catch (RestClientException ex) {
-            log.warn("Product-service unavailable for product {} threshold lookup: {}",
+            log.warn("Product-service unavailable for product {} lookup: {}",
                     productId, ex.getMessage());
-            StockProductThresholdDTO thresholds = new StockProductThresholdDTO();
-            thresholds.setProductId(productId);
-            return thresholds;
+            throw new IllegalStateException("Product-service unavailable", ex);
         }
-    }
-
-    @Override
-    public StockProductThresholdDTO getProductDetails(Long productId) {
-        return getProductThresholds(productId);
     }
 }
