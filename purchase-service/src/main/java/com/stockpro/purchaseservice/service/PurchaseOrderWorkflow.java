@@ -35,10 +35,10 @@ public class PurchaseOrderWorkflow {
     }
 
     public void assertCanReceive(PurchaseOrderStateSnapshot snapshot) {
-        if (snapshot.status() != POStatus.APPROVED
+        if (snapshot.status() != POStatus.PAID
                 && snapshot.status() != POStatus.PARTIALLY_RECEIVED) {
             throw new InvalidPOStateException(
-                    "Goods can only be received for APPROVED or PARTIALLY_RECEIVED POs. Current: "
+                    "Goods can be received only after payment is completed. Current: "
                             + snapshot.status());
         }
     }
