@@ -14,7 +14,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
@@ -22,11 +22,6 @@ spring:
   mvc:
     pathmatch:
       use-suffix-pattern: false
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME}
-    password: ${RABBITMQ_PASSWORD}
 
 eureka:
   client:
@@ -58,16 +53,8 @@ jwt:
   secret: ${JWT_SECRET}
 
 purchase-service:
-  base-url: ${PURCHASE_SERVICE_BASE_URL}
+  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8080/api/v1/purchase-orders}
 
-supplier-service:
-  base-url: ${SUPPLIER_SERVICE_BASE_URL}
-
-stockpro:
-  rabbitmq:
-    payment:
-      exchange: ${PAYMENT_RABBITMQ_EXCHANGE:stockpro.payment.exchange}
-      events-queue: ${PAYMENT_EVENTS_QUEUE:stockpro.payment.events.queue}
-      report-queue: ${PAYMENT_REPORT_QUEUE:stockpro.payment.report.queue}
-      alert-queue: ${PAYMENT_ALERT_QUEUE:stockpro.payment.alert.queue}
-      purchase-queue: ${PAYMENT_PURCHASE_QUEUE:stockpro.payment.purchase.queue}
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID:rzp_test_SmOdna1Hg1uiom}
+  key-secret: ${RAZORPAY_KEY_SECRET:Ez0aqf3zvNr1DLXBYzERNOz2}

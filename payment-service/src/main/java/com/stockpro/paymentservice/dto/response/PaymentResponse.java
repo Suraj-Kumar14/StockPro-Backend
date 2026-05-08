@@ -2,11 +2,11 @@ package com.stockpro.paymentservice.dto.response;
 
 import com.stockpro.paymentservice.enums.PaymentMethod;
 import com.stockpro.paymentservice.enums.PaymentStatus;
+import lombok.Builder;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
-import lombok.Builder;
 
 @Builder
 public record PaymentResponse(
@@ -25,21 +25,11 @@ public record PaymentResponse(
         String currency,
         LocalDate paymentDate,
         String transactionReference,
-        String bankReference,
-        String remarks,
-        String rejectionReason,
-        String cancellationReason,
-        String reversalReason,
+        String razorpayOrderId,
+        String razorpayPaymentId,
         Long createdBy,
-        Long approvedBy,
         Long paidBy,
-        LocalDateTime submittedAt,
-        LocalDateTime approvedAt,
-        LocalDateTime rejectedAt,
-        LocalDateTime cancelledAt,
         LocalDateTime paidAt,
-        LocalDateTime reversedAt,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt,
-        List<PaymentHistoryResponse> history) {
+        LocalDateTime updatedAt) {
 }

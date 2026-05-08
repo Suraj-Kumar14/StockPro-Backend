@@ -1,5 +1,6 @@
 package com.stockpro.paymentservice.client;
 
+import com.stockpro.paymentservice.exception.ExternalServiceException;
 import com.stockpro.paymentservice.exception.PaymentValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,31 +21,56 @@ public class HttpPurchaseServiceClient implements PurchaseServiceClient {
     @Value("${purchase-service.base-url:http://localhost:8080/api/v1/purchase-orders}")
     private String purchaseServiceBaseUrl;
 
+    /**
+     * No-auth version — used by the existing manual payment workflow.
+     * Attempts the call without Authorization header.
+     */
     @Override
     public PurchaseOrderLookupResponse getPurchaseOrder(Long purchaseOrderId) {
+        return getPurchaseOrder(purchaseOrderId, null);
+    }
+
+    /**
+     * Auth-aware version — passes the caller's JWT so the API Gateway / purchase-service
+     * can authenticate the service-to-service request.
+     */
+    @Override
+    public PurchaseOrderLookupResponse getPurchaseOrder(Long purchaseOrderId, String authToken) {
         try {
-            PurchaseOrderLookupResponse response = restClientBuilder.baseUrl(purchaseServiceBaseUrl)
+            RestClient.RequestHeadersSpec<?> spec = restClientBuilder
+                    .baseUrl(purchaseServiceBaseUrl)
                     .build()
                     .get()
-                    .uri("/{purchaseOrderId}", purchaseOrderId)
+                    .uri("/{id}", purchaseOrderId);
+
+            if (authToken != null && !authToken.isBlank()) {
+                spec = spec.header("Authorization", authToken.startsWith("Bearer ") ? authToken : "Bearer " + authToken);
+            }
+
+            PurchaseOrderLookupResponse response = spec
                     .retrieve()
                     .body(PurchaseOrderLookupResponse.class);
+
             if (response == null || (response.getPoId() == null && response.getPurchaseOrderId() == null)) {
-                throw new PaymentValidationException("Purchase order not found");
+                throw new PaymentValidationException("Purchase order not found: ID " + purchaseOrderId);
             }
             if (response.getPurchaseOrderId() == null) {
                 response.setPurchaseOrderId(response.getPoId());
             }
             return response;
+
+        } catch (PaymentValidationException e) {
+            throw e;
         } catch (RestClientResponseException ex) {
             HttpStatusCode code = ex.getStatusCode();
+            log.warn("Purchase-service returned {} for purchaseOrderId={}", code, purchaseOrderId);
             if (code.is4xxClientError()) {
-                throw new PaymentValidationException("Purchase order not found");
+                throw new PaymentValidationException("Purchase order not found or inaccessible: ID " + purchaseOrderId);
             }
-            throw new IllegalStateException("Purchase-service unavailable", ex);
+            throw new ExternalServiceException("Purchase-service error: " + ex.getMessage(), ex);
         } catch (RestClientException ex) {
             log.error("Purchase-service lookup failed for purchaseOrderId={}: {}", purchaseOrderId, ex.getMessage());
-            throw new IllegalStateException("Purchase-service unavailable", ex);
+            throw new ExternalServiceException("Purchase-service unavailable. Please try again later.", ex);
         }
     }
 }
