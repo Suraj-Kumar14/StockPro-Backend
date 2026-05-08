@@ -76,6 +76,16 @@ public class AlertRabbitMQConfig {
     }
 
     @Bean
+    public Queue purchaseRejectedQueue(@Value("${stockpro.rabbitmq.purchase.rejected.queue}") String queue) {
+        return QueueBuilder.durable(queue).build();
+    }
+
+    @Bean
+    public Queue purchaseReceivedQueue(@Value("${stockpro.rabbitmq.purchase.received.queue}") String queue) {
+        return QueueBuilder.durable(queue).build();
+    }
+
+    @Bean
     public Queue purchaseOverdueQueue(@Value("${stockpro.rabbitmq.purchase.overdue.queue}") String queue) {
         return QueueBuilder.durable(queue).build();
     }
@@ -135,6 +145,30 @@ public class AlertRabbitMQConfig {
             TopicExchange purchaseExchange,
             @Value("${stockpro.rabbitmq.purchase.approved.routing-key}") String routingKey) {
         return BindingBuilder.bind(purchaseApprovedQueue).to(purchaseExchange).with(routingKey);
+    }
+
+    @Bean
+    public Binding purchaseRejectedBinding(
+            Queue purchaseRejectedQueue,
+            TopicExchange purchaseExchange,
+            @Value("${stockpro.rabbitmq.purchase.rejected.routing-key}") String routingKey) {
+        return BindingBuilder.bind(purchaseRejectedQueue).to(purchaseExchange).with(routingKey);
+    }
+
+    @Bean
+    public Binding purchasePartialReceivedBinding(
+            Queue purchaseReceivedQueue,
+            TopicExchange purchaseExchange,
+            @Value("${stockpro.rabbitmq.purchase.received.partial-routing-key}") String routingKey) {
+        return BindingBuilder.bind(purchaseReceivedQueue).to(purchaseExchange).with(routingKey);
+    }
+
+    @Bean
+    public Binding purchaseFullReceivedBinding(
+            Queue purchaseReceivedQueue,
+            TopicExchange purchaseExchange,
+            @Value("${stockpro.rabbitmq.purchase.received.full-routing-key}") String routingKey) {
+        return BindingBuilder.bind(purchaseReceivedQueue).to(purchaseExchange).with(routingKey);
     }
 
     @Bean

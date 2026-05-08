@@ -135,16 +135,41 @@ public class StockManagementService {
 
     @Transactional
     public StockLevelResponse receiveStock(StockReceiptRequest request, Long actorId) {
+        log.info("Stock receive request started. warehouseId={}, productId={}, quantity={}, referenceType={}, referenceId={}, movementType={}",
+                request.getWarehouseId(), request.getProductId(), request.getQuantity(),
+                request.getReferenceType(), request.getReferenceId(), request.getMovementType());
         Warehouse warehouse = warehouseManagementService.getWarehouseEntity(request.getWarehouseId());
         ensureActiveWarehouse(warehouse);
-        ProductLookupResponseDTO product = validateProduct(request.getProductId(), true);
+        InventoryOperationService.ThresholdSettings thresholds = inventoryOperationService.resolveThresholds(
+                request.getProductId(),
+                request.getReorderLevel(),
+                request.getMaxStockLevel());
+        boolean stockRowExists = stockLevelRepository.findByWarehouseIdAndProductId(request.getWarehouseId(), request.getProductId()).isPresent();
         StockLevel stock = stockLevelRepository.findByWarehouseIdAndProductId(request.getWarehouseId(), request.getProductId())
-                .orElseGet(() -> newStockLevel(request.getWarehouseId(), request.getProductId(), product));
-        inventoryOperationService.handleReceipt(warehouse, stock, request.getQuantity(), "Stock received");
+                .orElseGet(() -> newStockLevel(request.getWarehouseId(), request.getProductId(), thresholds));
+        if (stockRowExists) {
+            log.info("Existing stock row found for receipt. warehouseId={}, productId={}, currentQuantity={}",
+                    request.getWarehouseId(), request.getProductId(), stock.getQuantity());
+        } else {
+            log.info("Creating stock row during receipt. warehouseId={}, productId={}, reorderLevel={}, maxStockLevel={}",
+                    request.getWarehouseId(), request.getProductId(), thresholds.reorderLevel(), thresholds.maxStockLevel());
+        }
+        if (stock.getReorderLevel() == null && thresholds.reorderLevel() != null) {
+            stock.setReorderLevel(thresholds.reorderLevel());
+        }
+        if (stock.getMaxStockLevel() == null && thresholds.maxStockLevel() != null) {
+            stock.setMaxStockLevel(thresholds.maxStockLevel());
+        }
+        inventoryOperationService.handleReceipt(warehouse, stock, request.getQuantity(),
+                request.getReason() != null && !request.getReason().isBlank() ? request.getReason() : "Stock received");
         StockLevel saved = inventoryOperationService.saveStockLevel(stock);
         inventoryOperationService.saveWarehouse(warehouse);
-        publishStockEvent(stockReceivedRouting, "STOCK_RECEIVED", saved, actorId, request.getQuantity(), null, null, "Stock received", request.getNotes(), request.getReferenceId(), request.getReferenceType());
+        publishStockEvent(stockReceivedRouting, "STOCK_RECEIVED", saved, actorId, request.getQuantity(), null, null,
+                request.getReason() != null && !request.getReason().isBlank() ? request.getReason() : "Stock received",
+                request.getNotes(), request.getReferenceId(), request.getReferenceType());
         publishThresholdEvents(saved, actorId);
+        log.info("Stock receive request completed. warehouseId={}, productId={}, stockRowCreated={}, finalQuantity={}",
+                request.getWarehouseId(), request.getProductId(), !stockRowExists, saved.getQuantity());
         return toResponse(saved);
     }
 
@@ -189,9 +214,12 @@ public class StockManagementService {
         ensureActiveWarehouse(source);
         ensureActiveWarehouse(destination);
         ProductLookupResponseDTO product = validateProduct(request.getProductId(), true);
+        InventoryOperationService.ThresholdSettings thresholds = new InventoryOperationService.ThresholdSettings(
+                product.getReorderLevel(),
+                product.getMaxStockLevel());
         StockLevel sourceStock = getStockEntity(request.getSourceWarehouseId(), request.getProductId());
         StockLevel destinationStock = stockLevelRepository.findByWarehouseIdAndProductId(request.getDestinationWarehouseId(), request.getProductId())
-                .orElseGet(() -> newStockLevel(request.getDestinationWarehouseId(), request.getProductId(), product));
+                .orElseGet(() -> newStockLevel(request.getDestinationWarehouseId(), request.getProductId(), thresholds));
         inventoryOperationService.handleIssue(source, sourceStock, request.getQuantity(), request.getReasonCode());
         inventoryOperationService.handleReceipt(destination, destinationStock, request.getQuantity(), request.getReasonCode());
         StockLevel savedSource = inventoryOperationService.saveStockLevel(sourceStock);
@@ -307,14 +335,14 @@ public class StockManagementService {
                 .orElseThrow(() -> new InvalidOperationException("Stock level not found"));
     }
 
-    private StockLevel newStockLevel(Long warehouseId, Long productId, ProductLookupResponseDTO product) {
+    private StockLevel newStockLevel(Long warehouseId, Long productId, InventoryOperationService.ThresholdSettings thresholds) {
         return StockLevel.builder()
                 .warehouseId(warehouseId)
                 .productId(productId)
                 .quantity(0)
                 .reservedQuantity(0)
-                .reorderLevel(product.getReorderLevel())
-                .maxStockLevel(product.getMaxStockLevel())
+                .reorderLevel(thresholds.reorderLevel())
+                .maxStockLevel(thresholds.maxStockLevel())
                 .build();
     }
 

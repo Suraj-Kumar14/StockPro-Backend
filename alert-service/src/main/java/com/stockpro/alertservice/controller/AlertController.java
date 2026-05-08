@@ -60,7 +60,7 @@ public class AlertController {
         return ResponseEntity.status(201).body(alertService.createBroadcastAlert(request, actorId(authentication)));
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/{id:\\d+}")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','OFFICER')")
     @Operation(summary = "Get an alert by id")
     public ResponseEntity<AlertResponse> getAlertById(@PathVariable Long id, Authentication authentication) {
@@ -152,11 +152,18 @@ public class AlertController {
         return ResponseEntity.ok(alertService.searchAlerts(request, actorId(authentication), role(authentication), isAdmin(authentication)));
     }
 
-    @PatchMapping("/{id}/read")
+    @PatchMapping("/{id:\\d+}/read")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','OFFICER')")
     @Operation(summary = "Mark alert as read")
     public ResponseEntity<AlertResponse> markAsRead(@PathVariable Long id, Authentication authentication) {
         return ResponseEntity.ok(alertService.markAsRead(id, actorId(authentication), role(authentication), isAdmin(authentication)));
+    }
+
+    @PostMapping("/{id:\\d+}/read")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','OFFICER')")
+    @Operation(summary = "Mark alert as read")
+    public ResponseEntity<AlertResponse> markAsReadPost(@PathVariable Long id, Authentication authentication) {
+        return markAsRead(id, authentication);
     }
 
     @PatchMapping("/read-all")
@@ -165,6 +172,13 @@ public class AlertController {
     public ResponseEntity<Void> markAllAsRead(Authentication authentication) {
         alertService.markAllAsRead(actorId(authentication), role(authentication));
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/read-all")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF','OFFICER')")
+    @Operation(summary = "Mark all alerts as read")
+    public ResponseEntity<Void> markAllAsReadPost(Authentication authentication) {
+        return markAllAsRead(authentication);
     }
 
     @PatchMapping("/{id}/acknowledge")

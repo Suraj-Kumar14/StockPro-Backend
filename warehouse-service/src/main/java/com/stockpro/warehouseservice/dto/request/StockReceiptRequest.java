@@ -11,8 +11,12 @@ public class StockReceiptRequest {
     @NotNull private Long warehouseId;
     @NotNull private Long productId;
     @Min(1) private Integer quantity;
+    private String movementType;
     private String referenceId;
     private String referenceType;
+    private String reason;
     @DecimalMin(value = "0.0", inclusive = true) private BigDecimal unitCost;
     private String notes;
+    private Integer reorderLevel;
+    private Integer maxStockLevel;
 }

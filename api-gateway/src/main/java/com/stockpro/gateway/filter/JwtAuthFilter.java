@@ -17,6 +17,7 @@ import reactor.core.publisher.Mono;
 
 import java.security.Key;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 @Slf4j
@@ -53,8 +54,12 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
+        String correlationId = request.getHeaders().getFirst("X-Correlation-Id");
+        if (correlationId == null || correlationId.isBlank()) {
+            correlationId = UUID.randomUUID().toString();
+        }
 
-        log.debug("Gateway request: {} {}", request.getMethod(), path);
+        log.debug("Gateway request: {} {} correlationId={}", request.getMethod(), path, correlationId);
 
         // Handle CORS preflight
         if (request.getMethod().name().equals("OPTIONS")) {
@@ -85,6 +90,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
             // Forward user info to downstream services via headers
             ServerHttpRequest mutatedRequest = request.mutate()
+                    .header("X-Correlation-Id", correlationId)
                     .header("X-User-Email", email)
                     .header("X-User-Role", role != null ? role : "")
                     .build();

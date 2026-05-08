@@ -316,42 +316,52 @@ public class ReportServiceImpl implements ReportService {
     @Override
     public Page<SupplierPerformanceReportResponse> getSupplierPerformanceReport(ReportFilterRequest request) {
         ReportFilterRequest normalized = normalizeRequest(request);
-        Map<Long, ReportingDataClient.SupplierRecord> suppliers = supplierMap();
-        List<SupplierPerformanceReportResponse> items = reportingDataClient.searchPurchaseOrders(normalized).stream()
-                .collect(Collectors.groupingBy(ReportingDataClient.PurchaseOrderRecord::supplierId))
-                .entrySet().stream()
-                .map(entry -> buildSupplierPerformance(entry.getKey(), suppliers.get(entry.getKey()), entry.getValue()))
-                .filter(item -> normalized.getSupplierId() == null || Objects.equals(item.supplierId(), normalized.getSupplierId()))
-                .sorted(Comparator.comparing(SupplierPerformanceReportResponse::totalSpend).reversed())
-                .toList();
-        return page(items, normalized);
+        try {
+            Map<Long, ReportingDataClient.SupplierRecord> suppliers = safeSupplierMap();
+            List<SupplierPerformanceReportResponse> items = reportingDataClient.searchPurchaseOrders(normalized).stream()
+                    .collect(Collectors.groupingBy(ReportingDataClient.PurchaseOrderRecord::supplierId))
+                    .entrySet().stream()
+                    .map(entry -> buildSupplierPerformance(entry.getKey(), suppliers.get(entry.getKey()), entry.getValue()))
+                    .filter(item -> normalized.getSupplierId() == null || Objects.equals(item.supplierId(), normalized.getSupplierId()))
+                    .sorted(Comparator.comparing(SupplierPerformanceReportResponse::totalSpend).reversed())
+                    .toList();
+            return page(items, normalized);
+        } catch (Exception ex) {
+            log.warn("Supplier performance report fallback triggered: {}", ex.getMessage());
+            return page(List.of(), normalized);
+        }
     }
 
     @Override
     public PaymentSummaryReportResponse getPaymentSummary(ReportFilterRequest request) {
         ReportFilterRequest normalized = normalizeRequest(request);
-        ReportingDataClient.PaymentSummaryRecord summary = reportingDataClient.getPaymentSummary();
-        List<SupplierPaymentItem> supplierPayments = reportingDataClient.searchPayments(normalized).stream()
-                .collect(Collectors.groupingBy(ReportingDataClient.PaymentRecord::supplierId))
-                .entrySet().stream()
-                .map(entry -> new SupplierPaymentItem(
-                        entry.getKey(),
-                        entry.getValue().stream().map(ReportingDataClient.PaymentRecord::supplierName).filter(Objects::nonNull).findFirst().orElse("Unknown supplier"),
-                        entry.getValue().stream()
-                                .filter(payment -> "PAID".equalsIgnoreCase(enumName(payment.status())) || "PARTIALLY_PAID".equalsIgnoreCase(enumName(payment.status())))
-                                .map(payment -> safe(payment.paymentAmount()))
-                                .reduce(BigDecimal.ZERO, BigDecimal::add),
-                        entry.getValue().stream().map(payment -> safe(payment.remainingAmount())).reduce(BigDecimal.ZERO, BigDecimal::add)))
-                .toList();
-        long pending = safeLong(summary.pendingApprovalCount()) + safeLong(summary.approvedCount()) + safeLong(summary.partiallyPaidCount());
-        return new PaymentSummaryReportResponse(
-                safeLong(summary.totalPayments()),
-                safeLong(summary.paidCount()),
-                pending,
-                safeLong(summary.cancelledCount()),
-                safe(summary.totalPaidAmount()),
-                safe(summary.pendingPaymentAmount()),
-                supplierPayments);
+        try {
+            ReportingDataClient.PaymentSummaryRecord summary = reportingDataClient.getPaymentSummary();
+            List<SupplierPaymentItem> supplierPayments = reportingDataClient.searchPayments(normalized).stream()
+                    .collect(Collectors.groupingBy(ReportingDataClient.PaymentRecord::supplierId))
+                    .entrySet().stream()
+                    .map(entry -> new SupplierPaymentItem(
+                            entry.getKey(),
+                            entry.getValue().stream().map(ReportingDataClient.PaymentRecord::supplierName).filter(Objects::nonNull).findFirst().orElse("Unknown supplier"),
+                            entry.getValue().stream()
+                                    .filter(payment -> "PAID".equalsIgnoreCase(enumName(payment.status())) || "PARTIALLY_PAID".equalsIgnoreCase(enumName(payment.status())))
+                                    .map(payment -> safe(payment.paymentAmount()))
+                                    .reduce(BigDecimal.ZERO, BigDecimal::add),
+                            entry.getValue().stream().map(payment -> safe(payment.remainingAmount())).reduce(BigDecimal.ZERO, BigDecimal::add)))
+                    .toList();
+            long pending = safeLong(summary.pendingApprovalCount()) + safeLong(summary.approvedCount()) + safeLong(summary.partiallyPaidCount());
+            return new PaymentSummaryReportResponse(
+                    safeLong(summary.totalPayments()),
+                    safeLong(summary.paidCount()),
+                    pending,
+                    safeLong(summary.cancelledCount()),
+                    safe(summary.totalPaidAmount()),
+                    safe(summary.pendingPaymentAmount()),
+                    supplierPayments);
+        } catch (Exception ex) {
+            log.warn("Payment summary fallback triggered: {}", ex.getMessage());
+            return new PaymentSummaryReportResponse(0L, 0L, 0L, 0L, BigDecimal.ZERO, BigDecimal.ZERO, List.of());
+        }
     }
 
     @Override
@@ -373,28 +383,47 @@ public class ReportServiceImpl implements ReportService {
     @Override
     public ExecutiveDashboardResponse getExecutiveDashboard() {
         List<String> unavailable = new ArrayList<>();
-        InventoryValuationResponse valuation = getInventoryValuation(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build());
-        StockSummaryResponse stockSummary = getStockSummary(ReportFilterRequest.builder().size(500).build());
-        PurchaseSummaryResponse purchaseSummary = getPurchaseSummary(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build());
+        InventoryValuationResponse valuation = safeCall(
+                () -> getInventoryValuation(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build()),
+                unavailable,
+                "inventory");
+        StockSummaryResponse stockSummary = safeCall(
+                () -> getStockSummary(ReportFilterRequest.builder().size(500).build()),
+                unavailable,
+                "inventory");
+        PurchaseSummaryResponse purchaseSummary = safeCall(
+                () -> getPurchaseSummary(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build()),
+                unavailable,
+                "purchase");
         PaymentSummaryReportResponse paymentSummary = safeCall(() -> getPaymentSummary(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build()), unavailable, "payments");
         ReportingDataClient.AlertSummaryRecord alertSummary = safeCall(reportingDataClient::getSystemAlertSummary, unavailable, "alerts");
         List<ReportingDataClient.AlertRecord> alerts = safeCall(() -> reportingDataClient.getRecentAlerts(true), unavailable, "alerts");
+        Integer todayMovementCount = safeCall(
+                () -> reportingDataClient.searchMovements(ReportFilterRequest.builder().period(ReportPeriod.TODAY).size(500).build()).content().size(),
+                unavailable,
+                "movements");
+        List<TopMovingProductResponse> topMovingProducts = safeCall(
+                () -> getTopMovingProducts(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build()),
+                unavailable,
+                "movements");
+        List<TrendPointResponse> valuationTrend = safeCall(this::buildValuationTrend, unavailable, "inventory");
+        List<TrendPointResponse> purchaseTrend = safeCall(this::buildPurchaseTrend, unavailable, "purchase");
         return new ExecutiveDashboardResponse(
-                valuation.totalProducts(),
-                valuation.totalWarehouses(),
-                valuation.totalInventoryValue(),
-                stockSummary.lowStockCount(),
-                stockSummary.overstockCount(),
-                purchaseSummary.pendingApprovalCount(),
-                purchaseSummary.overdueCount(),
-                purchaseSummary.totalPurchaseValue(),
+                valuation != null ? valuation.totalProducts() : 0L,
+                valuation != null ? valuation.totalWarehouses() : 0L,
+                valuation != null ? valuation.totalInventoryValue() : BigDecimal.ZERO,
+                stockSummary != null ? stockSummary.lowStockCount() : 0L,
+                stockSummary != null ? stockSummary.overstockCount() : 0L,
+                purchaseSummary != null ? purchaseSummary.pendingApprovalCount() : 0L,
+                purchaseSummary != null ? purchaseSummary.overdueCount() : 0L,
+                purchaseSummary != null ? purchaseSummary.totalPurchaseValue() : BigDecimal.ZERO,
                 paymentSummary != null ? paymentSummary.totalPaidAmount() : BigDecimal.ZERO,
                 alertSummary != null ? safeLong(alertSummary.criticalCount()) : 0L,
-                reportingDataClient.searchMovements(ReportFilterRequest.builder().period(ReportPeriod.TODAY).size(500).build()).content().size(),
-                getTopMovingProducts(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build()),
+                todayMovementCount != null ? todayMovementCount : 0,
+                topMovingProducts != null ? topMovingProducts : List.of(),
                 alerts != null ? alerts.stream().map(alert -> new DashboardAlertItem(alert.alertId(), alert.title(), enumName(alert.severity()), enumName(alert.type()), String.valueOf(alert.createdAt()))).toList() : List.of(),
-                buildValuationTrend(),
-                buildPurchaseTrend(),
+                valuationTrend != null ? valuationTrend : List.of(),
+                purchaseTrend != null ? purchaseTrend : List.of(),
                 unavailable);
     }
 
@@ -409,6 +438,16 @@ public class ReportServiceImpl implements ReportService {
         PurchaseSummaryResponse purchaseSummary = safeCall(() -> getPurchaseSummary(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build()), unavailable, "purchase");
         PaymentSummaryReportResponse paymentSummary = safeCall(() -> getPaymentSummary(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(500).build()), unavailable, "payments");
         ReportingDataClient.AlertSummaryRecord myAlerts = safeCall(reportingDataClient::getMyAlertSummary, unavailable, "alerts");
+        Integer todayMovementCount = safeCall(
+                () -> reportingDataClient.searchMovements(ReportFilterRequest.builder().period(ReportPeriod.TODAY).size(100).build()).content().size(),
+                unavailable,
+                "movements");
+        List<TopMovingProductResponse> topMovingProducts = safeCall(
+                () -> getTopMovingProducts(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(10).build()),
+                unavailable,
+                "movements");
+        List<TrendPointResponse> valuationTrend = safeCall(this::buildValuationTrend, unavailable, "inventory");
+        List<TrendPointResponse> purchaseTrend = safeCall(this::buildPurchaseTrend, unavailable, "purchase");
         return new ExecutiveDashboardResponse(
                 valuation != null ? valuation.totalProducts() : 0L,
                 valuation != null ? valuation.totalWarehouses() : 0L,
@@ -420,11 +459,11 @@ public class ReportServiceImpl implements ReportService {
                 purchaseSummary != null ? purchaseSummary.totalPurchaseValue() : BigDecimal.ZERO,
                 paymentSummary != null ? paymentSummary.totalPaidAmount() : BigDecimal.ZERO,
                 myAlerts != null ? safeLong(myAlerts.criticalCount()) : 0L,
-                reportingDataClient.searchMovements(ReportFilterRequest.builder().period(ReportPeriod.TODAY).size(100).build()).content().size(),
-                getTopMovingProducts(ReportFilterRequest.builder().period(ReportPeriod.LAST_30_DAYS).size(10).build()),
+                todayMovementCount != null ? todayMovementCount : 0,
+                topMovingProducts != null ? topMovingProducts : List.of(),
                 List.of(),
-                buildValuationTrend(),
-                buildPurchaseTrend(),
+                valuationTrend != null ? valuationTrend : List.of(),
+                purchaseTrend != null ? purchaseTrend : List.of(),
                 unavailable);
     }
 
@@ -887,6 +926,15 @@ public class ReportServiceImpl implements ReportService {
     private Map<Long, ReportingDataClient.SupplierRecord> supplierMap() {
         return reportingDataClient.getSuppliers().stream()
                 .collect(Collectors.toMap(ReportingDataClient.SupplierRecord::supplierId, Function.identity(), (first, second) -> first));
+    }
+
+    private Map<Long, ReportingDataClient.SupplierRecord> safeSupplierMap() {
+        try {
+            return supplierMap();
+        } catch (Exception ex) {
+            log.warn("Supplier lookup unavailable for report generation. Using empty supplier map. reason={}", ex.getMessage());
+            return Map.of();
+        }
     }
 
     private Map<Long, InventorySnapshot> aggregateSnapshotByProduct(List<InventorySnapshot> snapshots) {

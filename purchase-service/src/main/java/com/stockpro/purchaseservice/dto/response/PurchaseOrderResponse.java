@@ -37,6 +37,8 @@ public record PurchaseOrderResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         boolean isOverdue,
+        String paymentStatus,
+        boolean paymentCompleted,
         List<PurchaseOrderLineItemResponse> lineItems,
         List<PurchaseOrderHistoryResponse> history) {
 }

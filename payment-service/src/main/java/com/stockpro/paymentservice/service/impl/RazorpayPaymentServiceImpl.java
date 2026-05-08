@@ -5,6 +5,7 @@ import com.razorpay.RazorpayClient;
 import com.razorpay.RazorpayException;
 import com.razorpay.Utils;
 import com.stockpro.paymentservice.client.PurchaseOrderLookupResponse;
+import com.stockpro.paymentservice.client.PaymentTransitionRequest;
 import com.stockpro.paymentservice.client.PurchaseServiceClient;
 import com.stockpro.paymentservice.dto.request.RazorpayInitiateRequest;
 import com.stockpro.paymentservice.dto.request.RazorpayVerifyRequest;
@@ -42,7 +43,7 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final Set<PaymentStatus> PAID_STATUSES = EnumSet.of(PaymentStatus.PAID, PaymentStatus.PARTIALLY_PAID);
-    private static final Set<String> ALLOWED_PO_STATUSES = Set.of("APPROVED", "RECEIVED", "PARTIALLY_RECEIVED");
+    private static final Set<String> ALLOWED_PO_STATUSES = Set.of("PENDING_PAYMENT", "PAYMENT_INITIATED");
     private static final DateTimeFormatter NUMBER_DATE = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final PaymentRepository paymentRepository;
@@ -113,8 +114,16 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
                 .createdBy(actorId)
                 .build();
 
-        paymentRepository.save(payment);
+        Payment savedPendingPayment = paymentRepository.save(payment);
         log.info("Created Razorpay payment record paymentNumber={} razorpayOrderId={}", paymentNumber, razorpayOrderId);
+        purchaseServiceClient.markPaymentInitiated(request.purchaseOrderId(), new PaymentTransitionRequest(
+                savedPendingPayment.getStatus().name(),
+                savedPendingPayment.getPaymentId(),
+                paymentNumber,
+                razorpayOrderId,
+                null,
+                null,
+                actorId), authToken);
 
         return RazorpayOrderResponse.builder()
                 .razorpayOrderId(razorpayOrderId)
@@ -130,7 +139,7 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
 
     @Override
     @Transactional
-    public PaymentResponse verifyPayment(RazorpayVerifyRequest request, Long actorId) {
+    public PaymentResponse verifyPayment(RazorpayVerifyRequest request, Long actorId, String authToken) {
         log.info("Verifying Razorpay payment razorpayOrderId={} razorpayPaymentId={}",
                 request.razorpayOrderId(), request.razorpayPaymentId());
 
@@ -160,6 +169,14 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
         Payment saved = paymentRepository.save(payment);
         log.info("Payment verified and marked PAID paymentId={} paymentNumber={} razorpayPaymentId={}",
                 saved.getPaymentId(), saved.getPaymentNumber(), request.razorpayPaymentId());
+        purchaseServiceClient.markPaymentCompleted(saved.getPurchaseOrderId(), new PaymentTransitionRequest(
+                saved.getStatus().name(),
+                saved.getPaymentId(),
+                saved.getPaymentNumber(),
+                saved.getRazorpayOrderId(),
+                saved.getRazorpayPaymentId(),
+                saved.getPaidAt(),
+                actorId), authToken);
 
         return paymentMapper.toResponse(saved);
     }
@@ -189,7 +206,7 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
                     po.getPurchaseOrderId() != null ? po.getPurchaseOrderId() : po.getPoId(), po.getStatus());
             throw new PaymentValidationException(
                     "Cannot initiate payment for a PO with status: " + po.getStatus()
-                    + ". Only APPROVED purchase orders can be paid.");
+                    + ". Only purchase orders pending payment can be paid.");
         }
         if (po.getTotalAmount() == null || po.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new PaymentValidationException("Purchase order total amount is invalid or zero.");

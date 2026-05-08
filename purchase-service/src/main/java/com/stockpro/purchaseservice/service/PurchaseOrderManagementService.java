@@ -3,6 +3,7 @@ package com.stockpro.purchaseservice.service;
 import com.stockpro.purchaseservice.dto.StockProductThresholdDTO;
 import com.stockpro.purchaseservice.dto.SupplierLookupResponseDTO;
 import com.stockpro.purchaseservice.dto.WarehouseLookupResponseDTO;
+import com.stockpro.purchaseservice.dto.PaymentStatusSnapshotDTO;
 import com.stockpro.purchaseservice.dto.request.*;
 import com.stockpro.purchaseservice.dto.response.*;
 import com.stockpro.purchaseservice.entity.POLineItem;
@@ -12,7 +13,9 @@ import com.stockpro.purchaseservice.entity.PurchaseOrderHistory;
 import com.stockpro.purchaseservice.enums.PurchaseOrderAction;
 import com.stockpro.purchaseservice.events.PurchaseEvent;
 import com.stockpro.purchaseservice.events.PurchaseEventLineItem;
+import com.stockpro.purchaseservice.exception.InvalidPurchaseOrderStatusException;
 import com.stockpro.purchaseservice.exception.InvalidPOStateException;
+import com.stockpro.purchaseservice.exception.InvalidReceiveQuantityException;
 import com.stockpro.purchaseservice.exception.PurchaseOrderNotFoundException;
 import com.stockpro.purchaseservice.repository.POLineItemRepository;
 import com.stockpro.purchaseservice.repository.PurchaseOrderHistoryRepository;
@@ -42,7 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class PurchaseOrderManagementService {
 
-    private static final EnumSet<POStatus> OVERDUE_STATUSES = EnumSet.of(POStatus.APPROVED, POStatus.PARTIALLY_RECEIVED);
+    private static final EnumSet<POStatus> OVERDUE_STATUSES = EnumSet.of(POStatus.APPROVED, POStatus.PAID, POStatus.PARTIALLY_RECEIVED);
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
             "poId",
             "poNumber",
@@ -66,6 +69,7 @@ public class PurchaseOrderManagementService {
     private final SupplierGateway supplierGateway;
     private final WarehouseGateway warehouseGateway;
     private final ProductCatalogGateway productGateway;
+    private final PaymentGateway paymentGateway;
     private final PurchaseEventPublisher purchaseEventPublisher;
 
     @Value("${stockpro.rabbitmq.purchase.routing.created}") private String createdRouting;
@@ -159,8 +163,24 @@ public class PurchaseOrderManagementService {
         purchaseOrder.setSubmittedAt(LocalDateTime.now());
         PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(purchaseOrder);
         saveHistory(saved.getPoId(), PurchaseOrderAction.SUBMITTED, oldStatus, saved.getStatus(), actorId, request != null ? request.remarks() : null);
-        publish(saved, oldStatus, saved.getStatus(), actorId, submittedRouting, null);
-        publish(saved, oldStatus, saved.getStatus(), actorId, pendingApprovalRouting, "Pending approval");
+        log.info("Purchase order submitted for approval. poId={}, actorId={}, fromStatus={}, toStatus={}",
+                poId, actorId, oldStatus, saved.getStatus());
+        publish(saved, oldStatus, saved.getStatus(), actorId, pendingApprovalRouting, "Purchase order submitted for approval");
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public PurchaseOrderResponse submitForPayment(Long poId, Long actorId) {
+        PurchaseOrder purchaseOrder = getEntity(poId);
+        ensureStatus(purchaseOrder, Set.of(POStatus.APPROVED), "submit for payment");
+        POStatus oldStatus = purchaseOrder.getStatus();
+        purchaseOrder.setStatus(POStatus.PENDING_PAYMENT);
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(purchaseOrder);
+        saveHistory(saved.getPoId(), PurchaseOrderAction.PAYMENT_REQUESTED, oldStatus, saved.getStatus(), actorId,
+                "Purchase order submitted for Razorpay payment");
+        log.info("Submit-for-payment requested. poId={}, actorId={}, fromStatus={}, toStatus={}",
+                poId, actorId, oldStatus, saved.getStatus());
+        publish(saved, oldStatus, saved.getStatus(), actorId, updatedRouting, "PAYMENT_REQUESTED");
         return toResponse(saved);
     }
 
@@ -176,6 +196,34 @@ public class PurchaseOrderManagementService {
         PurchaseOrder saved = purchaseOrderRepository.save(purchaseOrder);
         saveHistory(saved.getPoId(), PurchaseOrderAction.APPROVED, oldStatus, saved.getStatus(), actorId, saved.getApprovalRemarks());
         publish(saved, oldStatus, saved.getStatus(), actorId, approvedRouting, saved.getApprovalRemarks());
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public PurchaseOrderResponse markPaymentInitiated(Long poId, PaymentTransitionRequest request) {
+        PurchaseOrder purchaseOrder = getEntity(poId);
+        ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_PAYMENT, POStatus.PAYMENT_INITIATED), "start payment");
+        POStatus oldStatus = purchaseOrder.getStatus();
+        purchaseOrder.setStatus(POStatus.PAYMENT_INITIATED);
+        PurchaseOrder saved = purchaseOrderRepository.save(purchaseOrder);
+        saveHistory(saved.getPoId(), PurchaseOrderAction.PAYMENT_INITIATED, oldStatus, saved.getStatus(), request.actorId(),
+                "Razorpay payment initiated" + (request.paymentNumber() != null ? " (" + request.paymentNumber() + ")" : ""));
+        publish(saved, oldStatus, saved.getStatus(), request.actorId(), updatedRouting, "PAYMENT_INITIATED");
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public PurchaseOrderResponse markPaymentCompleted(Long poId, PaymentTransitionRequest request) {
+        PurchaseOrder purchaseOrder = getEntity(poId);
+        ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_PAYMENT, POStatus.PAYMENT_INITIATED), "complete payment");
+        POStatus oldStatus = purchaseOrder.getStatus();
+        purchaseOrder.setStatus(POStatus.PAID);
+        PurchaseOrder saved = purchaseOrderRepository.save(purchaseOrder);
+        saveHistory(saved.getPoId(), PurchaseOrderAction.PAYMENT_COMPLETED, oldStatus, saved.getStatus(), request.actorId(),
+                "Razorpay payment completed" + (request.razorpayPaymentId() != null ? " (" + request.razorpayPaymentId() + ")" : ""));
+        log.info("Payment completed for purchase order. poId={}, actorId={}, fromStatus={}, toStatus={}, paymentId={}",
+                poId, request.actorId(), oldStatus, saved.getStatus(), request.razorpayPaymentId());
+        publish(saved, oldStatus, saved.getStatus(), request.actorId(), updatedRouting, "PAYMENT_COMPLETED");
         return toResponse(saved);
     }
 
@@ -219,21 +267,42 @@ public class PurchaseOrderManagementService {
 
     @Transactional
     public PurchaseOrderResponse receivePurchaseOrder(Long poId, ReceivePurchaseOrderRequest request, Long actorId) {
+        log.info("Receive purchase order request started. poId={}, actorId={}", poId, actorId);
         PurchaseOrder purchaseOrder = getEntity(poId);
-        ensureStatus(purchaseOrder, Set.of(POStatus.APPROVED, POStatus.PARTIALLY_RECEIVED), "receive goods for");
+        ensureReceivableStatus(purchaseOrder);
+        if (purchaseOrder.getWarehouseId() == null) {
+            throw new InvalidReceiveQuantityException("Warehouse ID is required for purchase order receipt");
+        }
+        List<POLineItem> lineItems = poLineItemRepository.findByPurchaseOrderPoId(poId);
+        if (lineItems.isEmpty()) {
+            throw new InvalidReceiveQuantityException("No line items found for purchase order " + poId);
+        }
+        log.info("Purchase order loaded for receipt. poId={}, status={}, warehouseId={}, lineItemsCount={}",
+                poId, purchaseOrder.getStatus(), purchaseOrder.getWarehouseId(), lineItems.size());
         Map<Long, POLineItem> lineItemsById = new HashMap<>();
-        for (POLineItem item : purchaseOrder.getLineItems()) {
+        for (POLineItem item : lineItems) {
             lineItemsById.put(item.getLineItemId(), item);
         }
         for (ReceivePurchaseOrderLineItemRequest lineRequest : request.lineItems()) {
             POLineItem item = lineItemsById.get(lineRequest.lineItemId());
-            if (item == null || !Objects.equals(item.getProductId(), lineRequest.productId())) {
-                throw new InvalidPOStateException("Receipt line item does not match purchase order");
+            if (lineRequest.receivedQuantity() == null || lineRequest.receivedQuantity() <= 0) {
+                throw new InvalidReceiveQuantityException("Received quantity must be greater than zero");
             }
-            int pendingQuantity = defaultQty(item.getQuantity()) - defaultQty(item.getReceivedQty());
+            if (item == null) {
+                throw new InvalidReceiveQuantityException("Line item " + lineRequest.lineItemId() + " does not belong to purchase order " + poId);
+            }
+            if (lineRequest.productId() == null) {
+                throw new InvalidReceiveQuantityException("Product ID is required for every received line item");
+            }
+            if (!Objects.equals(item.getProductId(), lineRequest.productId())) {
+                throw new InvalidReceiveQuantityException("Receipt line item product does not match purchase order line item");
+            }
+            int pendingQuantity = pendingQuantity(item);
             if (lineRequest.receivedQuantity() > pendingQuantity) {
-                throw new InvalidPOStateException("Received quantity cannot exceed pending quantity");
+                throw new InvalidReceiveQuantityException("Received quantity cannot exceed remaining quantity for line item " + lineRequest.lineItemId());
             }
+            log.info("Validated receipt line item. poId={}, lineItemId={}, productId={}, receivedQuantity={}, pendingQuantity={}",
+                    poId, lineRequest.lineItemId(), lineRequest.productId(), lineRequest.receivedQuantity(), pendingQuantity);
         }
         for (ReceivePurchaseOrderLineItemRequest lineRequest : request.lineItems()) {
             POLineItem item = lineItemsById.get(lineRequest.lineItemId());
@@ -243,15 +312,25 @@ public class PurchaseOrderManagementService {
                 item.setTotalCost(lineRequest.unitCost().multiply(BigDecimal.valueOf(item.getQuantity())));
             }
             item.setNotes(lineRequest.notes());
-            StockProductThresholdDTO product = productGateway.getProductDetails(item.getProductId());
-            warehouseGateway.increaseStock(purchaseOrder.getWarehouseId(), item.getProductId(), lineRequest.receivedQuantity(), product);
+            warehouseGateway.increaseStock(
+                    purchaseOrder.getWarehouseId(),
+                    item.getProductId(),
+                    lineRequest.receivedQuantity(),
+                    purchaseOrder.getPoId(),
+                    purchaseOrder.getPoNumber(),
+                    item.getUnitCost(),
+                    lineRequest.notes() != null && !lineRequest.notes().isBlank() ? lineRequest.notes() : request.notes(),
+                    null);
+            log.info("Warehouse stock update completed for receipt line. poId={}, warehouseId={}, productId={}, receivedQuantity={}",
+                    poId, purchaseOrder.getWarehouseId(), item.getProductId(), lineRequest.receivedQuantity());
         }
+        poLineItemRepository.saveAll(lineItems);
         POStatus oldStatus = purchaseOrder.getStatus();
         purchaseOrder.setReceivedBy(actorId);
         purchaseOrder.setReceivedAt(LocalDateTime.now());
         purchaseOrder.setReceivedDate(request.receivedDate() != null ? request.receivedDate() : LocalDate.now());
         purchaseOrder.setActualDeliveryDate(purchaseOrder.getReceivedDate());
-        if (purchaseOrder.getLineItems().stream().allMatch(item -> defaultQty(item.getReceivedQty()) >= defaultQty(item.getQuantity()))) {
+        if (lineItems.stream().allMatch(item -> defaultQty(item.getReceivedQty()) >= defaultQty(item.getQuantity()))) {
             purchaseOrder.setStatus(POStatus.RECEIVED);
         } else {
             purchaseOrder.setStatus(POStatus.PARTIALLY_RECEIVED);
@@ -264,6 +343,8 @@ public class PurchaseOrderManagementService {
         publish(saved, oldStatus, saved.getStatus(), actorId,
                 saved.getStatus() == POStatus.RECEIVED ? fullyReceivedRouting : partiallyReceivedRouting,
                 request.notes());
+        log.info("Receive purchase order request completed. poId={}, finalStatus={}, warehouseId={}",
+                poId, saved.getStatus(), saved.getWarehouseId());
         return toResponse(saved);
     }
 
@@ -274,6 +355,92 @@ public class PurchaseOrderManagementService {
 
     public PurchaseOrderSummaryResponse getPurchaseOrderSummary() {
         List<PurchaseOrder> orders = purchaseOrderRepository.findAll();
+        return buildSummary(orders);
+    }
+
+    public PurchaseOrderSummaryResponse getPurchaseOfficerSummary(Long actorId) {
+        List<PurchaseOrder> orders = actorId != null
+                ? purchaseOrderRepository.findByCreatedById(actorId)
+                : List.of();
+        return buildSummary(orders);
+    }
+
+    public Page<PurchaseOrderReportRowResponse> getPurchaseOrderReports(String keyword, POStatus status, String paymentStatus,
+            Long supplierId, LocalDate fromDate, LocalDate toDate, int page, int size) {
+        Specification<PurchaseOrder> spec = Specification.where(null);
+        if (keyword != null && !keyword.isBlank()) {
+            String pattern = "%" + keyword.toLowerCase() + "%";
+            spec = spec.and((root, query, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("poNumber")), pattern),
+                    cb.like(cb.lower(root.get("notes")), pattern)));
+        }
+        if (status != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (supplierId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("supplierId"), supplierId));
+        }
+        if (fromDate != null) {
+            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("createdAt"), fromDate.atStartOfDay()));
+        }
+        if (toDate != null) {
+            spec = spec.and((root, query, cb) -> cb.lessThan(root.get("createdAt"), toDate.plusDays(1).atStartOfDay()));
+        }
+
+        Page<PurchaseOrder> orders = purchaseOrderRepository.findAll(spec, pageable(page, size, "createdAt", "desc"));
+        List<PurchaseOrderReportRowResponse> rows = orders.getContent().stream()
+                .flatMap(order -> {
+                    PaymentStatusSnapshotDTO paymentSnapshot = paymentGateway.getPaymentStatusSnapshot(order.getPoId());
+                    SupplierLookupResponseDTO supplier = null;
+                    WarehouseLookupResponseDTO warehouse = null;
+                    try { supplier = supplierGateway.getSupplier(order.getSupplierId()); } catch (Exception ignored) { }
+                    try { warehouse = warehouseGateway.getWarehouse(order.getWarehouseId()); } catch (Exception ignored) { }
+                    SupplierLookupResponseDTO resolvedSupplier = supplier;
+                    WarehouseLookupResponseDTO resolvedWarehouse = warehouse;
+                    return order.getLineItems().stream()
+                            .map(item -> new PurchaseOrderReportRowResponse(
+                                    order.getPoId(),
+                                    order.getPoNumber(),
+                                    normalizeStatus(order.getStatus()).name(),
+                                    paymentSnapshot.getPaymentStatus(),
+                                    paymentSnapshot.getPaymentNumber(),
+                                    paymentSnapshot.getRazorpayOrderId(),
+                                    paymentSnapshot.getRazorpayPaymentId(),
+                                    paymentSnapshot.getPaymentAmount(),
+                                    paymentSnapshot.getPaidAt(),
+                                    order.getSupplierId(),
+                                    resolvedSupplier != null ? resolvedSupplier.getName() : null,
+                                    order.getWarehouseId(),
+                                    resolvedWarehouse != null ? resolvedWarehouse.getName() : null,
+                                    item.getProductId(),
+                                    item.getProductSku(),
+                                    item.getProductName(),
+                                    null,
+                                    item.getUnitCost(),
+                                    defaultQty(item.getQuantity()),
+                                    defaultQty(item.getReceivedQty()),
+                                    pendingQuantity(item),
+                                    item.getTotalCost(),
+                                    defaultMoney(order.getTotalAmount()),
+                                    order.getOrderDate(),
+                                    order.getExpectedDate(),
+                                    order.getApprovedBy(),
+                                    order.getApprovedAt(),
+                                    order.getCreatedAt()));
+                })
+                .filter(row -> paymentStatus == null || paymentStatus.isBlank()
+                        || paymentStatus.equalsIgnoreCase(row.paymentStatus()))
+                .toList();
+
+        int start = Math.min(page * size, rows.size());
+        int end = Math.min(start + size, rows.size());
+        return new org.springframework.data.domain.PageImpl<>(
+                rows.subList(start, end),
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")),
+                rows.size());
+    }
+
+    private PurchaseOrderSummaryResponse buildSummary(List<PurchaseOrder> orders) {
         BigDecimal totalValue = orders.stream().map(po -> defaultMoney(po.getTotalAmount())).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal pendingValue = orders.stream()
                 .filter(po -> normalizeStatus(po.getStatus()) == POStatus.PENDING_APPROVAL)
@@ -438,6 +605,14 @@ public class PurchaseOrderManagementService {
         }
     }
 
+    private void ensureReceivableStatus(PurchaseOrder purchaseOrder) {
+        POStatus status = normalizeStatus(purchaseOrder.getStatus());
+        if (status == POStatus.PAID || status == POStatus.PARTIALLY_RECEIVED) {
+            return;
+        }
+        throw new InvalidPurchaseOrderStatusException("Goods can be received only after payment is completed.");
+    }
+
     private void saveHistory(Long poId, PurchaseOrderAction action, POStatus oldStatus, POStatus newStatus, Long actorId, String remarks) {
         historyRepository.save(PurchaseOrderHistory.builder()
                 .purchaseOrderId(poId)
@@ -517,6 +692,8 @@ public class PurchaseOrderManagementService {
                 purchaseOrder.getCreatedAt(),
                 purchaseOrder.getUpdatedAt(),
                 isOverdue(purchaseOrder),
+                null,
+                false,
                 lineItems.stream().map(this::toLineItemResponse).toList(),
                 historyRepository.findByPurchaseOrderIdOrderByActionAtAsc(purchaseOrder.getPoId()).stream().map(this::toHistoryResponse).toList());
     }
@@ -616,5 +793,9 @@ public class PurchaseOrderManagementService {
 
     private int defaultQty(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private int pendingQuantity(POLineItem item) {
+        return defaultQty(item.getQuantity()) - defaultQty(item.getReceivedQty());
     }
 }

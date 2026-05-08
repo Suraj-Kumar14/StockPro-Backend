@@ -3,8 +3,10 @@ package com.stockpro.paymentservice.controller;
 import com.stockpro.paymentservice.dto.request.RazorpayInitiateRequest;
 import com.stockpro.paymentservice.dto.request.RazorpayVerifyRequest;
 import com.stockpro.paymentservice.dto.response.PaymentResponse;
+import com.stockpro.paymentservice.dto.response.PaymentSummaryResponse;
 import com.stockpro.paymentservice.dto.response.RazorpayOrderResponse;
 import com.stockpro.paymentservice.dto.response.RemainingAmountResponse;
+import com.stockpro.paymentservice.enums.PaymentStatus;
 import com.stockpro.paymentservice.security.AuthenticatedUser;
 import com.stockpro.paymentservice.service.PaymentService;
 import com.stockpro.paymentservice.service.RazorpayPaymentService;
@@ -19,9 +21,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/v1/payments")
@@ -45,6 +49,31 @@ public class PaymentController {
             @RequestParam(defaultValue = "desc") String sortDir) {
         log.debug("GET /api/v1/payments page={} size={} sortBy={} sortDir={}", page, size, sortBy, sortDir);
         return ResponseEntity.ok(paymentService.getAllPayments(page, size, sortBy, sortDir));
+    }
+
+    @GetMapping("/search")
+    @PreAuthorize("hasAnyRole('ADMIN','OFFICER','MANAGER')")
+    @Operation(summary = "Search payments with enterprise filters")
+    public ResponseEntity<Page<PaymentResponse>> searchPayments(
+            @RequestParam(required = false) Long supplierId,
+            @RequestParam(required = false) PaymentStatus status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        log.info("[PaymentController] GET /search supplierId={} status={} fromDate={} toDate={} page={} size={}",
+                supplierId, status, fromDate, toDate, page, size);
+        return ResponseEntity.ok(paymentService.searchPayments(supplierId, status, fromDate, toDate, page, size, sortBy, sortDir));
+    }
+
+    @GetMapping("/summary")
+    @PreAuthorize("hasAnyRole('ADMIN','OFFICER','MANAGER')")
+    @Operation(summary = "Get payment summary")
+    public ResponseEntity<PaymentSummaryResponse> getPaymentSummary() {
+        log.info("[PaymentController] GET /summary");
+        return ResponseEntity.ok(paymentService.getPaymentSummary());
     }
 
     @GetMapping("/purchase-order/{purchaseOrderId}")
@@ -112,11 +141,12 @@ public class PaymentController {
     @Operation(summary = "Verify completed Razorpay payment and mark as PAID")
     public ResponseEntity<PaymentResponse> verifyRazorpayPayment(
             @Valid @RequestBody RazorpayVerifyRequest verifyRequest,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest request) {
         log.info("[PaymentController] POST /razorpay/verify razorpayOrderId={} actorId={}",
                 verifyRequest.razorpayOrderId(), actorId(authentication));
         return ResponseEntity.ok(
-                razorpayPaymentService.verifyPayment(verifyRequest, actorId(authentication)));
+                razorpayPaymentService.verifyPayment(verifyRequest, actorId(authentication), request.getHeader("Authorization")));
     }
 
     // ─── Helper ───────────────────────────────────────────────────────────────

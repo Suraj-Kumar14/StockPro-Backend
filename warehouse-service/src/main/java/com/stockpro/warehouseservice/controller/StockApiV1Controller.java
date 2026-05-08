@@ -74,7 +74,7 @@ public class StockApiV1Controller {
     }
 
     @PostMapping("/receive")
-    @PreAuthorize("hasAnyRole('MANAGER','STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','STAFF')")
     public StockLevelResponse receiveStock(@Valid @RequestBody StockReceiptRequest request, Authentication authentication) {
         return stockManagementService.receiveStock(request, actorId(authentication));
     }

@@ -25,7 +25,7 @@ public interface RazorpayPaymentService {
      * @param actorId the authenticated user's ID
      * @return PaymentResponse with updated PAID status
      */
-    PaymentResponse verifyPayment(RazorpayVerifyRequest request, Long actorId);
+    PaymentResponse verifyPayment(RazorpayVerifyRequest request, Long actorId, String authToken);
 
     /**
      * Returns the remaining payable amount for a purchase order.

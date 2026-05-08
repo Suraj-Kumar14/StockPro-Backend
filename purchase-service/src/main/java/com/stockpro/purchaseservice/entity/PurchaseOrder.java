@@ -26,6 +26,7 @@ public class PurchaseOrder {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "po_id")
     private Long poId;
 
     @Version

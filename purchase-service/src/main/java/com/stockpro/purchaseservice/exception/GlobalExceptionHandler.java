@@ -9,6 +9,7 @@ import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
@@ -41,6 +42,40 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(InvalidPurchaseOrderStatusException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPurchaseOrderStatus(
+            InvalidPurchaseOrderStatusException ex, HttpServletRequest request) {
+        log.warn("Invalid receive status for request {}: {}", request.getRequestURI(), ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(InvalidReceiveQuantityException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidReceiveQuantity(
+            InvalidReceiveQuantityException ex, HttpServletRequest request) {
+        log.warn("Invalid receive quantity for request {}: {}", request.getRequestURI(), ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(WarehouseStockUpdateException.class)
+    public ResponseEntity<ErrorResponse> handleWarehouseStockUpdate(
+            WarehouseStockUpdateException ex, HttpServletRequest request) {
+        HttpStatus status = ex.getStatus() != null ? ex.getStatus() : HttpStatus.BAD_GATEWAY;
+        log.error("Warehouse stock update failed for request {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        status.value(), status.getReasonPhrase(),
+                        ex.getMessage(), request.getRequestURI()),
+                status);
+    }
+
     @ExceptionHandler({
             InvalidPOStateException.class,
             InvalidLineItemException.class,
@@ -66,6 +101,19 @@ public class GlobalExceptionHandler {
             errors.put(field, error.getDefaultMessage());
         });
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        String parameterName = ex.getName() != null ? ex.getName() : "request parameter";
+        String message = "Invalid value for " + parameterName;
+        log.warn("Type mismatch on {}: {}", request.getRequestURI(), ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        message, request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

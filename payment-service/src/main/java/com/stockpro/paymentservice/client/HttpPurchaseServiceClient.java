@@ -73,4 +73,39 @@ public class HttpPurchaseServiceClient implements PurchaseServiceClient {
             throw new ExternalServiceException("Purchase-service unavailable. Please try again later.", ex);
         }
     }
+
+    @Override
+    public void markPaymentInitiated(Long purchaseOrderId, PaymentTransitionRequest request, String authToken) {
+        postPaymentTransition(purchaseOrderId, "/{id}/payment-initiated", request, authToken);
+    }
+
+    @Override
+    public void markPaymentCompleted(Long purchaseOrderId, PaymentTransitionRequest request, String authToken) {
+        postPaymentTransition(purchaseOrderId, "/{id}/payment-completed", request, authToken);
+    }
+
+    private void postPaymentTransition(Long purchaseOrderId, String path, PaymentTransitionRequest request, String authToken) {
+        try {
+            RestClient.RequestBodySpec spec = restClientBuilder
+                    .baseUrl(purchaseServiceBaseUrl)
+                    .build()
+                    .post()
+                    .uri(path, purchaseOrderId);
+
+            if (authToken != null && !authToken.isBlank()) {
+                spec = spec.header("Authorization", authToken.startsWith("Bearer ") ? authToken : "Bearer " + authToken);
+            }
+
+            spec.body(request)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            log.warn("Purchase-service payment transition failed for purchaseOrderId={} status={} body={}",
+                    purchaseOrderId, ex.getStatusCode(), ex.getResponseBodyAsString());
+            throw new ExternalServiceException("Purchase-service payment status update failed", ex);
+        } catch (RestClientException ex) {
+            log.error("Purchase-service payment transition transport failure for purchaseOrderId={}: {}", purchaseOrderId, ex.getMessage());
+            throw new ExternalServiceException("Purchase-service unavailable. Please try again later.", ex);
+        }
+    }
 }

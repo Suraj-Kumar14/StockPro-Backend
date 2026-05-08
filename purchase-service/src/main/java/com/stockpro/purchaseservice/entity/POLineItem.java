@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "po_line_items", indexes = {
         @Index(name = "idx_po_line_po_id", columnList = "purchase_order_id"),
-        @Index(name = "idx_po_line_product_id", columnList = "productId")
+        @Index(name = "idx_po_line_product_id", columnList = "product_id")
 })
 @Data
 @NoArgsConstructor
@@ -18,12 +18,13 @@ public class POLineItem {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "line_item_id")
     private Long lineItemId;
 
     @Version
     private Long version;
 
-    @Column(nullable = false)
+    @Column(name = "product_id", nullable = false)
     private Long productId;
 
     @Column(nullable = false)
@@ -39,7 +40,7 @@ public class POLineItem {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal totalCost;
 
-    @Column(nullable = false)
+    @Column(name = "received_qty", nullable = false)
     @Builder.Default
     private Integer receivedQty = 0;
 

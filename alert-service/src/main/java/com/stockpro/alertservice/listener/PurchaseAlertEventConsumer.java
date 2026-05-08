@@ -28,6 +28,20 @@ public class PurchaseAlertEventConsumer {
         alertService.createAlertFromPurchaseEvent(event);
     }
 
+    @RabbitListener(queues = "${stockpro.rabbitmq.purchase.rejected.queue}")
+    public void consumeRejected(PurchaseAlertEvent event) {
+        event.setEventType(event.getEventType() != null ? event.getEventType() : "PURCHASE_ORDER_REJECTED");
+        log.info("Consumed purchase rejected event purchaseOrderId={}", event.getPurchaseOrderId());
+        alertService.createAlertFromPurchaseEvent(event);
+    }
+
+    @RabbitListener(queues = "${stockpro.rabbitmq.purchase.received.queue}")
+    public void consumeReceived(PurchaseAlertEvent event) {
+        event.setEventType(event.getEventType() != null ? event.getEventType() : "PURCHASE_ORDER_RECEIVED");
+        log.info("Consumed purchase received event purchaseOrderId={} eventType={}", event.getPurchaseOrderId(), event.getEventType());
+        alertService.createAlertFromPurchaseEvent(event);
+    }
+
     @RabbitListener(queues = "${stockpro.rabbitmq.purchase.overdue.queue}")
     public void consumeOverdue(PurchaseAlertEvent event) {
         event.setEventType(event.getEventType() != null ? event.getEventType() : "PURCHASE_ORDER_OVERDUE");

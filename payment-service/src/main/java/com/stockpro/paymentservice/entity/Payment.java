@@ -2,6 +2,7 @@ package com.stockpro.paymentservice.entity;
 
 import com.stockpro.paymentservice.enums.PaymentMethod;
 import com.stockpro.paymentservice.enums.PaymentStatus;
+import com.stockpro.paymentservice.persistence.PaymentMethodConverter;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -40,8 +41,8 @@ public class Payment {
     @Column(nullable = false, length = 30)
     private PaymentStatus status;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Convert(converter = PaymentMethodConverter.class)
+    @Column(name = "payment_method", nullable = false, length = 50)
     private PaymentMethod paymentMethod;
 
     @Column(nullable = false, precision = 15, scale = 2)

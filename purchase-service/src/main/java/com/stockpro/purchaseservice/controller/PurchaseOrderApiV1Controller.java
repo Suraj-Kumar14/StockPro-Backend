@@ -85,10 +85,28 @@ public class PurchaseOrderApiV1Controller {
         return purchaseOrderManagementService.submitPurchaseOrder(id, request, actorId(authentication));
     }
 
+    @PostMapping("/{id}/submit-for-payment")
+    @PreAuthorize("hasAnyRole('OFFICER','ADMIN')")
+    public PurchaseOrderResponse submitForPayment(@PathVariable Long id, Authentication authentication) {
+        return purchaseOrderManagementService.submitForPayment(id, actorId(authentication));
+    }
+
     @PostMapping("/{id}/approve")
     @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
     public PurchaseOrderResponse approve(@PathVariable Long id, @RequestBody(required = false) ApprovePurchaseOrderRequest request, Authentication authentication) {
         return purchaseOrderManagementService.approvePurchaseOrder(id, request, actorId(authentication));
+    }
+
+    @PostMapping("/{id}/payment-initiated")
+    @PreAuthorize("hasAnyRole('OFFICER','ADMIN','MANAGER')")
+    public PurchaseOrderResponse markPaymentInitiated(@PathVariable Long id, @Valid @RequestBody PaymentTransitionRequest request) {
+        return purchaseOrderManagementService.markPaymentInitiated(id, request);
+    }
+
+    @PostMapping("/{id}/payment-completed")
+    @PreAuthorize("hasAnyRole('OFFICER','ADMIN','MANAGER')")
+    public PurchaseOrderResponse markPaymentCompleted(@PathVariable Long id, @Valid @RequestBody PaymentTransitionRequest request) {
+        return purchaseOrderManagementService.markPaymentCompleted(id, request);
     }
 
     @PostMapping("/{id}/reject")
@@ -103,10 +121,10 @@ public class PurchaseOrderApiV1Controller {
         return purchaseOrderManagementService.cancelPurchaseOrder(id, request, actorId(authentication));
     }
 
-    @PostMapping("/{id}/receive")
+    @PostMapping("/{poId}/receive")
     @PreAuthorize("hasAnyRole('STAFF','MANAGER','ADMIN')")
-    public PurchaseOrderResponse receive(@PathVariable Long id, @Valid @RequestBody ReceivePurchaseOrderRequest request, Authentication authentication) {
-        return purchaseOrderManagementService.receivePurchaseOrder(id, request, actorId(authentication));
+    public PurchaseOrderResponse receivePurchaseOrder(@PathVariable Long poId, @Valid @RequestBody ReceivePurchaseOrderRequest request, Authentication authentication) {
+        return purchaseOrderManagementService.receivePurchaseOrder(poId, request, actorId(authentication));
     }
 
     @GetMapping("/{id}/history")
@@ -119,6 +137,26 @@ public class PurchaseOrderApiV1Controller {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','OFFICER')")
     public PurchaseOrderSummaryResponse summary() {
         return purchaseOrderManagementService.getPurchaseOrderSummary();
+    }
+
+    @GetMapping("/purchase-officer/summary")
+    @PreAuthorize("hasAnyRole('OFFICER','ADMIN')")
+    public PurchaseOrderSummaryResponse purchaseOfficerSummary(Authentication authentication) {
+        return purchaseOrderManagementService.getPurchaseOfficerSummary(actorId(authentication));
+    }
+
+    @GetMapping("/reports")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','OFFICER')")
+    public Page<PurchaseOrderReportRowResponse> reports(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) POStatus status,
+            @RequestParam(required = false) String paymentStatus,
+            @RequestParam(required = false) Long supplierId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return purchaseOrderManagementService.getPurchaseOrderReports(keyword, status, paymentStatus, supplierId, fromDate, toDate, page, size);
     }
 
     @GetMapping("/analytics")

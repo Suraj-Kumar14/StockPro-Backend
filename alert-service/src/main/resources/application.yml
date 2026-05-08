@@ -116,6 +116,13 @@ stockpro:
       approved:
         queue: ${ALERT_PURCHASE_APPROVED_QUEUE:stockpro.alert.purchase.approved.queue}
         routing-key: ${PURCHASE_APPROVED_ROUTING_KEY:purchase.approved}
+      rejected:
+        queue: ${ALERT_PURCHASE_REJECTED_QUEUE:stockpro.alert.purchase.rejected.queue}
+        routing-key: ${PURCHASE_REJECTED_ROUTING_KEY:purchase.rejected}
+      received:
+        queue: ${ALERT_PURCHASE_RECEIVED_QUEUE:stockpro.alert.purchase.received.queue}
+        partial-routing-key: ${PURCHASE_PARTIALLY_RECEIVED_ROUTING_KEY:purchase.partially-received}
+        full-routing-key: ${PURCHASE_FULLY_RECEIVED_ROUTING_KEY:purchase.fully-received}
       overdue:
         queue: ${ALERT_PURCHASE_OVERDUE_QUEUE:stockpro.alert.purchase.overdue.queue}
         routing-key: ${PURCHASE_OVERDUE_ROUTING_KEY:purchase.overdue}

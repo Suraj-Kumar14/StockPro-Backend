@@ -69,6 +69,9 @@ supplier-service:
 warehouse-service:
   base-url: ${WAREHOUSE_SERVICE_BASE_URL}
 
+payment-service:
+  base-url: ${PAYMENT_SERVICE_BASE_URL:http://localhost:8080/api/v1/payments}
+
 stockpro:
   rabbitmq:
     purchase:

@@ -10,13 +10,17 @@ import org.springframework.web.client.RestClientResponseException;
 
 @Component
 public class ProductCatalogClient {
+    private static final String[] PRODUCT_SERVICE_PATH_SUFFIXES = {
+            "/api/v1/products",
+            "/products"
+    };
 
     private final RestClient restClient;
 
     public ProductCatalogClient(
             RestClient.Builder restClientBuilder,
-            @Value("${product-service.base-url}") String baseUrl) {
-        this.restClient = restClientBuilder.baseUrl(baseUrl).build();
+            @Value("${product-service.base-url:http://localhost:8080/api/v1/products}") String baseUrl) {
+        this.restClient = restClientBuilder.baseUrl(resolveProductsBaseUrl(baseUrl)).build();
     }
 
     public ProductLookupResponseDTO getProductByBarcode(String barcode) {
@@ -67,5 +71,23 @@ public class ProductCatalogClient {
             throw new ProductLookupException(
                     "Unable to fetch product details from product-service", true);
         }
+    }
+
+    private String resolveProductsBaseUrl(String configuredBaseUrl) {
+        String normalizedBaseUrl = trimTrailingSlash(configuredBaseUrl);
+        for (String suffix : PRODUCT_SERVICE_PATH_SUFFIXES) {
+            if (normalizedBaseUrl.endsWith(suffix)) {
+                return normalizedBaseUrl;
+            }
+        }
+        return normalizedBaseUrl + "/api/v1/products";
+    }
+
+    private String trimTrailingSlash(String value) {
+        String normalized = value == null ? "" : value.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 }
