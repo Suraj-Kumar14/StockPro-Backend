@@ -20,20 +20,32 @@
 	<properties>
 		<java.version>17</java.version>
 		<spring-cloud.version>2023.0.1</spring-cloud.version>
+		<jacoco.version>0.8.11</jacoco.version>
+		<sonar.maven.plugin.version>3.11.0.3922</sonar.maven.plugin.version>
 		<sonar.projectKey>stockpro-movement-service</sonar.projectKey>
-		<sonar.projectName>StockPro Movement Service</sonar.projectName>
+		<sonar.projectName>Movement Service</sonar.projectName>
 		<sonar.host.url>http://localhost:9000</sonar.host.url>
 		<sonar.coverage.jacoco.xmlReportPaths>
 			${project.build.directory}/site/jacoco/jacoco.xml
 		</sonar.coverage.jacoco.xmlReportPaths>
-		<sonar.exclusions>
-			**/entity/**,
-			**/dto/**,
-			**/exception/**,
-			**/config/**,
-			**/*Application.java,
-			**/rabbitmq/**
-		</sonar.exclusions>
+		<sonar.sources>src/main/java</sonar.sources>
+		<sonar.tests>src/test/java</sonar.tests>
+		<sonar.test.exclusions>src/test/java/**</sonar.test.exclusions>
+		<sonar.cpd.exclusions>src/test/java/**</sonar.cpd.exclusions>
+		<sonar.coverage.exclusions>
+			src/main/java/com/stockpro/movementservice/MovementServiceApplication.java,
+			src/main/java/com/stockpro/movementservice/aspect/**,
+			src/main/java/com/stockpro/movementservice/config/**,
+			src/main/java/com/stockpro/movementservice/dto/**,
+			src/main/java/com/stockpro/movementservice/entity/**,
+			src/main/java/com/stockpro/movementservice/enums/**,
+			src/main/java/com/stockpro/movementservice/events/**,
+			src/main/java/com/stockpro/movementservice/exception/**,
+			src/main/java/com/stockpro/movementservice/listener/**,
+			src/main/java/com/stockpro/movementservice/security/**,
+			src/main/java/com/stockpro/movementservice/service/MovementEventPublisher.java,
+			src/main/java/com/stockpro/movementservice/service/RabbitMQMovementEventPublisher.java
+		</sonar.coverage.exclusions>
 	</properties>
 
 	<dependencyManagement>
@@ -132,31 +144,11 @@
 
 	<build>
 		<plugins>
-			<!-- JACOCO - Code Coverage -->
-			<plugin>
-				<groupId>org.jacoco</groupId>
-				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.11</version>
-				<executions>
-					<execution>
-						<goals>
-							<goal>prepare-agent</goal>
-						</goals>
-					</execution>
-					<execution>
-						<id>report</id>
-						<phase>verify</phase>
-						<goals>
-							<goal>report</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
 			<!-- SONARQUBE -->
 			<plugin>
 				<groupId>org.sonarsource.scanner.maven</groupId>
 				<artifactId>sonar-maven-plugin</artifactId>
-				<version>3.11.0.3922</version>
+				<version>${sonar.maven.plugin.version}</version>
 			</plugin>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
@@ -173,26 +165,58 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.11</version>
+				<version>${jacoco.version}</version>
 				<executions>
 					<execution>
+						<id>prepare-agent</id>
 						<goals>
 							<goal>prepare-agent</goal>
 						</goals>
 					</execution>
 					<execution>
 						<id>report</id>
-						<phase>test</phase>
+						<phase>verify</phase>
 						<goals>
 							<goal>report</goal>
 						</goals>
+						<configuration>
+							<excludes>
+								<exclude>com/stockpro/movementservice/MovementServiceApplication*</exclude>
+								<exclude>com/stockpro/movementservice/aspect/**</exclude>
+								<exclude>com/stockpro/movementservice/config/**</exclude>
+								<exclude>com/stockpro/movementservice/dto/**</exclude>
+								<exclude>com/stockpro/movementservice/entity/**</exclude>
+								<exclude>com/stockpro/movementservice/enums/**</exclude>
+								<exclude>com/stockpro/movementservice/events/**</exclude>
+								<exclude>com/stockpro/movementservice/exception/**</exclude>
+								<exclude>com/stockpro/movementservice/listener/**</exclude>
+								<exclude>com/stockpro/movementservice/security/**</exclude>
+								<exclude>com/stockpro/movementservice/service/MovementEventPublisher*</exclude>
+								<exclude>com/stockpro/movementservice/service/RabbitMQMovementEventPublisher*</exclude>
+							</excludes>
+						</configuration>
 					</execution>
 					<execution>
 						<id>check</id>
+						<phase>verify</phase>
 						<goals>
 							<goal>check</goal>
 						</goals>
 						<configuration>
+							<excludes>
+								<exclude>com/stockpro/movementservice/MovementServiceApplication*</exclude>
+								<exclude>com/stockpro/movementservice/aspect/**</exclude>
+								<exclude>com/stockpro/movementservice/config/**</exclude>
+								<exclude>com/stockpro/movementservice/dto/**</exclude>
+								<exclude>com/stockpro/movementservice/entity/**</exclude>
+								<exclude>com/stockpro/movementservice/enums/**</exclude>
+								<exclude>com/stockpro/movementservice/events/**</exclude>
+								<exclude>com/stockpro/movementservice/exception/**</exclude>
+								<exclude>com/stockpro/movementservice/listener/**</exclude>
+								<exclude>com/stockpro/movementservice/security/**</exclude>
+								<exclude>com/stockpro/movementservice/service/MovementEventPublisher*</exclude>
+								<exclude>com/stockpro/movementservice/service/RabbitMQMovementEventPublisher*</exclude>
+							</excludes>
 							<rules>
 								<rule>
 									<element>BUNDLE</element>

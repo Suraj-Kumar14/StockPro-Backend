@@ -21,6 +21,34 @@
 	<properties>
 		<java.version>17</java.version>
 		<spring-cloud.version>2023.0.1</spring-cloud.version>
+		<jacoco.version>0.8.14</jacoco.version>
+		<sonar.maven.plugin.version>5.6.0.6792</sonar.maven.plugin.version>
+		<sonar.projectKey>stockpro-alert-service</sonar.projectKey>
+		<sonar.projectName>Alert Service</sonar.projectName>
+		<sonar.host.url>http://localhost:9000</sonar.host.url>
+		<sonar.coverage.jacoco.xmlReportPaths>
+			target/site/jacoco/jacoco.xml
+		</sonar.coverage.jacoco.xmlReportPaths>
+		<sonar.sources>src/main/java</sonar.sources>
+		<sonar.tests>src/test/java</sonar.tests>
+		<sonar.test.exclusions>src/test/java/**</sonar.test.exclusions>
+		<sonar.cpd.exclusions>src/test/java/**</sonar.cpd.exclusions>
+		<sonar.coverage.exclusions>
+			src/main/java/com/stockpro/alertservice/AlertServiceApplication.java,
+			src/main/java/com/stockpro/alertservice/aspect/**,
+			src/main/java/com/stockpro/alertservice/config/**,
+			src/main/java/com/stockpro/alertservice/dto/**,
+			src/main/java/com/stockpro/alertservice/entity/**,
+			src/main/java/com/stockpro/alertservice/enums/**,
+			src/main/java/com/stockpro/alertservice/events/**,
+			src/main/java/com/stockpro/alertservice/exception/**,
+			src/main/java/com/stockpro/alertservice/listener/**,
+			src/main/java/com/stockpro/alertservice/mail/**,
+			src/main/java/com/stockpro/alertservice/rabbitmq/**,
+			src/main/java/com/stockpro/alertservice/security/**,
+			src/main/java/com/stockpro/alertservice/service/AlertMapper.java,
+			src/main/java/com/stockpro/alertservice/service/AlertValidationService.java
+		</sonar.coverage.exclusions>
 	</properties>
 
 	<dependencyManagement>
@@ -169,26 +197,62 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.11</version>
+				<version>${jacoco.version}</version>
 				<executions>
 					<execution>
+						<id>prepare-agent</id>
 						<goals>
 							<goal>prepare-agent</goal>
 						</goals>
 					</execution>
 					<execution>
 						<id>report</id>
-						<phase>test</phase>
+						<phase>verify</phase>
 						<goals>
 							<goal>report</goal>
 						</goals>
+						<configuration>
+							<excludes>
+								<exclude>com/stockpro/alertservice/AlertServiceApplication*</exclude>
+								<exclude>com/stockpro/alertservice/aspect/**</exclude>
+								<exclude>com/stockpro/alertservice/config/**</exclude>
+								<exclude>com/stockpro/alertservice/dto/**</exclude>
+								<exclude>com/stockpro/alertservice/entity/**</exclude>
+								<exclude>com/stockpro/alertservice/enums/**</exclude>
+								<exclude>com/stockpro/alertservice/events/**</exclude>
+								<exclude>com/stockpro/alertservice/exception/**</exclude>
+								<exclude>com/stockpro/alertservice/listener/**</exclude>
+								<exclude>com/stockpro/alertservice/mail/**</exclude>
+								<exclude>com/stockpro/alertservice/rabbitmq/**</exclude>
+								<exclude>com/stockpro/alertservice/security/**</exclude>
+								<exclude>com/stockpro/alertservice/service/AlertMapper*</exclude>
+								<exclude>com/stockpro/alertservice/service/AlertValidationService*</exclude>
+							</excludes>
+						</configuration>
 					</execution>
 					<execution>
 						<id>check</id>
+						<phase>verify</phase>
 						<goals>
 							<goal>check</goal>
 						</goals>
 						<configuration>
+							<excludes>
+								<exclude>com/stockpro/alertservice/AlertServiceApplication*</exclude>
+								<exclude>com/stockpro/alertservice/aspect/**</exclude>
+								<exclude>com/stockpro/alertservice/config/**</exclude>
+								<exclude>com/stockpro/alertservice/dto/**</exclude>
+								<exclude>com/stockpro/alertservice/entity/**</exclude>
+								<exclude>com/stockpro/alertservice/enums/**</exclude>
+								<exclude>com/stockpro/alertservice/events/**</exclude>
+								<exclude>com/stockpro/alertservice/exception/**</exclude>
+								<exclude>com/stockpro/alertservice/listener/**</exclude>
+								<exclude>com/stockpro/alertservice/mail/**</exclude>
+								<exclude>com/stockpro/alertservice/rabbitmq/**</exclude>
+								<exclude>com/stockpro/alertservice/security/**</exclude>
+								<exclude>com/stockpro/alertservice/service/AlertMapper*</exclude>
+								<exclude>com/stockpro/alertservice/service/AlertValidationService*</exclude>
+							</excludes>
 							<rules>
 								<rule>
 									<element>BUNDLE</element>
@@ -204,6 +268,11 @@
 						</configuration>
 					</execution>
 				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>${sonar.maven.plugin.version}</version>
 			</plugin>
 		</plugins>
 	</build>

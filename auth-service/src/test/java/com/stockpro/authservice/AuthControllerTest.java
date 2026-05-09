@@ -7,8 +7,13 @@ import com.stockpro.authservice.dto.LoginRequestDTO;
 import com.stockpro.authservice.dto.LoginResponseDTO;
 import com.stockpro.authservice.dto.MessageResponseDTO;
 import com.stockpro.authservice.dto.OtpVerificationRequestDTO;
+import com.stockpro.authservice.dto.ChangePasswordDTO;
+import com.stockpro.authservice.dto.UpdateProfileDTO;
 import com.stockpro.authservice.dto.RegisterResponseDTO;
 import com.stockpro.authservice.dto.ResetPasswordRequestDTO;
+import com.stockpro.authservice.dto.AdminChangeUserRoleRequestDTO;
+import com.stockpro.authservice.dto.AdminCreateUserRequestDTO;
+import com.stockpro.authservice.dto.AdminUpdateUserRequestDTO;
 import com.stockpro.authservice.dto.UserResponseDTO;
 import com.stockpro.authservice.dto.UserSummaryDTO;
 import com.stockpro.authservice.dto.UserRequestDTO;
@@ -29,14 +34,23 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.domain.PageImpl;
+import java.util.List;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
@@ -227,5 +241,141 @@ class AuthControllerTest {
         mockMvc.perform(get("/actuator/metrics"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("Resource not found"));
+    }
+
+    @Test
+    void refreshAndLogout_shouldDelegateToService() throws Exception {
+        when(authService.refresh("refresh-token")).thenReturn(new LoginResponseDTO("new-access", "new-refresh"));
+
+        mockMvc.perform(post("/auth/refresh")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("refresh-token"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/auth/logout")
+                        .header("Authorization", "Bearer access-token"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("Logged out successfully"));
+
+        verify(authService).refresh("refresh-token");
+        verify(authService).logout("access-token");
+    }
+
+    @Test
+    void profileEndpoints_shouldUseAuthenticatedUser() throws Exception {
+        UserResponseDTO userResponse = new UserResponseDTO();
+        userResponse.setUserId(9L);
+        userResponse.setName("Profile User");
+        userResponse.setEmail("profile@example.com");
+        userResponse.setRole(UserRole.MANAGER);
+        userResponse.setIsActive(true);
+
+        UpdateProfileDTO updateProfileDTO = new UpdateProfileDTO();
+        updateProfileDTO.setName("Updated User");
+        updateProfileDTO.setPhone("9999999999");
+        updateProfileDTO.setDepartment("Ops");
+
+        when(authService.getUserProfile("profile@example.com")).thenReturn(userResponse);
+        when(authService.updateProfile(anyString(), any(UpdateProfileDTO.class))).thenReturn(userResponse);
+
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("profile@example.com", null));
+        try {
+            mockMvc.perform(get("/auth/profile"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.email").value("profile@example.com"));
+
+            mockMvc.perform(put("/auth/profile")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsBytes(updateProfileDTO)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.userId").value(9));
+
+            ChangePasswordDTO changePasswordDTO = new ChangePasswordDTO();
+            changePasswordDTO.setOldPassword("OldPassword@123");
+            changePasswordDTO.setNewPassword("NewPassword@123");
+
+            mockMvc.perform(put("/auth/password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsBytes(changePasswordDTO)))
+                    .andExpect(status().isOk());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void adminUserEndpoints_shouldReturnManagedPayloads() throws Exception {
+        UserResponseDTO managedUser = new UserResponseDTO();
+        managedUser.setUserId(11L);
+        managedUser.setName("Managed User");
+        managedUser.setEmail("managed@example.com");
+        managedUser.setRole(UserRole.STAFF);
+        managedUser.setIsActive(true);
+
+        AdminCreateUserRequestDTO createRequest = new AdminCreateUserRequestDTO();
+        createRequest.setName("Managed User");
+        createRequest.setEmail("managed@example.com");
+        createRequest.setPassword("Password@123");
+        createRequest.setRole(UserRole.STAFF);
+
+        AdminUpdateUserRequestDTO updateRequest = new AdminUpdateUserRequestDTO();
+        updateRequest.setName("Managed User Updated");
+        updateRequest.setEmail("managed@example.com");
+        updateRequest.setPhone("8888888888");
+        updateRequest.setDepartment("Warehouse");
+        updateRequest.setIsActive(true);
+
+        AdminChangeUserRoleRequestDTO changeRoleRequest = new AdminChangeUserRoleRequestDTO();
+        changeRoleRequest.setRole(UserRole.MANAGER);
+
+        when(authService.getUsersPage(0, 20, null, null, null)).thenReturn(new PageImpl<>(List.of(managedUser)));
+        when(authService.createAdminUser(any(AdminCreateUserRequestDTO.class))).thenReturn(managedUser);
+        when(authService.updateAdminUser(any(Long.class), any(AdminUpdateUserRequestDTO.class))).thenReturn(managedUser);
+        when(authService.changeUserRole(any(Long.class), any(AdminChangeUserRoleRequestDTO.class), anyString())).thenReturn(managedUser);
+
+        mockMvc.perform(get("/auth/users"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].email").value("managed@example.com"));
+
+        mockMvc.perform(post("/auth/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(createRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(11));
+
+        mockMvc.perform(put("/auth/users/11")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(updateRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Managed User"));
+
+        mockMvc.perform(patch("/auth/users/11/role")
+                        .principal(new UsernamePasswordAuthenticationToken("admin@example.com", null))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(changeRoleRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("managed@example.com"));
+    }
+
+    @Test
+    void accountActivationEndpoints_shouldReturnSuccessMessages() throws Exception {
+        mockMvc.perform(delete("/auth/user/15"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/auth/users/15/deactivate")
+                        .principal(new UsernamePasswordAuthenticationToken("admin@example.com", null)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/auth/users/15/deactivate")
+                        .principal(new UsernamePasswordAuthenticationToken("admin@example.com", null)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/auth/users/15/activate")
+                        .principal(new UsernamePasswordAuthenticationToken("admin@example.com", null)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/auth/users/15/activate")
+                        .principal(new UsernamePasswordAuthenticationToken("admin@example.com", null)))
+                .andExpect(status().isOk());
     }
 }

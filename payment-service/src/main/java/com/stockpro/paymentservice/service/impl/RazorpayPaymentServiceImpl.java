@@ -89,8 +89,13 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
         }
 
         // 4. Create Razorpay order (amount in paise)
-        long amountInPaise = remaining.multiply(BigDecimal.valueOf(100)).longValue();
-        String razorpayOrderId = createRazorpayOrder(amountInPaise, request.purchaseOrderId());
+        long amountInPaise = remaining
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(0, RoundingMode.HALF_UP)
+                .longValueExact();
+        log.info("Creating Razorpay order: poId={}, poNumber={}, amountRupees={}, amountPaise={}",
+                request.purchaseOrderId(), po.getPoNumber(), remaining, amountInPaise);
+        String razorpayOrderId = createRazorpayOrder(amountInPaise, request.purchaseOrderId(), po.getPoNumber(), remaining);
 
         // 5. Persist payment record (PENDING_APPROVAL = waiting for Razorpay verification)
         String paymentNumber = generatePaymentNumber();
@@ -213,7 +218,7 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
         }
     }
 
-    private String createRazorpayOrder(long amountInPaise, Long purchaseOrderId) {
+    private String createRazorpayOrder(long amountInPaise, Long purchaseOrderId, String poNumber, BigDecimal amountInRupees) {
         if (razorpayKeyId == null || razorpayKeyId.isBlank()
                 || razorpayKeySecret == null || razorpayKeySecret.isBlank()) {
             throw new RazorpayIntegrationException(
@@ -232,9 +237,36 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
             log.info("Razorpay order created orderId={} amount={}", orderId, amountInPaise);
             return orderId;
         } catch (RazorpayException e) {
-            log.error("Razorpay order creation failed: {}", e.getMessage(), e);
-            throw new RazorpayIntegrationException("Failed to create Razorpay order: " + e.getMessage(), e);
+            String razorpayError = e.getMessage();
+            String errorCode = extractRazorpayErrorCode(razorpayError);
+            log.error("Razorpay order creation failed: poId={} poNumber={} amountRupees={} amountPaise={} razorpayErrorCode={} message={}",
+                    purchaseOrderId, poNumber, amountInRupees, amountInPaise, errorCode, razorpayError);
+
+            if (containsAmountLimitError(razorpayError)) {
+                throw new PaymentValidationException(
+                        "This payment amount exceeds the current Razorpay account limit. Please contact Razorpay/admin to increase the transaction limit.");
+            }
+
+            throw new RazorpayIntegrationException("Failed to create Razorpay order: " + razorpayError, e);
         }
+    }
+
+    private boolean containsAmountLimitError(String razorpayError) {
+        return razorpayError != null
+                && razorpayError.toLowerCase(Locale.ROOT).contains("amount exceeds maximum amount allowed");
+    }
+
+    private String extractRazorpayErrorCode(String razorpayError) {
+        if (razorpayError == null || razorpayError.isBlank()) {
+            return "UNKNOWN";
+        }
+
+        int separatorIndex = razorpayError.indexOf(':');
+        if (separatorIndex <= 0) {
+            return "UNKNOWN";
+        }
+
+        return razorpayError.substring(0, separatorIndex).trim();
     }
 
     private void verifyRazorpaySignature(String razorpayOrderId, String razorpayPaymentId, String signature) {

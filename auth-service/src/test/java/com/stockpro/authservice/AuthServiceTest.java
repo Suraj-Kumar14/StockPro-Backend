@@ -2,10 +2,15 @@ package com.stockpro.authservice;
 
 import com.stockpro.authservice.dto.ForgotPasswordRequestDTO;
 import com.stockpro.authservice.dto.AdminCreateUserRequestDTO;
+import com.stockpro.authservice.dto.AdminChangeUserRoleRequestDTO;
+import com.stockpro.authservice.dto.AdminUpdateUserRequestDTO;
+import com.stockpro.authservice.dto.ChangePasswordDTO;
 import com.stockpro.authservice.dto.LoginResponseDTO;
 import com.stockpro.authservice.dto.OtpVerificationRequestDTO;
 import com.stockpro.authservice.dto.RegisterResponseDTO;
 import com.stockpro.authservice.dto.ResetPasswordRequestDTO;
+import com.stockpro.authservice.dto.UpdateProfileDTO;
+import com.stockpro.authservice.dto.UserResponseDTO;
 import com.stockpro.authservice.dto.UserRequestDTO;
 import com.stockpro.authservice.entity.OtpPurpose;
 import com.stockpro.authservice.entity.OtpToken;
@@ -16,6 +21,7 @@ import com.stockpro.authservice.exception.InvalidOtpException;
 import com.stockpro.authservice.exception.InvalidCredentialsException;
 import com.stockpro.authservice.exception.SelfDeactivationNotAllowedException;
 import com.stockpro.authservice.exception.UserAlreadyExistsException;
+import com.stockpro.authservice.exception.ResourceNotFoundException;
 import com.stockpro.authservice.repository.OtpTokenRepository;
 import com.stockpro.authservice.repository.UserRepository;
 import com.stockpro.authservice.security.JwtUtil;
@@ -428,6 +434,114 @@ class AuthServiceTest {
         authService.getUsersPage(0, 50, null, null, "INACTIVE");
 
         verify(userRepository).searchUsers(isNull(), isNull(), eq(Boolean.FALSE), any(Pageable.class));
+    }
+
+    @Test
+    void refresh_shouldIssueNewTokensAndBlacklistRefreshToken() {
+        when(jwtUtil.validateToken("refresh-token")).thenReturn(true);
+        when(jwtUtil.extractType("refresh-token")).thenReturn("REFRESH");
+        when(jwtUtil.extractUsername("refresh-token")).thenReturn("user@example.com");
+        when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+        when(jwtUtil.generateToken("user@example.com", "STAFF", 1L)).thenReturn("new-access");
+        when(jwtUtil.generateRefreshToken("user@example.com")).thenReturn("new-refresh");
+
+        LoginResponseDTO response = authService.refresh("refresh-token");
+
+        assertEquals("new-access", response.getAccessToken());
+        assertEquals("new-refresh", response.getRefreshToken());
+        verify(jwtUtil).blacklistToken("refresh-token");
+    }
+
+    @Test
+    void refresh_shouldRejectInvalidTokenType() {
+        when(jwtUtil.validateToken("access-token")).thenReturn(true);
+        when(jwtUtil.extractType("access-token")).thenReturn("ACCESS");
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> authService.refresh("access-token"));
+
+        assertEquals("Not a refresh token", exception.getMessage());
+        verify(jwtUtil, never()).blacklistToken(anyString());
+    }
+
+    @Test
+    void profileMethods_shouldReadAndUpdateAuthenticatedUserData() {
+        UpdateProfileDTO updateProfileDTO = new UpdateProfileDTO();
+        updateProfileDTO.setName("Updated User");
+        updateProfileDTO.setPhone("8888888888");
+        updateProfileDTO.setDepartment("Warehouse");
+
+        when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+
+        UserResponseDTO profile = authService.getUserProfile(" user@example.com ");
+        UserResponseDTO updated = authService.updateProfile("user@example.com", updateProfileDTO);
+
+        assertEquals(1L, profile.getUserId());
+        assertEquals("Updated User", updated.getName());
+        assertEquals("8888888888", updated.getPhone());
+        verify(userRepository, times(2)).findByEmailIgnoreCase("user@example.com");
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void changePassword_shouldEncodeNewPassword_whenOldPasswordMatches() {
+        ChangePasswordDTO changePasswordDTO = new ChangePasswordDTO();
+        changePasswordDTO.setOldPassword("OldPassword@123");
+        changePasswordDTO.setNewPassword("NewPassword@123");
+
+        when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("OldPassword@123", user.getPassword())).thenReturn(true);
+        when(passwordEncoder.encode("NewPassword@123")).thenReturn("$2a$new-password");
+
+        authService.changePassword("user@example.com", changePasswordDTO);
+
+        assertEquals("$2a$new-password", user.getPassword());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void adminManagementMethods_shouldUpdateUserRoleStatusAndActivation() {
+        AdminUpdateUserRequestDTO updateRequest = new AdminUpdateUserRequestDTO();
+        updateRequest.setName(" Updated Name ");
+        updateRequest.setPhone(" 8888888888 ");
+        updateRequest.setDepartment(" Ops ");
+        updateRequest.setIsActive(false);
+
+        AdminChangeUserRoleRequestDTO changeRoleRequest = new AdminChangeUserRoleRequestDTO();
+        changeRoleRequest.setRole(UserRole.MANAGER);
+
+        user.setEmail("staff@example.com");
+        user.setIsActive(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponseDTO updated = authService.updateAdminUser(1L, updateRequest);
+        UserResponseDTO roleChanged = authService.changeUserRole(1L, changeRoleRequest, "admin@example.com");
+        authService.activate(1L);
+        authService.deactivate(1L, "admin@example.com");
+
+        assertEquals("Updated Name", updated.getName());
+        assertEquals(UserRole.MANAGER, roleChanged.getRole());
+        assertEquals(Boolean.FALSE, user.getIsActive());
+        verify(otpMailService).sendAccountReactivatedEmail("staff@example.com", "Updated Name");
+        verify(otpMailService).sendAccountDeactivatedEmail("staff@example.com", "Updated Name");
+    }
+
+    @Test
+    void adminManagementMethods_shouldRejectInvalidSelfRoleChangeAndMissingProfile() {
+        AdminChangeUserRoleRequestDTO changeRoleRequest = new AdminChangeUserRoleRequestDTO();
+        changeRoleRequest.setRole(UserRole.STAFF);
+
+        user.setEmail("admin@example.com");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailIgnoreCase("missing@example.com")).thenReturn(Optional.empty());
+
+        RuntimeException selfRoleException = assertThrows(RuntimeException.class,
+                () -> authService.changeUserRole(1L, changeRoleRequest, "admin@example.com"));
+        ResourceNotFoundException missingUserException = assertThrows(ResourceNotFoundException.class,
+                () -> authService.getUserProfile("missing@example.com"));
+
+        assertEquals("You cannot change your own admin role.", selfRoleException.getMessage());
+        assertEquals("User not found", missingUserException.getMessage());
     }
 
     private OtpToken passwordResetOtp(String otp) {

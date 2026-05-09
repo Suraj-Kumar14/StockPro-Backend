@@ -10,14 +10,25 @@ spring:
     hibernate:
       ddl-auto: create-drop
     show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
 
   cloud:
     discovery:
       enabled: false
 
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
 eureka:
   client:
     enabled: false
+
+jwt:
+  secret: test-jwt-secret-test-jwt-secret-test-jwt-secret
 
 report:
   dead-stock-days: 90

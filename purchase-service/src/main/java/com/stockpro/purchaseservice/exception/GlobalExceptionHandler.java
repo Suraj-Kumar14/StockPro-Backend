@@ -6,6 +6,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.*;
 import org.springframework.orm.jpa.JpaSystemException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
@@ -124,6 +125,18 @@ public class GlobalExceptionHandler {
                         HttpStatus.BAD_REQUEST.value(), "Bad Request",
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(
+            AccessDeniedException ex, HttpServletRequest request) {
+        log.warn("Access denied for path {}: {}", request.getRequestURI(), ex.getMessage());
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.FORBIDDEN.value(), "Forbidden",
+                        "Access is denied",
+                        request.getRequestURI()),
+                HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler({DataIntegrityViolationException.class, JpaSystemException.class})

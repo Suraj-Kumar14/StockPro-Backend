@@ -20,6 +20,33 @@
 	<properties>
 		<java.version>17</java.version>
 		<spring-cloud.version>2023.0.1</spring-cloud.version>
+		<jacoco.version>0.8.14</jacoco.version>
+		<sonar.maven.plugin.version>5.6.0.6792</sonar.maven.plugin.version>
+		<sonar.projectKey>stockpro-report-service</sonar.projectKey>
+		<sonar.projectName>Report Service</sonar.projectName>
+		<sonar.host.url>http://localhost:9000</sonar.host.url>
+		<sonar.coverage.jacoco.xmlReportPaths>target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+		<sonar.sources>src/main/java</sonar.sources>
+		<sonar.tests>src/test/java</sonar.tests>
+		<sonar.test.exclusions>src/test/java/**</sonar.test.exclusions>
+		<sonar.cpd.exclusions>src/test/java/**</sonar.cpd.exclusions>
+		<sonar.coverage.exclusions>
+			src/main/java/com/stockpro/reportservice/ReportServiceApplication.java,
+			src/main/java/com/stockpro/reportservice/aspect/**,
+			src/main/java/com/stockpro/reportservice/client/**,
+			src/main/java/com/stockpro/reportservice/config/**,
+			src/main/java/com/stockpro/reportservice/dto/**,
+			src/main/java/com/stockpro/reportservice/entity/**,
+			src/main/java/com/stockpro/reportservice/enums/**,
+			src/main/java/com/stockpro/reportservice/events/**,
+			src/main/java/com/stockpro/reportservice/exception/**,
+			src/main/java/com/stockpro/reportservice/export/**,
+			src/main/java/com/stockpro/reportservice/listener/**,
+			src/main/java/com/stockpro/reportservice/scheduler/**,
+			src/main/java/com/stockpro/reportservice/security/**,
+			src/main/java/com/stockpro/reportservice/service/ReportEventPublisher.java,
+			src/main/java/com/stockpro/reportservice/service/RabbitMQReportEventPublisher.java
+		</sonar.coverage.exclusions>
 	</properties>
 
 	<dependencyManagement>
@@ -159,19 +186,39 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.11</version>
+				<version>${jacoco.version}</version>
 				<executions>
 					<execution>
+						<id>prepare-agent</id>
 						<goals>
 							<goal>prepare-agent</goal>
 						</goals>
 					</execution>
 					<execution>
 						<id>report</id>
-						<phase>test</phase>
+						<phase>verify</phase>
 						<goals>
 							<goal>report</goal>
 						</goals>
+						<configuration>
+							<excludes>
+								<exclude>com/stockpro/reportservice/ReportServiceApplication*</exclude>
+								<exclude>com/stockpro/reportservice/aspect/**</exclude>
+								<exclude>com/stockpro/reportservice/client/**</exclude>
+								<exclude>com/stockpro/reportservice/config/**</exclude>
+								<exclude>com/stockpro/reportservice/dto/**</exclude>
+								<exclude>com/stockpro/reportservice/entity/**</exclude>
+								<exclude>com/stockpro/reportservice/enums/**</exclude>
+								<exclude>com/stockpro/reportservice/events/**</exclude>
+								<exclude>com/stockpro/reportservice/exception/**</exclude>
+								<exclude>com/stockpro/reportservice/export/**</exclude>
+								<exclude>com/stockpro/reportservice/listener/**</exclude>
+								<exclude>com/stockpro/reportservice/scheduler/**</exclude>
+								<exclude>com/stockpro/reportservice/security/**</exclude>
+								<exclude>com/stockpro/reportservice/service/ReportEventPublisher*</exclude>
+								<exclude>com/stockpro/reportservice/service/RabbitMQReportEventPublisher*</exclude>
+							</excludes>
+						</configuration>
 					</execution>
 					<execution>
 						<id>check</id>
@@ -179,6 +226,23 @@
 							<goal>check</goal>
 						</goals>
 						<configuration>
+							<excludes>
+								<exclude>com/stockpro/reportservice/ReportServiceApplication*</exclude>
+								<exclude>com/stockpro/reportservice/aspect/**</exclude>
+								<exclude>com/stockpro/reportservice/client/**</exclude>
+								<exclude>com/stockpro/reportservice/config/**</exclude>
+								<exclude>com/stockpro/reportservice/dto/**</exclude>
+								<exclude>com/stockpro/reportservice/entity/**</exclude>
+								<exclude>com/stockpro/reportservice/enums/**</exclude>
+								<exclude>com/stockpro/reportservice/events/**</exclude>
+								<exclude>com/stockpro/reportservice/exception/**</exclude>
+								<exclude>com/stockpro/reportservice/export/**</exclude>
+								<exclude>com/stockpro/reportservice/listener/**</exclude>
+								<exclude>com/stockpro/reportservice/scheduler/**</exclude>
+								<exclude>com/stockpro/reportservice/security/**</exclude>
+								<exclude>com/stockpro/reportservice/service/ReportEventPublisher*</exclude>
+								<exclude>com/stockpro/reportservice/service/RabbitMQReportEventPublisher*</exclude>
+							</excludes>
 							<rules>
 								<rule>
 									<element>BUNDLE</element>
@@ -194,6 +258,11 @@
 						</configuration>
 					</execution>
 				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>${sonar.maven.plugin.version}</version>
 			</plugin>
 		</plugins>
 	</build>

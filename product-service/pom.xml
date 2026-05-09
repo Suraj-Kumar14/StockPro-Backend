@@ -9,7 +9,7 @@
 	<artifactId>product-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>product-service</name>
-	<description>StockPro Product Service</description>
+	<description>Product Service</description>
 
 	<parent>
 		<groupId>org.springframework.boot</groupId>
@@ -21,6 +21,35 @@
 	<properties>
 		<java.version>17</java.version>
 		<spring-cloud.version>2023.0.1</spring-cloud.version>
+		<jacoco.version>0.8.14</jacoco.version>
+		<sonar.maven.plugin.version>5.6.0.6792</sonar.maven.plugin.version>
+		<sonar.host.url>http://localhost:9000</sonar.host.url>
+		<sonar.coverage.jacoco.xmlReportPaths>target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+		<sonar.sources>src/main/java</sonar.sources>
+		<sonar.tests>src/test/java</sonar.tests>
+		<sonar.test.exclusions>src/test/java/**</sonar.test.exclusions>
+		<sonar.cpd.exclusions>src/test/java/**</sonar.cpd.exclusions>
+		<sonar.coverage.exclusions>
+			src/main/java/com/stockpro/product_service/ProductServiceApplication.java,
+			src/main/java/com/stockpro/product_service/aspect/**,
+			src/main/java/com/stockpro/product_service/config/**,
+			src/main/java/com/stockpro/product_service/dto/**,
+			src/main/java/com/stockpro/product_service/entity/**,
+			src/main/java/com/stockpro/product_service/exception/**,
+			src/main/java/com/stockpro/product_service/security/AuthenticatedUser.java,
+			src/main/java/com/stockpro/product_service/service/AuthProfileGateway.java,
+			src/main/java/com/stockpro/product_service/service/CurrentUserContext.java,
+			src/main/java/com/stockpro/product_service/service/InventoryAvailabilityGateway.java,
+			src/main/java/com/stockpro/product_service/service/NoOpProductAuditService.java,
+			src/main/java/com/stockpro/product_service/service/NoOpProductEventPublisher.java,
+			src/main/java/com/stockpro/product_service/service/PurchaseOrderUsageGateway.java,
+			src/main/java/com/stockpro/product_service/service/RabbitMQProductEventPublisher.java,
+			src/main/java/com/stockpro/product_service/service/WarehouseInventoryGateway.java
+		</sonar.coverage.exclusions>
+		<sonar.exclusions>
+			**/target/**,
+			**/.mvn/**
+		</sonar.exclusions>
 	</properties>
 
 	<dependencyManagement>
@@ -165,26 +194,37 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.11</version>
+				<version>${jacoco.version}</version>
 				<executions>
 					<execution>
+						<id>prepare-agent</id>
 						<goals>
 							<goal>prepare-agent</goal>
 						</goals>
 					</execution>
 					<execution>
 						<id>report</id>
-						<phase>test</phase>
+						<phase>verify</phase>
 						<goals>
 							<goal>report</goal>
 						</goals>
 						<configuration>
 							<excludes>
+								<exclude>com/stockpro/product_service/ProductServiceApplication*</exclude>
 								<exclude>com/stockpro/product_service/aspect/**</exclude>
+								<exclude>com/stockpro/product_service/config/**</exclude>
 								<exclude>com/stockpro/product_service/dto/**</exclude>
 								<exclude>com/stockpro/product_service/entity/**</exclude>
 								<exclude>com/stockpro/product_service/exception/**</exclude>
-								<exclude>com/stockpro/product_service/repository/**</exclude>
+								<exclude>com/stockpro/product_service/security/AuthenticatedUser*</exclude>
+								<exclude>com/stockpro/product_service/service/AuthProfileGateway*</exclude>
+								<exclude>com/stockpro/product_service/service/CurrentUserContext*</exclude>
+								<exclude>com/stockpro/product_service/service/InventoryAvailabilityGateway*</exclude>
+								<exclude>com/stockpro/product_service/service/NoOpProductAuditService*</exclude>
+								<exclude>com/stockpro/product_service/service/NoOpProductEventPublisher*</exclude>
+								<exclude>com/stockpro/product_service/service/PurchaseOrderUsageGateway*</exclude>
+								<exclude>com/stockpro/product_service/service/RabbitMQProductEventPublisher*</exclude>
+								<exclude>com/stockpro/product_service/service/WarehouseInventoryGateway*</exclude>
 							</excludes>
 						</configuration>
 					</execution>
@@ -196,11 +236,21 @@
 						</goals>
 						<configuration>
 							<excludes>
+								<exclude>com/stockpro/product_service/ProductServiceApplication*</exclude>
 								<exclude>com/stockpro/product_service/aspect/**</exclude>
+								<exclude>com/stockpro/product_service/config/**</exclude>
 								<exclude>com/stockpro/product_service/dto/**</exclude>
 								<exclude>com/stockpro/product_service/entity/**</exclude>
 								<exclude>com/stockpro/product_service/exception/**</exclude>
-								<exclude>com/stockpro/product_service/repository/**</exclude>
+								<exclude>com/stockpro/product_service/security/AuthenticatedUser*</exclude>
+								<exclude>com/stockpro/product_service/service/AuthProfileGateway*</exclude>
+								<exclude>com/stockpro/product_service/service/CurrentUserContext*</exclude>
+								<exclude>com/stockpro/product_service/service/InventoryAvailabilityGateway*</exclude>
+								<exclude>com/stockpro/product_service/service/NoOpProductAuditService*</exclude>
+								<exclude>com/stockpro/product_service/service/NoOpProductEventPublisher*</exclude>
+								<exclude>com/stockpro/product_service/service/PurchaseOrderUsageGateway*</exclude>
+								<exclude>com/stockpro/product_service/service/RabbitMQProductEventPublisher*</exclude>
+								<exclude>com/stockpro/product_service/service/WarehouseInventoryGateway*</exclude>
 							</excludes>
 							<rules>
 								<rule>
@@ -217,6 +267,12 @@
 						</configuration>
 					</execution>
 				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>${sonar.maven.plugin.version}</version>
 			</plugin>
 		</plugins>
 	</build>

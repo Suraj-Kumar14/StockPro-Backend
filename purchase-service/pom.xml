@@ -20,6 +20,23 @@
 	<properties>
 		<java.version>17</java.version>
 		<spring-cloud.version>2023.0.1</spring-cloud.version>
+		<sonar.coverage.exclusions>
+			src/main/java/com/stockpro/purchaseservice/PurchaseServiceApplication.java,
+			src/main/java/com/stockpro/purchaseservice/aspect/**,
+			src/main/java/com/stockpro/purchaseservice/config/**,
+			src/main/java/com/stockpro/purchaseservice/dto/**,
+			src/main/java/com/stockpro/purchaseservice/enums/**,
+			src/main/java/com/stockpro/purchaseservice/entity/**,
+			src/main/java/com/stockpro/purchaseservice/events/**,
+			src/main/java/com/stockpro/purchaseservice/exception/**,
+			src/main/java/com/stockpro/purchaseservice/security/**,
+			src/main/java/com/stockpro/purchaseservice/service/DownstreamAuthSupport.java,
+			src/main/java/com/stockpro/purchaseservice/service/Http*Gateway.java,
+			src/main/java/com/stockpro/purchaseservice/service/*Gateway.java,
+			src/main/java/com/stockpro/purchaseservice/service/PurchaseEventPublisher.java,
+			src/main/java/com/stockpro/purchaseservice/service/PurchaseOrderMapper.java,
+			src/main/java/com/stockpro/purchaseservice/service/RabbitMQPurchaseEventPublisher.java
+		</sonar.coverage.exclusions>
 	</properties>
 
 	<dependencyManagement>
@@ -147,6 +164,25 @@
 						<goals>
 							<goal>report</goal>
 						</goals>
+						<configuration>
+							<excludes>
+								<exclude>com/stockpro/purchaseservice/PurchaseServiceApplication*</exclude>
+								<exclude>com/stockpro/purchaseservice/aspect/**</exclude>
+								<exclude>com/stockpro/purchaseservice/config/**</exclude>
+								<exclude>com/stockpro/purchaseservice/dto/**</exclude>
+								<exclude>com/stockpro/purchaseservice/enums/**</exclude>
+								<exclude>com/stockpro/purchaseservice/entity/**</exclude>
+								<exclude>com/stockpro/purchaseservice/events/**</exclude>
+								<exclude>com/stockpro/purchaseservice/exception/**</exclude>
+								<exclude>com/stockpro/purchaseservice/security/**</exclude>
+								<exclude>com/stockpro/purchaseservice/service/DownstreamAuthSupport*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/Http*Gateway*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/*Gateway*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/PurchaseEventPublisher*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/PurchaseOrderMapper*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/RabbitMQPurchaseEventPublisher*</exclude>
+							</excludes>
+						</configuration>
 					</execution>
 					<execution>
 						<id>check</id>
@@ -155,15 +191,21 @@
 						</goals>
 						<configuration>
 							<excludes>
+								<exclude>com/stockpro/purchaseservice/PurchaseServiceApplication*</exclude>
 								<exclude>com/stockpro/purchaseservice/aspect/**</exclude>
 								<exclude>com/stockpro/purchaseservice/config/**</exclude>
-								<exclude>com/stockpro/purchaseservice/controller/**</exclude>
 								<exclude>com/stockpro/purchaseservice/dto/**</exclude>
+								<exclude>com/stockpro/purchaseservice/enums/**</exclude>
 								<exclude>com/stockpro/purchaseservice/entity/**</exclude>
 								<exclude>com/stockpro/purchaseservice/events/**</exclude>
 								<exclude>com/stockpro/purchaseservice/exception/**</exclude>
-								<exclude>com/stockpro/purchaseservice/repository/**</exclude>
 								<exclude>com/stockpro/purchaseservice/security/**</exclude>
+								<exclude>com/stockpro/purchaseservice/service/DownstreamAuthSupport*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/Http*Gateway*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/*Gateway*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/PurchaseEventPublisher*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/PurchaseOrderMapper*</exclude>
+								<exclude>com/stockpro/purchaseservice/service/RabbitMQPurchaseEventPublisher*</exclude>
 							</excludes>
 							<rules>
 								<rule>
