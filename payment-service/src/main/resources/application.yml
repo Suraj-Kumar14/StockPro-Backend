@@ -59,11 +59,11 @@ jwt:
   secret: ${JWT_SECRET}
 
 purchase-service:
-  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8080/api/v1/purchase-orders}
+  base-url: ${PURCHASE_SERVICE_BASE_URL}
 
 razorpay:
-  key-id: ${RAZORPAY_KEY_ID:rzp_test_SmOdna1Hg1uiom}
-  key-secret: ${RAZORPAY_KEY_SECRET:Ez0aqf3zvNr1DLXBYzERNOz2}
+  key-id: ${RAZORPAY_KEY_ID}
+  key-secret: ${RAZORPAY_KEY_SECRET}
 
 payment:
   razorpay:
