@@ -12,3 +12,10 @@ eureka:
 
   server:
     enable-self-preservation: false  
+
+logging:
+  level:
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
