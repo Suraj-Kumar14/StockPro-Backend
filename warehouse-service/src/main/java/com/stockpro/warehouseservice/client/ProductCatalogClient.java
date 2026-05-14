@@ -3,6 +3,7 @@ package com.stockpro.warehouseservice.client;
 import com.stockpro.warehouseservice.dto.ProductLookupResponseDTO;
 import com.stockpro.warehouseservice.exception.ProductLookupException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -18,8 +19,8 @@ public class ProductCatalogClient {
     private final RestClient restClient;
 
     public ProductCatalogClient(
-            RestClient.Builder restClientBuilder,
-            @Value("${product-service.base-url:http://localhost:8080/api/v1/products}") String baseUrl) {
+            @LoadBalanced RestClient.Builder restClientBuilder,
+            @Value("${product-service.base-url:http://PRODUCT-SERVICE}") String baseUrl) {
         this.restClient = restClientBuilder.baseUrl(resolveProductsBaseUrl(baseUrl)).build();
     }
 
@@ -74,13 +75,23 @@ public class ProductCatalogClient {
     }
 
     private String resolveProductsBaseUrl(String configuredBaseUrl) {
-        String normalizedBaseUrl = trimTrailingSlash(configuredBaseUrl);
+        String normalizedBaseUrl = trimTrailingSlash(normalizeDiscoveryScheme(configuredBaseUrl));
         for (String suffix : PRODUCT_SERVICE_PATH_SUFFIXES) {
             if (normalizedBaseUrl.endsWith(suffix)) {
                 return normalizedBaseUrl;
             }
         }
         return normalizedBaseUrl + "/api/v1/products";
+    }
+
+    private String normalizeDiscoveryScheme(String value) {
+        if (value == null) {
+            return "";
+        }
+        if (value.startsWith("lb://")) {
+            return "http://" + value.substring("lb://".length());
+        }
+        return value;
     }
 
     private String trimTrailingSlash(String value) {

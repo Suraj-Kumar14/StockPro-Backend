@@ -31,8 +31,6 @@ class WarehouseServiceRepositoryTest {
 
     private Warehouse activeWarehouse;
     private Warehouse inactiveWarehouse;
-    private StockLevel lowStock;
-    private StockLevel overStock;
 
     @BeforeEach
     void setUp() {
@@ -61,7 +59,7 @@ class WarehouseServiceRepositoryTest {
                 .isActive(false)
                 .build());
 
-        lowStock = stockLevelRepository.save(StockLevel.builder()
+        stockLevelRepository.save(StockLevel.builder()
                 .warehouseId(activeWarehouse.getWarehouseId())
                 .productId(100L)
                 .quantity(8)
@@ -70,7 +68,7 @@ class WarehouseServiceRepositoryTest {
                 .maxStockLevel(30)
                 .binLocation("A-1")
                 .build());
-        overStock = stockLevelRepository.save(StockLevel.builder()
+        stockLevelRepository.save(StockLevel.builder()
                 .warehouseId(activeWarehouse.getWarehouseId())
                 .productId(101L)
                 .quantity(35)

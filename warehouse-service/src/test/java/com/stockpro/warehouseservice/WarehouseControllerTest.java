@@ -9,6 +9,7 @@ import com.stockpro.warehouseservice.dto.request.CreateWarehouseRequest;
 import com.stockpro.warehouseservice.dto.response.WarehouseResponse;
 import com.stockpro.warehouseservice.exception.GlobalExceptionHandler;
 import com.stockpro.warehouseservice.exception.InsufficientStockException;
+import com.stockpro.warehouseservice.publisher.SystemAlertPublisher;
 import com.stockpro.warehouseservice.service.StockLevelService;
 import com.stockpro.warehouseservice.service.WarehouseManagementService;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -50,6 +50,9 @@ class WarehouseControllerTest {
 
     @MockBean
     private StockLevelService stockLevelService;
+
+    @MockBean
+    private SystemAlertPublisher systemAlertPublisher;
 
     @Test
     void createWarehouse_shouldReturnCreated_whenRequestIsValid() throws Exception {
@@ -172,7 +175,7 @@ class WarehouseControllerTest {
                 .isActive(true)
                 .build();
 
-        when(warehouseManagementService.getWarehouseById(eq(5L))).thenReturn(response);
+        when(warehouseManagementService.getWarehouseById(5L)).thenReturn(response);
 
         mockMvc.perform(get("/api/v1/warehouses/5"))
                 .andExpect(status().isOk())

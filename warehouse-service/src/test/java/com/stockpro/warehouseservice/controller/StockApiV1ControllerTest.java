@@ -1,7 +1,6 @@
 package com.stockpro.warehouseservice.controller;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -25,6 +24,11 @@ import com.stockpro.warehouseservice.dto.response.StockSummaryResponse;
 import com.stockpro.warehouseservice.dto.response.TransferStockResponse;
 import com.stockpro.warehouseservice.enums.TransferStatus;
 import com.stockpro.warehouseservice.exception.GlobalExceptionHandler;
+import com.stockpro.warehouseservice.exception.InsufficientStockException;
+import com.stockpro.warehouseservice.exception.InvalidOperationException;
+import com.stockpro.warehouseservice.exception.ProductLookupException;
+import com.stockpro.warehouseservice.exception.WarehouseNotFoundException;
+import com.stockpro.warehouseservice.publisher.SystemAlertPublisher;
 import com.stockpro.warehouseservice.security.AuthenticatedUser;
 import com.stockpro.warehouseservice.service.StockManagementService;
 import java.time.LocalDateTime;
@@ -55,6 +59,9 @@ class StockApiV1ControllerTest {
 
     @MockBean
     private StockManagementService stockManagementService;
+
+    @MockBean
+    private SystemAlertPublisher systemAlertPublisher;
 
     @Test
     void createStockLevel_shouldReturnCreatedAndPassActorId() throws Exception {
@@ -88,12 +95,13 @@ class StockApiV1ControllerTest {
         request.setWarehouseId(1L);
         request.setQuantity(-1);
 
-        mockMvc.perform(post("/api/v1/stocks")
+                mockMvc.perform(post("/api/v1/stocks")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.productId").exists())
-                .andExpect(jsonPath("$.quantity").exists());
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.validationErrors.productId").exists())
+                .andExpect(jsonPath("$.validationErrors.quantity").exists());
     }
 
     @Test
@@ -178,7 +186,81 @@ class StockApiV1ControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.quantity").exists());
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.validationErrors.quantity").exists());
+    }
+
+    @Test
+    void transferStock_shouldReturnStructuredBusinessErrors() throws Exception {
+        TransferStockRequest request = new TransferStockRequest();
+        request.setSourceWarehouseId(1L);
+        request.setDestinationWarehouseId(2L);
+        request.setProductId(999L);
+        request.setQuantity(5);
+
+        when(stockManagementService.transferStock(any(TransferStockRequest.class), isNull()))
+                .thenThrow(new ProductLookupException("Product not found with ID: 999"));
+
+        mockMvc.perform(post("/api/v1/stocks/transfer")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("PRODUCT_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Product not found with ID: 999"));
+
+        when(stockManagementService.transferStock(any(TransferStockRequest.class), isNull()))
+                .thenThrow(new WarehouseNotFoundException("Warehouse not found with ID: 2"));
+
+        mockMvc.perform(post("/api/v1/stocks/transfer")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("WAREHOUSE_NOT_FOUND"));
+
+        when(stockManagementService.transferStock(any(TransferStockRequest.class), isNull()))
+                .thenThrow(new InsufficientStockException("Insufficient available stock. Available: 2, Requested: 5"));
+
+        mockMvc.perform(post("/api/v1/stocks/transfer")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("INSUFFICIENT_STOCK"));
+    }
+
+    @Test
+    void transferStock_shouldRejectValidationAndSameWarehouse() throws Exception {
+        mockMvc.perform(post("/api/v1/stocks/transfer")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "productId": null,
+                                  "sourceWarehouseId": null,
+                                  "targetWarehouseId": null,
+                                  "quantity": null
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.validationErrors.productId").exists())
+                .andExpect(jsonPath("$.validationErrors.sourceWarehouseId").exists())
+                .andExpect(jsonPath("$.validationErrors.destinationWarehouseId").exists())
+                .andExpect(jsonPath("$.validationErrors.quantity").exists());
+
+        TransferStockRequest request = new TransferStockRequest();
+        request.setSourceWarehouseId(3L);
+        request.setDestinationWarehouseId(3L);
+        request.setProductId(100L);
+        request.setQuantity(4);
+
+        when(stockManagementService.transferStock(any(TransferStockRequest.class), isNull()))
+                .thenThrow(new InvalidOperationException("Source and destination warehouse cannot be same"));
+
+        mockMvc.perform(post("/api/v1/stocks/transfer")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("INVALID_STOCK_OPERATION"))
+                .andExpect(jsonPath("$.message").value("Source and destination warehouse cannot be same"));
     }
 
     @Test

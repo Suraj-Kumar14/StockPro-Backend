@@ -58,11 +58,10 @@ eureka:
 
 logging:
   level:
-    com.stockpro: INFO
-  file:
-    name: logs/warehouse-service.log
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
 
 springdoc:
   api-docs:
@@ -74,13 +73,18 @@ springdoc:
     display-request-duration: true
 
 product-service:
-  base-url: ${PRODUCT_SERVICE_BASE_URL}
+  base-url: ${PRODUCT_SERVICE_BASE_URL:http://PRODUCT-SERVICE}
 
 jwt:
   secret: ${JWT_SECRET}
 
 stockpro:
   rabbitmq:
+    alert:
+      exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
+      routing:
+        unauthorized: ${ALERT_UNAUTHORIZED_ROUTING_KEY:alert.system.unauthorized}
+        system-error: ${ALERT_SYSTEM_ERROR_ROUTING_KEY:alert.system.error}
     warehouse:
       exchange: ${WAREHOUSE_RABBITMQ_EXCHANGE:stockpro.warehouse.exchange}
       routing:
@@ -94,6 +98,7 @@ stockpro:
         stock-issued: stock.issued
         stock-reserved: stock.reserved
         stock-reservation-released: stock.reservation.released
+        stock-transfer-initiated: stock.transfer.initiated
         stock-transferred: stock.transferred
         stock-adjusted: stock.adjusted
         stock-low: stock.low

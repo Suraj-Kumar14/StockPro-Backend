@@ -18,9 +18,12 @@ import com.stockpro.warehouseservice.entity.Warehouse;
 import com.stockpro.warehouseservice.enums.TransferStatus;
 import com.stockpro.warehouseservice.events.StockEvent;
 import com.stockpro.warehouseservice.exception.InvalidOperationException;
+import com.stockpro.warehouseservice.exception.ProductLookupException;
+import com.stockpro.warehouseservice.exception.StockLevelNotFoundException;
 import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +41,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class StockManagementService {
 
+    private static final String WAREHOUSE_ID_REQUIRED = "Warehouse ID is required";
+    private static final String PRODUCT_ID_REQUIRED = "Product ID is required";
+    private static final String SOURCE_WAREHOUSE_ID_REQUIRED = "Source warehouse ID is required";
+    private static final String TARGET_WAREHOUSE_ID_REQUIRED = "Target warehouse ID is required";
+
     private final StockLevelRepository stockLevelRepository;
     private final InventoryOperationService inventoryOperationService;
     private final WarehouseManagementService warehouseManagementService;
@@ -50,6 +58,7 @@ public class StockManagementService {
     @Value("${stockpro.rabbitmq.warehouse.routing.stock-issued}") private String stockIssuedRouting;
     @Value("${stockpro.rabbitmq.warehouse.routing.stock-reserved}") private String stockReservedRouting;
     @Value("${stockpro.rabbitmq.warehouse.routing.stock-reservation-released}") private String stockReleasedRouting;
+    @Value("${stockpro.rabbitmq.warehouse.routing.stock-transfer-initiated}") private String stockTransferInitiatedRouting;
     @Value("${stockpro.rabbitmq.warehouse.routing.stock-transferred}") private String stockTransferredRouting;
     @Value("${stockpro.rabbitmq.warehouse.routing.stock-adjusted}") private String stockAdjustedRouting;
     @Value("${stockpro.rabbitmq.warehouse.routing.stock-low}") private String stockLowRouting;
@@ -57,6 +66,8 @@ public class StockManagementService {
 
     @Transactional
     public StockLevelResponse createStockLevel(CreateStockLevelRequest request, Long actorId) {
+        validateRequiredId(request.getWarehouseId(), WAREHOUSE_ID_REQUIRED);
+        validateRequiredId(request.getProductId(), PRODUCT_ID_REQUIRED);
         Warehouse warehouse = warehouseManagementService.getWarehouseEntity(request.getWarehouseId());
         ensureActiveWarehouse(warehouse);
         ProductLookupResponseDTO product = validateProduct(request.getProductId(), true);
@@ -115,8 +126,11 @@ public class StockManagementService {
 
     @Transactional
     public StockLevelResponse updateStock(UpdateStockRequest request, Long actorId) {
+        validateRequiredId(request.getWarehouseId(), WAREHOUSE_ID_REQUIRED);
+        validateRequiredId(request.getProductId(), PRODUCT_ID_REQUIRED);
         Warehouse warehouse = warehouseManagementService.getWarehouseEntity(request.getWarehouseId());
         ensureActiveWarehouse(warehouse);
+        validateProduct(request.getProductId(), true);
         StockLevel stock = getStockEntity(request.getWarehouseId(), request.getProductId());
         if (request.getQuantity() < defaultIfNull(stock.getReservedQuantity())) {
             throw new InvalidOperationException("Quantity cannot be lower than reserved quantity");
@@ -138,8 +152,11 @@ public class StockManagementService {
         log.info("Stock receive request started. warehouseId={}, productId={}, quantity={}, referenceType={}, referenceId={}, movementType={}",
                 request.getWarehouseId(), request.getProductId(), request.getQuantity(),
                 request.getReferenceType(), request.getReferenceId(), request.getMovementType());
+        validateRequiredId(request.getWarehouseId(), WAREHOUSE_ID_REQUIRED);
+        validateRequiredId(request.getProductId(), PRODUCT_ID_REQUIRED);
         Warehouse warehouse = warehouseManagementService.getWarehouseEntity(request.getWarehouseId());
         ensureActiveWarehouse(warehouse);
+        validateProduct(request.getProductId(), true);
         InventoryOperationService.ThresholdSettings thresholds = inventoryOperationService.resolveThresholds(
                 request.getProductId(),
                 request.getReorderLevel(),
@@ -175,8 +192,11 @@ public class StockManagementService {
 
     @Transactional
     public StockLevelResponse issueStock(StockIssueRequest request, Long actorId) {
+        validateRequiredId(request.getWarehouseId(), WAREHOUSE_ID_REQUIRED);
+        validateRequiredId(request.getProductId(), PRODUCT_ID_REQUIRED);
         Warehouse warehouse = warehouseManagementService.getWarehouseEntity(request.getWarehouseId());
         ensureActiveWarehouse(warehouse);
+        validateProduct(request.getProductId(), true);
         StockLevel stock = getStockEntity(request.getWarehouseId(), request.getProductId());
         inventoryOperationService.handleIssue(warehouse, stock, request.getQuantity(), request.getReason());
         StockLevel saved = inventoryOperationService.saveStockLevel(stock);
@@ -188,6 +208,9 @@ public class StockManagementService {
 
     @Transactional
     public StockLevelResponse reserveStock(ReserveStockRequest request, Long actorId) {
+        validateRequiredId(request.getWarehouseId(), WAREHOUSE_ID_REQUIRED);
+        validateRequiredId(request.getProductId(), PRODUCT_ID_REQUIRED);
+        validateProduct(request.getProductId(), true);
         StockLevel stock = getStockEntity(request.getWarehouseId(), request.getProductId());
         inventoryOperationService.reserveStock(stock, request.getQuantity());
         StockLevel saved = inventoryOperationService.saveStockLevel(stock);
@@ -197,6 +220,9 @@ public class StockManagementService {
 
     @Transactional
     public StockLevelResponse releaseReservation(ReleaseReservationRequest request, Long actorId) {
+        validateRequiredId(request.getWarehouseId(), WAREHOUSE_ID_REQUIRED);
+        validateRequiredId(request.getProductId(), PRODUCT_ID_REQUIRED);
+        validateProduct(request.getProductId(), true);
         StockLevel stock = getStockEntity(request.getWarehouseId(), request.getProductId());
         inventoryOperationService.releaseReservation(stock, request.getQuantity());
         StockLevel saved = inventoryOperationService.saveStockLevel(stock);
@@ -206,7 +232,13 @@ public class StockManagementService {
 
     @Transactional
     public TransferStockResponse transferStock(TransferStockRequest request, Long actorId) {
-        if (request.getSourceWarehouseId().equals(request.getDestinationWarehouseId())) {
+        validateRequiredId(request.getProductId(), PRODUCT_ID_REQUIRED);
+        validateRequiredId(request.getSourceWarehouseId(), SOURCE_WAREHOUSE_ID_REQUIRED);
+        validateRequiredId(request.getDestinationWarehouseId(), TARGET_WAREHOUSE_ID_REQUIRED);
+        log.info("Stock transfer request started. productId={}, sourceWarehouseId={}, targetWarehouseId={}, quantity={}, reasonCode={}",
+                request.getProductId(), request.getSourceWarehouseId(), request.getDestinationWarehouseId(),
+                request.getQuantity(), request.getReasonCode());
+        if (Objects.equals(request.getSourceWarehouseId(), request.getDestinationWarehouseId())) {
             throw new InvalidOperationException("Source and destination warehouse cannot be same");
         }
         Warehouse source = warehouseManagementService.getWarehouseEntity(request.getSourceWarehouseId());
@@ -220,6 +252,8 @@ public class StockManagementService {
         StockLevel sourceStock = getStockEntity(request.getSourceWarehouseId(), request.getProductId());
         StockLevel destinationStock = stockLevelRepository.findByWarehouseIdAndProductId(request.getDestinationWarehouseId(), request.getProductId())
                 .orElseGet(() -> newStockLevel(request.getDestinationWarehouseId(), request.getProductId(), thresholds));
+        publishStockEvent(stockTransferInitiatedRouting, "STOCK_TRANSFER_INITIATED", sourceStock, actorId, request.getQuantity(),
+                request.getSourceWarehouseId(), request.getDestinationWarehouseId(), request.getReasonCode(), request.getNotes(), null, null);
         inventoryOperationService.handleIssue(source, sourceStock, request.getQuantity(), request.getReasonCode());
         inventoryOperationService.handleReceipt(destination, destinationStock, request.getQuantity(), request.getReasonCode());
         StockLevel savedSource = inventoryOperationService.saveStockLevel(sourceStock);
@@ -229,6 +263,9 @@ public class StockManagementService {
         publishStockEvent(stockTransferredRouting, "STOCK_TRANSFERRED", savedSource, actorId, request.getQuantity(), request.getSourceWarehouseId(), request.getDestinationWarehouseId(), request.getReasonCode(), request.getNotes(), null, null);
         publishThresholdEvents(savedSource, actorId);
         publishThresholdEvents(savedDestination, actorId);
+        log.info("Stock transfer request completed. productId={}, sourceWarehouseId={}, targetWarehouseId={}, quantity={}, sourceBalanceAfter={}, targetBalanceAfter={}",
+                request.getProductId(), request.getSourceWarehouseId(), request.getDestinationWarehouseId(),
+                request.getQuantity(), savedSource.getQuantity(), savedDestination.getQuantity());
         return TransferStockResponse.builder()
                 .transferId(null)
                 .productId(request.getProductId())
@@ -245,8 +282,11 @@ public class StockManagementService {
 
     @Transactional
     public StockLevelResponse adjustStock(AdjustStockRequest request, Long actorId) {
+        validateRequiredId(request.getWarehouseId(), WAREHOUSE_ID_REQUIRED);
+        validateRequiredId(request.getProductId(), PRODUCT_ID_REQUIRED);
         Warehouse warehouse = warehouseManagementService.getWarehouseEntity(request.getWarehouseId());
         ensureActiveWarehouse(warehouse);
+        validateProduct(request.getProductId(), true);
         StockLevel stock = getStockEntity(request.getWarehouseId(), request.getProductId());
         if (request.getNewQuantity() < defaultIfNull(stock.getReservedQuantity())) {
             throw new InvalidOperationException("New quantity cannot be lower than reserved quantity");
@@ -290,9 +330,10 @@ public class StockManagementService {
     }
 
     private ProductLookupResponseDTO validateProduct(Long productId, boolean mustBeActive) {
+        validateRequiredId(productId, PRODUCT_ID_REQUIRED);
         ProductLookupResponseDTO product = productCatalogClient.getProductById(productId);
         if (mustBeActive && Boolean.FALSE.equals(product.getIsActive())) {
-            throw new InvalidOperationException("Product not found or inactive");
+            throw new ProductLookupException("Product not found with ID: " + productId);
         }
         return product;
     }
@@ -307,12 +348,21 @@ public class StockManagementService {
     }
 
     private void publishStockEvent(String routingKey, String eventType, StockLevel stock, Long actorId, Integer operationQuantity, Long sourceWarehouseId, Long destinationWarehouseId, String reason, String notes, String referenceId, String referenceType) {
+        Warehouse warehouse = warehouseManagementService.getWarehouseEntity(stock.getWarehouseId());
+        ProductLookupResponseDTO product = null;
+        try {
+            product = productCatalogClient.getProductById(stock.getProductId());
+        } catch (Exception ex) {
+            log.warn("Product lookup failed for stock event: productId={}, error={}", stock.getProductId(), ex.getMessage());
+        }
         warehouseEventPublisher.publishStockEvent(routingKey, StockEvent.builder()
                 .eventId(UUID.randomUUID().toString())
                 .eventType(eventType)
                 .stockId(stock.getStockId())
                 .warehouseId(stock.getWarehouseId())
+                .warehouseName(warehouse.getName())
                 .productId(stock.getProductId())
+                .productName(product != null ? product.getName() : null)
                 .quantity(stock.getQuantity())
                 .reservedQuantity(stock.getReservedQuantity())
                 .availableQuantity(stock.getAvailableQuantity())
@@ -332,7 +382,14 @@ public class StockManagementService {
 
     private StockLevel getStockEntity(Long warehouseId, Long productId) {
         return stockLevelRepository.findByWarehouseIdAndProductId(warehouseId, productId)
-                .orElseThrow(() -> new InvalidOperationException("Stock level not found"));
+                .orElseThrow(() -> new StockLevelNotFoundException(
+                        "Stock level not found for warehouse ID: " + warehouseId + " and product ID: " + productId));
+    }
+
+    private void validateRequiredId(Long value, String message) {
+        if (value == null) {
+            throw new InvalidOperationException(message);
+        }
     }
 
     private StockLevel newStockLevel(Long warehouseId, Long productId, InventoryOperationService.ThresholdSettings thresholds) {

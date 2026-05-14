@@ -8,6 +8,7 @@ import lombok.Data;
 public class UpdateStockRequest {
     @NotNull private Long warehouseId;
     @NotNull private Long productId;
+    @NotNull
     @Min(0) private Integer quantity;
     private String reason;
     private String notes;

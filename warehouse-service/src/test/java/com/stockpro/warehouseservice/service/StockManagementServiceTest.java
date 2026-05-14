@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,6 +28,8 @@ import com.stockpro.warehouseservice.entity.Warehouse;
 import com.stockpro.warehouseservice.enums.TransferStatus;
 import com.stockpro.warehouseservice.events.StockEvent;
 import com.stockpro.warehouseservice.exception.InvalidOperationException;
+import com.stockpro.warehouseservice.exception.ProductLookupException;
+import com.stockpro.warehouseservice.exception.StockLevelNotFoundException;
 import com.stockpro.warehouseservice.repository.StockLevelRepository;
 import java.util.List;
 import java.util.Optional;
@@ -175,7 +176,7 @@ class StockManagementServiceTest {
         when(warehouseManagementService.getWarehouseEntity(1L)).thenReturn(activeWarehouse);
         when(productCatalogClient.getProductById(100L)).thenReturn(inactiveProduct);
 
-        assertThrows(InvalidOperationException.class,
+        assertThrows(ProductLookupException.class,
                 () -> stockManagementService.createStockLevel(request, 1L));
     }
 
@@ -207,6 +208,7 @@ class StockManagementServiceTest {
         request.setQuantity(3);
 
         when(warehouseManagementService.getWarehouseEntity(1L)).thenReturn(activeWarehouse);
+        when(productCatalogClient.getProductById(100L)).thenReturn(activeProduct);
         when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(Optional.of(stockLevel));
 
         assertThrows(InvalidOperationException.class,
@@ -222,6 +224,21 @@ class StockManagementServiceTest {
         assertEquals(40, response.quantity());
         verify(warehouseEventPublisher).publishStockEvent(eq("stock.updated"), any(StockEvent.class));
         verify(warehouseEventPublisher).publishStockEvent(eq("stock.overstock"), any(StockEvent.class));
+    }
+
+    @Test
+    void updateStock_shouldRejectUnknownProduct() {
+        UpdateStockRequest request = new UpdateStockRequest();
+        request.setWarehouseId(1L);
+        request.setProductId(404L);
+        request.setQuantity(8);
+
+        when(warehouseManagementService.getWarehouseEntity(1L)).thenReturn(activeWarehouse);
+        when(productCatalogClient.getProductById(404L))
+                .thenThrow(new ProductLookupException("Product not found with ID: 404"));
+
+        assertThrows(ProductLookupException.class,
+                () -> stockManagementService.updateStock(request, 8L));
     }
 
     @Test
@@ -323,6 +340,7 @@ class StockManagementServiceTest {
         request.setNewQuantity(4);
 
         when(warehouseManagementService.getWarehouseEntity(1L)).thenReturn(activeWarehouse);
+        when(productCatalogClient.getProductById(100L)).thenReturn(activeProduct);
         when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(Optional.of(stockLevel));
 
         assertThrows(InvalidOperationException.class,
@@ -363,6 +381,31 @@ class StockManagementServiceTest {
 
         assertEquals(TransferStatus.COMPLETED, response.status());
         verify(warehouseEventPublisher).publishStockEvent(eq("stock.transferred"), any(StockEvent.class));
+    }
+
+    @Test
+    void transferStock_shouldThrowStockLevelNotFoundWhenSourceRowMissing() {
+        TransferStockRequest request = new TransferStockRequest();
+        request.setSourceWarehouseId(1L);
+        request.setDestinationWarehouseId(3L);
+        request.setProductId(100L);
+        request.setQuantity(5);
+
+        Warehouse destinationWarehouse = Warehouse.builder()
+                .warehouseId(3L)
+                .name("Destination")
+                .capacity(400)
+                .usedCapacity(50)
+                .isActive(true)
+                .build();
+
+        when(warehouseManagementService.getWarehouseEntity(1L)).thenReturn(activeWarehouse);
+        when(warehouseManagementService.getWarehouseEntity(3L)).thenReturn(destinationWarehouse);
+        when(productCatalogClient.getProductById(100L)).thenReturn(activeProduct);
+        when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 100L)).thenReturn(Optional.empty());
+
+        assertThrows(StockLevelNotFoundException.class,
+                () -> stockManagementService.transferStock(request, 7L));
     }
 
     @Test
@@ -407,7 +450,7 @@ class StockManagementServiceTest {
     void getStockLevel_shouldThrowWhenStockMissing() {
         when(stockLevelRepository.findByWarehouseIdAndProductId(1L, 404L)).thenReturn(Optional.empty());
 
-        assertThrows(InvalidOperationException.class,
+        assertThrows(StockLevelNotFoundException.class,
                 () -> stockManagementService.getStockLevel(1L, 404L));
         verify(productCatalogClient, never()).getProductById(any());
     }

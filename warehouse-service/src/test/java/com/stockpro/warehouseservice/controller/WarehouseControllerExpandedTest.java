@@ -20,6 +20,7 @@ import com.stockpro.warehouseservice.dto.request.UpdateWarehouseRequest;
 import com.stockpro.warehouseservice.dto.response.WarehouseResponse;
 import com.stockpro.warehouseservice.dto.response.WarehouseSummaryResponse;
 import com.stockpro.warehouseservice.exception.GlobalExceptionHandler;
+import com.stockpro.warehouseservice.publisher.SystemAlertPublisher;
 import com.stockpro.warehouseservice.service.StockLevelService;
 import com.stockpro.warehouseservice.service.WarehouseManagementService;
 import java.util.List;
@@ -50,10 +51,15 @@ class WarehouseControllerExpandedTest {
     @MockBean
     private StockLevelService stockLevelService;
 
+    @MockBean
+    private SystemAlertPublisher systemAlertPublisher;
+
     @Test
     void warehouseEndpoints_shouldCoverListLookupMutationsAndSummary() throws Exception {
         WarehouseResponse response = warehouseResponse(3L, "West Hub", "WH-WEST");
         when(warehouseManagementService.getAllWarehouses(true, "hub", "ACTIVE", "Pune", "Maharashtra", 1, 5, "name", "desc"))
+                .thenReturn(new PageImpl<>(List.of(response)));
+        when(warehouseManagementService.getAllWarehouses(null, "west", null, null, null, 0, 10, "name", "asc"))
                 .thenReturn(new PageImpl<>(List.of(response)));
         when(warehouseManagementService.getActiveWarehouses()).thenReturn(List.of(response));
         when(warehouseManagementService.getWarehouseByCode("WH-WEST")).thenReturn(response);
@@ -94,6 +100,11 @@ class WarehouseControllerExpandedTest {
                         .param("sortDir", "desc"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].warehouseCode").value("WH-WEST"));
+
+        mockMvc.perform(get("/api/v1/warehouses/search")
+                        .param("query", "west"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].warehouseName").value("West Hub"));
 
         mockMvc.perform(get("/api/v1/warehouses/active"))
                 .andExpect(status().isOk())
@@ -205,15 +216,17 @@ class WarehouseControllerExpandedTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(badWarehouse)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.name").exists())
-                .andExpect(jsonPath("$.capacity").exists())
-                .andExpect(jsonPath("$.phone").exists());
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.validationErrors.name").exists())
+                .andExpect(jsonPath("$.validationErrors.capacity").exists())
+                .andExpect(jsonPath("$.validationErrors.phone").exists());
 
         mockMvc.perform(put("/stock/warehouse/2/update")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(badStock)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.quantity").exists());
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.validationErrors.quantity").exists());
     }
 
     private WarehouseResponse warehouseResponse(Long id, String name, String code) {

@@ -10,6 +10,7 @@ import lombok.Data;
 public class StockReceiptRequest {
     @NotNull private Long warehouseId;
     @NotNull private Long productId;
+    @NotNull
     @Min(1) private Integer quantity;
     private String movementType;
     private String referenceId;

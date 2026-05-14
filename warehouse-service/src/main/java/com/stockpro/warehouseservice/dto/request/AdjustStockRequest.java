@@ -8,6 +8,7 @@ import lombok.Data;
 public class AdjustStockRequest {
     @NotNull private Long warehouseId;
     @NotNull private Long productId;
+    @NotNull
     @Min(0) private Integer newQuantity;
     private String reason;
     private String notes;

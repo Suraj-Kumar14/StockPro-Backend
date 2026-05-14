@@ -54,6 +54,17 @@ public class WarehouseController {
         return warehouseManagementService.getAllWarehouses(isActive, search, status, city, state, page, size, sortBy, sortDir);
     }
 
+    @GetMapping("/search")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','OFFICER','STAFF')")
+    public Page<WarehouseResponse> searchWarehouses(
+            @RequestParam("query") String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "name") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir) {
+        return warehouseManagementService.getAllWarehouses(null, query, null, null, null, page, size, sortBy, sortDir);
+    }
+
     @GetMapping("/active")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','OFFICER','STAFF')")
     public List<WarehouseResponse> getActiveWarehouses() {

@@ -1,7 +1,6 @@
 package com.stockpro.warehouseservice.controller;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -20,6 +19,7 @@ import com.stockpro.warehouseservice.dto.StockAuditResponseDTO;
 import com.stockpro.warehouseservice.dto.StockLevelResponseDTO;
 import com.stockpro.warehouseservice.dto.StockMovementResponseDTO;
 import com.stockpro.warehouseservice.exception.GlobalExceptionHandler;
+import com.stockpro.warehouseservice.publisher.SystemAlertPublisher;
 import com.stockpro.warehouseservice.service.StockAlertService;
 import com.stockpro.warehouseservice.service.StockAuditService;
 import com.stockpro.warehouseservice.service.StockBarcodeService;
@@ -57,6 +57,9 @@ class StockOperationsControllerTest {
 
     @MockBean
     private StockAlertService stockAlertService;
+
+    @MockBean
+    private SystemAlertPublisher systemAlertPublisher;
 
     @MockBean
     private com.stockpro.warehouseservice.service.StockLevelService stockLevelService;
@@ -119,7 +122,8 @@ class StockOperationsControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.reason").value("Reason is required"));
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.validationErrors.reason").value("Reason is required"));
     }
 
     @Test
@@ -165,7 +169,8 @@ class StockOperationsControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.acknowledgedBy").value("Acknowledged by is required"));
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.validationErrors.acknowledgedBy").value("Acknowledged by is required"));
     }
 
     @Test
@@ -224,7 +229,7 @@ class StockOperationsControllerTest {
         verify(stockAlertService).acknowledgeAlert(9L, "warehouse.user");
         verify(stockLevelService).getStockLevel(1L, 10L);
         verify(stockLevelService).getStockByProduct(10L);
-        verify(stockLevelService).getLowStockItems(eq(8));
+        verify(stockLevelService).getLowStockItems(8);
     }
 
     @Test
@@ -240,6 +245,7 @@ class StockOperationsControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fromWarehouseId\":1,\"toWarehouseId\":2,\"productId\":10,\"quantity\":0,\"reason\":\"\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.quantity").value("Transfer quantity must be at least 1"));
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.validationErrors.quantity").value("Transfer quantity must be at least 1"));
     }
 }
