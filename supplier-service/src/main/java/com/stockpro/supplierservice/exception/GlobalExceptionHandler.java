@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
@@ -29,9 +30,10 @@ public class GlobalExceptionHandler {
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.NOT_FOUND.value(),
-                "Not Found",
+                "SUPPLIER_NOT_FOUND",
                 ex.getMessage(),
-                request.getRequestURI()
+                request.getRequestURI(),
+                null
         );
         
         return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
@@ -47,9 +49,10 @@ public class GlobalExceptionHandler {
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.CONFLICT.value(),
-                "Conflict",
+                "DUPLICATE_SUPPLIER",
                 ex.getMessage(),
-                request.getRequestURI()
+                request.getRequestURI(),
+                null
         );
         
         return new ResponseEntity<>(error, HttpStatus.CONFLICT);
@@ -65,28 +68,38 @@ public class GlobalExceptionHandler {
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.BAD_REQUEST.value(),
-                "Bad Request",
+                "VALIDATION_ERROR",
                 ex.getMessage(),
-                request.getRequestURI()
+                request.getRequestURI(),
+                null
         );
 
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidationExceptions(
+    public ResponseEntity<ErrorResponse> handleValidationExceptions(
             MethodArgumentNotValidException ex) {
         
         log.error("Validation error: {}", ex.getMessage());
         
-        Map<String, String> errors = new HashMap<>();
+        Map<String, String> errors = new LinkedHashMap<>();
         ex.getBindingResult().getAllErrors().forEach((error) -> {
             String fieldName = ((FieldError) error).getField();
             String errorMessage = error.getDefaultMessage();
             errors.put(fieldName, errorMessage);
         });
         
-        return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                "VALIDATION_ERROR",
+                "Validation failed",
+                null,
+                errors
+        );
+
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
@@ -96,9 +109,10 @@ public class GlobalExceptionHandler {
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.FORBIDDEN.value(),
-                "Forbidden",
+                "FORBIDDEN",
                 "You are not allowed to perform this action",
-                request.getRequestURI()
+                request.getRequestURI(),
+                null
         );
         return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
     }
@@ -113,9 +127,10 @@ public class GlobalExceptionHandler {
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.CONFLICT.value(),
-                "Conflict",
+                "CONCURRENT_UPDATE",
                 "Supplier was updated by another transaction. Please retry.",
-                request.getRequestURI()
+                request.getRequestURI(),
+                null
         );
 
         return new ResponseEntity<>(error, HttpStatus.CONFLICT);
@@ -131,9 +146,10 @@ public class GlobalExceptionHandler {
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "Internal Server Error",
+                "INTERNAL_SERVER_ERROR",
                 "An unexpected error occurred",
-                request.getRequestURI()
+                request.getRequestURI(),
+                null
         );
         
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);

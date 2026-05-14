@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,6 +62,14 @@ class SupplierManagementServiceTest {
         setField("ratingUpdatedRouting", "supplier.rating-updated");
         setField("performanceUpdatedRouting", "supplier.performance-updated");
 
+        lenient().when(supplierRepository.findBySupplierCode(anyString())).thenReturn(Optional.empty());
+        lenient().when(supplierRepository.findByNameIgnoreCase(anyString())).thenReturn(Optional.empty());
+        lenient().when(supplierRepository.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
+        lenient().when(supplierRepository.findByPhone(anyString())).thenReturn(Optional.empty());
+        lenient().when(supplierRepository.findByGstNumberIgnoreCase(anyString())).thenReturn(Optional.empty());
+        lenient().when(supplierRepository.findByTaxIdIgnoreCase(anyString())).thenReturn(Optional.empty());
+        lenient().when(supplierRepository.existsBySupplierCode(any())).thenReturn(false);
+
         supplier = Supplier.builder()
                 .supplierId(1L)
                 .supplierCode("SUP-20260501-0001")
@@ -86,7 +95,7 @@ class SupplierManagementServiceTest {
         when(supplierRepository.save(any(Supplier.class))).thenReturn(supplier);
 
         var result = service.createSupplier(new CreateSupplierRequest(
-                null, "Acme Supply", "Raj", "acme@example.com", "+919999999999", null,
+                "Acme Supply", "Raj", "acme@example.com", "+919999999999", null,
                 "Line 1", "Pune", "MH", "India", "411001", "TAX-1", "GST-1", "NET-30", 7,
                 BigDecimal.valueOf(4.5), "Preferred"), 99L);
 
@@ -96,21 +105,25 @@ class SupplierManagementServiceTest {
 
     @Test
     void createSupplier_shouldNormalizeValuesAndDefaultFields() {
-        when(supplierRepository.findBySupplierCode("SUP-CUSTOM")).thenReturn(Optional.empty());
         when(supplierRepository.findByEmailIgnoreCase("mixed@example.com")).thenReturn(Optional.empty());
         when(supplierRepository.findByTaxIdIgnoreCase("TAX-9")).thenReturn(Optional.empty());
+        when(supplierRepository.findByNameIgnoreCase("Acme Supply")).thenReturn(Optional.empty());
+        when(supplierRepository.findByPhone("+919999999999")).thenReturn(Optional.empty());
+        when(supplierRepository.findByGstNumberIgnoreCase("GST-9")).thenReturn(Optional.empty());
+        when(supplierRepository.existsBySupplierCode(any())).thenReturn(false);
         when(supplierRepository.save(any(Supplier.class))).thenAnswer(invocation -> {
             Supplier saved = invocation.getArgument(0);
             saved.setSupplierId(23L);
+            saved.setSupplierCode("SUP-20260510-0001");
             return saved;
         });
 
         var result = service.createSupplier(new CreateSupplierRequest(
-                " sup-custom ", "  Acme Supply  ", " Raj ", "Mixed@Example.com", "+919999999999", " ",
+                "  Acme Supply  ", " Raj ", "Mixed@Example.com", "+919999999999", " ",
                 " Addr ", " Pune ", " MH ", " India ", " 411001 ", " TAX-9 ", " GST-9 ", " NET-30 ", null,
                 null, " "), 11L);
 
-        assertEquals("SUP-CUSTOM", result.supplierCode());
+        assertTrue(result.supplierCode().startsWith("SUP-"));
         assertEquals("mixed@example.com", result.email());
         assertEquals(BigDecimal.ZERO, result.rating());
         assertNull(result.alternatePhone());
@@ -118,33 +131,65 @@ class SupplierManagementServiceTest {
     }
 
     @Test
-    void createSupplier_shouldThrowConflict_whenSupplierCodeAlreadyExists() {
-        when(supplierRepository.findBySupplierCode("SUP-1")).thenReturn(Optional.of(supplier));
+    void createSupplier_shouldThrowConflict_whenSupplierNameAlreadyExists() {
+        when(supplierRepository.existsBySupplierCode(any())).thenReturn(false);
+        when(supplierRepository.findByNameIgnoreCase("Acme Supply")).thenReturn(Optional.of(supplier));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
+                null, null, "NET-30", 5, BigDecimal.ONE, null);
 
-        assertThrows(DuplicateSupplierException.class, () -> service.createSupplier(new CreateSupplierRequest(
-                "SUP-1", "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
-                null, null, "NET-30", 5, BigDecimal.ONE, null), 1L));
+        assertThrows(DuplicateSupplierException.class, () -> service.createSupplier(request, 1L));
     }
 
     @Test
     void createSupplier_shouldThrowConflict_whenEmailAlreadyExists() {
-        when(supplierRepository.findBySupplierCode("SUP-1")).thenReturn(Optional.empty());
+        when(supplierRepository.existsBySupplierCode(any())).thenReturn(false);
+        when(supplierRepository.findByNameIgnoreCase("Acme Supply")).thenReturn(Optional.empty());
         when(supplierRepository.findByEmailIgnoreCase("acme@example.com")).thenReturn(Optional.of(supplier));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
+                null, null, "NET-30", 5, BigDecimal.ONE, null);
 
-        assertThrows(DuplicateSupplierException.class, () -> service.createSupplier(new CreateSupplierRequest(
-                "SUP-1", "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
-                null, null, "NET-30", 5, BigDecimal.ONE, null), 1L));
+        assertThrows(DuplicateSupplierException.class, () -> service.createSupplier(request, 1L));
     }
 
     @Test
     void createSupplier_shouldThrowConflict_whenTaxNumberAlreadyExists() {
-        when(supplierRepository.findBySupplierCode("SUP-1")).thenReturn(Optional.empty());
+        when(supplierRepository.existsBySupplierCode(any())).thenReturn(false);
+        when(supplierRepository.findByNameIgnoreCase("Acme Supply")).thenReturn(Optional.empty());
         when(supplierRepository.findByEmailIgnoreCase("acme@example.com")).thenReturn(Optional.empty());
         when(supplierRepository.findByTaxIdIgnoreCase("TAX-1")).thenReturn(Optional.of(supplier));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
+                "TAX-1", null, "NET-30", 5, BigDecimal.ONE, null);
 
-        assertThrows(DuplicateSupplierException.class, () -> service.createSupplier(new CreateSupplierRequest(
-                "SUP-1", "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
-                "TAX-1", null, "NET-30", 5, BigDecimal.ONE, null), 1L));
+        assertThrows(DuplicateSupplierException.class, () -> service.createSupplier(request, 1L));
+    }
+
+    @Test
+    void createSupplier_shouldThrowConflict_whenPhoneAlreadyExists() {
+        when(supplierRepository.existsBySupplierCode(any())).thenReturn(false);
+        when(supplierRepository.findByNameIgnoreCase("Acme Supply")).thenReturn(Optional.empty());
+        when(supplierRepository.findByEmailIgnoreCase("acme@example.com")).thenReturn(Optional.empty());
+        when(supplierRepository.findByPhone("+919999999999")).thenReturn(Optional.of(supplier));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", "+919999999999", null, null, "Pune", null, "India", null,
+                null, null, "NET-30", 5, BigDecimal.ONE, null);
+
+        assertThrows(DuplicateSupplierException.class, () -> service.createSupplier(request, 1L));
+    }
+
+    @Test
+    void createSupplier_shouldThrowConflict_whenGstNumberAlreadyExists() {
+        when(supplierRepository.existsBySupplierCode(any())).thenReturn(false);
+        when(supplierRepository.findByNameIgnoreCase("Acme Supply")).thenReturn(Optional.empty());
+        when(supplierRepository.findByEmailIgnoreCase("acme@example.com")).thenReturn(Optional.empty());
+        when(supplierRepository.findByGstNumberIgnoreCase("GST-1")).thenReturn(Optional.of(supplier));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
+                null, "GST-1", "NET-30", 5, BigDecimal.ONE, null);
+
+        assertThrows(DuplicateSupplierException.class, () -> service.createSupplier(request, 1L));
     }
 
     @Test
@@ -158,7 +203,7 @@ class SupplierManagementServiceTest {
         });
 
         var result = service.createSupplier(new CreateSupplierRequest(
-                null, "Auto Code Supply", null, "auto@example.com", null, null, null, "Delhi", null, "India", null,
+                "Auto Code Supply", null, "auto@example.com", null, null, null, "Delhi", null, "India", null,
                 null, null, "NET-30", 3, BigDecimal.valueOf(4.2), null), 5L);
 
         assertTrue(result.supplierCode().startsWith("SUP-"));
@@ -175,7 +220,7 @@ class SupplierManagementServiceTest {
         });
 
         var result = service.createSupplier(new CreateSupplierRequest(
-                null, "Auto Code Supply", null, "auto@example.com", null, null, null, "Delhi", null, "India", null,
+                "Auto Code Supply", null, "auto@example.com", null, null, null, "Delhi", null, "India", null,
                 null, null, "NET-30", 3, BigDecimal.valueOf(4.2), null), 5L);
 
         assertTrue(result.supplierCode().matches("SUP-\\d{8}-\\d{4}"));
@@ -183,30 +228,58 @@ class SupplierManagementServiceTest {
 
     @Test
     void createSupplier_shouldThrowBadRequest_whenRatingInvalid() {
-        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(new CreateSupplierRequest(
-                "SUP-1", "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
-                null, null, "NET-30", 5, BigDecimal.valueOf(6), null), 1L));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
+                null, null, "NET-30", 5, BigDecimal.valueOf(6), null);
+        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(request, 1L));
     }
 
     @Test
     void createSupplier_shouldThrowBadRequest_whenLeadTimeNegative() {
-        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(new CreateSupplierRequest(
-                "SUP-1", "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
-                null, null, "NET-30", -1, BigDecimal.ONE, null), 1L));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
+                null, null, "NET-30", -1, BigDecimal.ONE, null);
+        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(request, 1L));
     }
 
     @Test
     void createSupplier_shouldThrowBadRequest_whenPhoneInvalid() {
-        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(new CreateSupplierRequest(
-                "SUP-1", "Acme Supply", null, "acme@example.com", "bad", null, null, "Pune", null, "India", null,
-                null, null, "NET-30", 5, BigDecimal.ONE, null), 1L));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", "bad", null, null, "Pune", null, "India", null,
+                null, null, "NET-30", 5, BigDecimal.ONE, null);
+        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(request, 1L));
+    }
+
+    @Test
+    void createSupplier_shouldThrowBadRequest_whenAlternatePhoneInvalid() {
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", null, "bad", null, "Pune", null, "India", null,
+                null, null, "NET-30", 5, BigDecimal.ONE, null);
+        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(request, 1L));
     }
 
     @Test
     void createSupplier_shouldThrowBadRequest_whenEmailInvalid() {
-        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(new CreateSupplierRequest(
-                "SUP-1", "Acme Supply", null, "bad-email", null, null, null, "Pune", null, "India", null,
-                null, null, "NET-30", 5, BigDecimal.ONE, null), 1L));
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "bad-email", null, null, null, "Pune", null, "India", null,
+                null, null, "NET-30", 5, BigDecimal.ONE, null);
+        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(request, 1L));
+    }
+
+    @Test
+    void createSupplier_shouldThrowBadRequest_whenNameMissing() {
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                " ", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
+                null, null, "NET-30", 5, BigDecimal.ONE, null);
+        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(request, 1L));
+    }
+
+    @Test
+    void createSupplier_shouldThrowBadRequest_whenPaymentTermsMissing() {
+        CreateSupplierRequest request = new CreateSupplierRequest(
+                "Acme Supply", null, "acme@example.com", null, null, null, "Pune", null, "India", null,
+                null, null, " ", 5, BigDecimal.ONE, null);
+        assertThrows(InvalidSupplierDataException.class, () -> service.createSupplier(request, 1L));
     }
 
     @Test
@@ -284,11 +357,12 @@ class SupplierManagementServiceTest {
         when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
         when(supplierRepository.findBySupplierCode("SUP-20260501-0001")).thenReturn(Optional.of(supplier));
         when(supplierRepository.findByEmailIgnoreCase("dup@example.com")).thenReturn(Optional.of(other));
-
-        assertThrows(DuplicateSupplierException.class, () -> service.updateSupplier(1L, new UpdateSupplierRequest(
+        UpdateSupplierRequest request = new UpdateSupplierRequest(
                 "Updated Supply", "Raj", "dup@example.com", null, null, null,
                 "Pune", null, "India", null, null, null, "NET-45", 10, BigDecimal.valueOf(4.8),
-                SupplierStatus.ACTIVE, true, null), 88L));
+                SupplierStatus.ACTIVE, true, null);
+
+        assertThrows(DuplicateSupplierException.class, () -> service.updateSupplier(1L, request, 88L));
     }
 
     @Test
@@ -310,9 +384,23 @@ class SupplierManagementServiceTest {
     }
 
     @Test
+    void getSupplierByCode_shouldThrowNotFound() {
+        when(supplierRepository.findBySupplierCode("SUP-404")).thenReturn(Optional.empty());
+
+        assertThrows(SupplierNotFoundException.class, () -> service.getSupplierByCode("SUP-404"));
+    }
+
+    @Test
     void getSupplierByEmail_shouldNormalizeLookup() {
         when(supplierRepository.findByEmailIgnoreCase("acme@example.com")).thenReturn(Optional.of(supplier));
         assertEquals(1L, service.getSupplierByEmail(" Acme@Example.com ").supplierId());
+    }
+
+    @Test
+    void getSupplierByEmail_shouldThrowNotFound() {
+        when(supplierRepository.findByEmailIgnoreCase("missing@example.com")).thenReturn(Optional.empty());
+
+        assertThrows(SupplierNotFoundException.class, () -> service.getSupplierByEmail("missing@example.com"));
     }
 
     @Test
@@ -360,6 +448,18 @@ class SupplierManagementServiceTest {
     }
 
     @Test
+    void deactivateSupplier_shouldAppendReasonToExistingNotes() {
+        supplier.setNotes("Existing note");
+        when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
+        when(supplierRepository.save(any(Supplier.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.deactivateSupplier(1L, new DeactivateSupplierRequest("No longer preferred"), 7L);
+
+        assertTrue(result.notes().contains("Existing note"));
+        assertTrue(result.notes().contains("Deactivated: No longer preferred"));
+    }
+
+    @Test
     void deactivateSupplier_shouldReturnExisting_whenAlreadyInactive() {
         supplier.setIsActive(false);
         supplier.setStatus(SupplierStatus.INACTIVE);
@@ -374,9 +474,9 @@ class SupplierManagementServiceTest {
     @Test
     void deactivateSupplier_shouldRequireReason() {
         when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
+        DeactivateSupplierRequest request = new DeactivateSupplierRequest(" ");
 
-        assertThrows(InvalidSupplierDataException.class, () ->
-                service.deactivateSupplier(1L, new DeactivateSupplierRequest(" "), 7L));
+        assertThrows(InvalidSupplierDataException.class, () -> service.deactivateSupplier(1L, request, 7L));
     }
 
     @Test
@@ -391,11 +491,23 @@ class SupplierManagementServiceTest {
     }
 
     @Test
+    void blacklistSupplier_shouldAppendReasonToExistingNotes() {
+        supplier.setNotes("Existing note");
+        when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
+        when(supplierRepository.save(any(Supplier.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.blacklistSupplier(1L, new BlacklistSupplierRequest("Fraud risk"), 7L);
+
+        assertTrue(result.notes().contains("Existing note"));
+        assertTrue(result.notes().contains("Blacklisted: Fraud risk"));
+    }
+
+    @Test
     void blacklistSupplier_shouldRequireReason() {
         when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
+        BlacklistSupplierRequest request = new BlacklistSupplierRequest(" ");
 
-        assertThrows(InvalidSupplierDataException.class, () ->
-                service.blacklistSupplier(1L, new BlacklistSupplierRequest(" "), 7L));
+        assertThrows(InvalidSupplierDataException.class, () -> service.blacklistSupplier(1L, request, 7L));
     }
 
     @Test
@@ -442,6 +554,18 @@ class SupplierManagementServiceTest {
         var result = service.validateSupplierForPurchase(1L);
         assertFalse(result.canUseForPurchase());
         assertEquals("Supplier is blacklisted", result.reason());
+    }
+
+    @Test
+    void validateSupplierForPurchase_shouldReturnFalseForInactiveStatusEvenWhenActiveFlagTrue() {
+        supplier.setIsActive(true);
+        supplier.setStatus(SupplierStatus.INACTIVE);
+        when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
+
+        var result = service.validateSupplierForPurchase(1L);
+
+        assertFalse(result.canUseForPurchase());
+        assertEquals("Supplier status is inactive", result.reason());
     }
 
     @Test
@@ -518,7 +642,7 @@ class SupplierManagementServiceTest {
         var result = service.getTopRatedSuppliers();
 
         assertEquals(10, result.size());
-        assertTrue(result.stream().allMatch(SupplierResponse -> Boolean.TRUE.equals(SupplierResponse.isActive())));
+        assertTrue(result.stream().allMatch(supplierResponse -> Boolean.TRUE.equals(supplierResponse.isActive())));
     }
 
     @Test
@@ -544,6 +668,16 @@ class SupplierManagementServiceTest {
     @Test
     void deleteSupplier_shouldDelete_whenNoOrdersExist() {
         supplier.setTotalOrders(0);
+        when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
+
+        service.deleteSupplier(1L);
+
+        verify(supplierRepository).delete(supplier);
+    }
+
+    @Test
+    void deleteSupplier_shouldDelete_whenOrderCountIsNull() {
+        supplier.setTotalOrders(null);
         when(supplierRepository.findById(1L)).thenReturn(Optional.of(supplier));
 
         service.deleteSupplier(1L);

@@ -29,12 +29,15 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -323,7 +326,7 @@ class SupplierApiV1ControllerTest {
     @WithMockUser(roles = "ADMIN")
     void invalidRequestReturns400() throws Exception {
         CreateSupplierRequest invalid = new CreateSupplierRequest(
-                null, "", null, "bad-email", null, null, null, null, null, null, null, null, null, "", -1, BigDecimal.valueOf(7), null);
+                "", null, "bad-email", null, null, null, null, null, null, null, null, null, "", -1, BigDecimal.valueOf(7), null);
 
         mockMvc.perform(post("/api/v1/suppliers")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -362,9 +365,41 @@ class SupplierApiV1ControllerTest {
                 .andExpect(status().isConflict());
     }
 
+    @Test
+    void createSupplierPassesNullActorWhenPrincipalMissing() {
+        SupplierApiV1Controller controller = new SupplierApiV1Controller(supplierManagementService);
+        when(supplierManagementService.createSupplier(any(), isNull())).thenReturn(sampleResponse());
+
+        var response = controller.createSupplier(sampleCreateRequest(), null);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        verify(supplierManagementService).createSupplier(any(), isNull());
+    }
+
+    @Test
+    void updateEndpointsPassNullActorWhenPrincipalMissing() {
+        SupplierApiV1Controller controller = new SupplierApiV1Controller(supplierManagementService);
+        when(supplierManagementService.activateSupplier(1L, null)).thenReturn(sampleResponse());
+        when(supplierManagementService.deactivateSupplier(eq(1L), any(), isNull())).thenReturn(sampleResponse());
+        when(supplierManagementService.blacklistSupplier(eq(1L), any(), isNull())).thenReturn(sampleResponse());
+        when(supplierManagementService.updateSupplierRating(eq(1L), any(), isNull())).thenReturn(sampleResponse());
+        when(supplierManagementService.updateSupplier(eq(1L), any(), isNull())).thenReturn(sampleResponse());
+
+        controller.updateSupplier(1L, sampleUpdateRequest(), null);
+        controller.activateSupplier(1L, null);
+        controller.deactivateSupplier(1L, new DeactivateSupplierRequest("No longer preferred"), null);
+        controller.blacklistSupplier(1L, new BlacklistSupplierRequest("Risk"), null);
+        controller.updateRating(1L, new UpdateSupplierRatingRequest(BigDecimal.valueOf(4.7), null, null, null, null, "Improved"), null);
+
+        verify(supplierManagementService).updateSupplier(eq(1L), any(), isNull());
+        verify(supplierManagementService).activateSupplier(1L, null);
+        verify(supplierManagementService).deactivateSupplier(eq(1L), any(), isNull());
+        verify(supplierManagementService).blacklistSupplier(eq(1L), any(), isNull());
+        verify(supplierManagementService).updateSupplierRating(eq(1L), any(), isNull());
+    }
+
     private CreateSupplierRequest sampleCreateRequest() {
         return new CreateSupplierRequest(
-                "SUP-20260501-0001",
                 "Acme Supply",
                 "Raj",
                 "acme@example.com",

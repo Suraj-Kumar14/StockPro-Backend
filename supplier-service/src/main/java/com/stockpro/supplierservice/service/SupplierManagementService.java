@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,11 +56,8 @@ public class SupplierManagementService {
     @Transactional
     public SupplierResponse createSupplier(CreateSupplierRequest request, Long actorId) {
         validateRequest(request.name(), request.email(), request.phone(), request.alternatePhone(), request.paymentTerms(), request.leadTimeDays(), request.rating());
-        String supplierCode = normalizeSupplierCode(request.supplierCode());
-        if (supplierCode == null) {
-            supplierCode = generateSupplierCode();
-        }
-        ensureUnique(supplierCode, request.email(), request.taxNumber(), null);
+        String supplierCode = generateSupplierCode();
+        ensureUnique(supplierCode, request.name(), request.email(), request.phone(), request.gstNumber(), request.taxNumber(), null);
 
         Supplier supplier = Supplier.builder()
                 .supplierCode(supplierCode)
@@ -95,8 +93,20 @@ public class SupplierManagementService {
     public SupplierResponse updateSupplier(Long supplierId, UpdateSupplierRequest request, Long actorId) {
         Supplier supplier = getEntity(supplierId);
         validateRequest(request.name(), request.email(), request.phone(), request.alternatePhone(), request.paymentTerms(), request.leadTimeDays(), request.rating());
-        ensureUnique(supplier.getSupplierCode(), request.email(), request.taxNumber(), supplierId);
+        ensureUnique(supplier.getSupplierCode(), request.name(), request.email(), request.phone(), request.gstNumber(), request.taxNumber(), supplierId);
 
+        applySupplierDetails(supplier, request);
+        applySupplierStatusUpdate(supplier, request);
+        supplier.setNotes(trimToNull(request.notes()));
+        supplier.setUpdatedBy(actorId);
+
+        Supplier saved = supplierRepository.save(supplier);
+        log.info("Supplier update success for supplierId={}", saved.getSupplierId());
+        publish(saved, SupplierEventType.SUPPLIER_UPDATED, updatedRouting, actorId, null);
+        return toResponse(saved);
+    }
+
+    private void applySupplierDetails(Supplier supplier, UpdateSupplierRequest request) {
         supplier.setName(request.name().trim());
         supplier.setContactPerson(trimToNull(request.contactPerson()));
         supplier.setEmail(normalizeEmail(request.email()));
@@ -112,26 +122,33 @@ public class SupplierManagementService {
         supplier.setPaymentTerms(request.paymentTerms().trim());
         supplier.setLeadTimeDays(request.leadTimeDays());
         supplier.setRating(defaultRating(request.rating()));
-        if (request.status() != null) {
-            supplier.setStatus(request.status());
-            supplier.setIsActive(request.status() == SupplierStatus.ACTIVE);
-        }
-        if (request.isActive() != null) {
-            supplier.setIsActive(request.isActive());
-            if (!request.isActive() && supplier.getStatus() == SupplierStatus.ACTIVE) {
-                supplier.setStatus(SupplierStatus.INACTIVE);
-            }
-            if (request.isActive() && supplier.getStatus() != SupplierStatus.BLACKLISTED) {
-                supplier.setStatus(SupplierStatus.ACTIVE);
-            }
-        }
-        supplier.setNotes(trimToNull(request.notes()));
-        supplier.setUpdatedBy(actorId);
+    }
 
-        Supplier saved = supplierRepository.save(supplier);
-        log.info("Supplier update success for supplierId={}", saved.getSupplierId());
-        publish(saved, SupplierEventType.SUPPLIER_UPDATED, updatedRouting, actorId, null);
-        return toResponse(saved);
+    private void applySupplierStatusUpdate(Supplier supplier, UpdateSupplierRequest request) {
+        applyRequestedStatus(supplier, request.status());
+        applyRequestedActiveState(supplier, request.isActive());
+    }
+
+    private void applyRequestedStatus(Supplier supplier, SupplierStatus requestedStatus) {
+        if (requestedStatus == null) {
+            return;
+        }
+        supplier.setStatus(requestedStatus);
+        supplier.setIsActive(requestedStatus == SupplierStatus.ACTIVE);
+    }
+
+    private void applyRequestedActiveState(Supplier supplier, Boolean requestedActive) {
+        if (requestedActive == null) {
+            return;
+        }
+        supplier.setIsActive(requestedActive);
+        if (!requestedActive && supplier.getStatus() == SupplierStatus.ACTIVE) {
+            supplier.setStatus(SupplierStatus.INACTIVE);
+            return;
+        }
+        if (requestedActive && supplier.getStatus() != SupplierStatus.BLACKLISTED) {
+            supplier.setStatus(SupplierStatus.ACTIVE);
+        }
     }
 
     public SupplierResponse getSupplierById(Long supplierId) {
@@ -355,30 +372,107 @@ public class SupplierManagementService {
         }
     }
 
-    private void ensureUnique(String supplierCode, String email, String taxNumber, Long currentSupplierId) {
-        supplierRepository.findBySupplierCode(supplierCode).ifPresent(existing -> {
-            if (currentSupplierId == null || !existing.getSupplierId().equals(currentSupplierId)) {
-                log.warn("Duplicate supplier code {}", supplierCode);
-                throw new DuplicateSupplierException("Supplier code already exists");
+    private void ensureUnique(String supplierCode, String name, String email, String phone, String gstNumber, String taxNumber, Long currentSupplierId) {
+        ensureUniqueSupplierCode(supplierCode, currentSupplierId);
+        ensureUniqueName(name, currentSupplierId);
+        ensureUniqueEmail(email, currentSupplierId);
+        ensureUniquePhone(phone, currentSupplierId);
+        ensureUniqueGstNumber(gstNumber, currentSupplierId);
+        ensureUniqueTaxNumber(taxNumber, currentSupplierId);
+    }
+
+    private void ensureUniqueSupplierCode(String supplierCode, Long currentSupplierId) {
+        assertUniqueSupplier(
+                supplierRepository.findBySupplierCode(supplierCode),
+                currentSupplierId,
+                "Supplier code already exists",
+                "Duplicate supplier code {}",
+                supplierCode
+        );
+    }
+
+    private void ensureUniqueName(String name, Long currentSupplierId) {
+        String normalizedName = trimToNull(name);
+        if (normalizedName == null) {
+            return;
+        }
+        assertUniqueSupplier(
+                supplierRepository.findByNameIgnoreCase(normalizedName),
+                currentSupplierId,
+                "Supplier name already exists",
+                null,
+                null
+        );
+    }
+
+    private void ensureUniqueEmail(String email, Long currentSupplierId) {
+        if (email == null || email.isBlank()) {
+            return;
+        }
+        assertUniqueSupplier(
+                supplierRepository.findByEmailIgnoreCase(normalizeEmail(email)),
+                currentSupplierId,
+                "Supplier email already exists",
+                "Duplicate supplier email {}",
+                email
+        );
+    }
+
+    private void ensureUniquePhone(String phone, Long currentSupplierId) {
+        String normalizedPhone = trimToNull(phone);
+        if (normalizedPhone == null) {
+            return;
+        }
+        assertUniqueSupplier(
+                supplierRepository.findByPhone(normalizedPhone),
+                currentSupplierId,
+                "Supplier phone already exists",
+                null,
+                null
+        );
+    }
+
+    private void ensureUniqueGstNumber(String gstNumber, Long currentSupplierId) {
+        String normalizedGstNumber = trimToNull(gstNumber);
+        if (normalizedGstNumber == null) {
+            return;
+        }
+        assertUniqueSupplier(
+                supplierRepository.findByGstNumberIgnoreCase(normalizedGstNumber),
+                currentSupplierId,
+                "Supplier GSTIN already exists",
+                null,
+                null
+        );
+    }
+
+    private void ensureUniqueTaxNumber(String taxNumber, Long currentSupplierId) {
+        String normalizedTaxNumber = trimToNull(taxNumber);
+        if (normalizedTaxNumber == null) {
+            return;
+        }
+        assertUniqueSupplier(
+                supplierRepository.findByTaxIdIgnoreCase(normalizedTaxNumber),
+                currentSupplierId,
+                "Supplier GSTIN already exists",
+                "Duplicate supplier tax number {}",
+                normalizedTaxNumber
+        );
+    }
+
+    private void assertUniqueSupplier(Optional<Supplier> existingSupplier, Long currentSupplierId, String message, String logMessage, String logValue) {
+        existingSupplier.ifPresent(existing -> {
+            if (isDifferentSupplier(existing, currentSupplierId)) {
+                if (logMessage != null) {
+                    log.warn(logMessage, logValue);
+                }
+                throw new DuplicateSupplierException(message);
             }
         });
-        if (email != null && !email.isBlank()) {
-            supplierRepository.findByEmailIgnoreCase(normalizeEmail(email)).ifPresent(existing -> {
-                if (currentSupplierId == null || !existing.getSupplierId().equals(currentSupplierId)) {
-                    log.warn("Duplicate supplier email {}", email);
-                    throw new DuplicateSupplierException("Supplier email already exists");
-                }
-            });
-        }
-        String normalizedTaxNumber = trimToNull(taxNumber);
-        if (normalizedTaxNumber != null) {
-            supplierRepository.findByTaxIdIgnoreCase(normalizedTaxNumber).ifPresent(existing -> {
-                if (currentSupplierId == null || !existing.getSupplierId().equals(currentSupplierId)) {
-                    log.warn("Duplicate supplier tax number {}", normalizedTaxNumber);
-                    throw new DuplicateSupplierException("Supplier tax number already exists");
-                }
-            });
-        }
+    }
+
+    private boolean isDifferentSupplier(Supplier existing, Long currentSupplierId) {
+        return currentSupplierId == null || !existing.getSupplierId().equals(currentSupplierId);
     }
 
     private String generateSupplierCode() {
@@ -432,11 +526,6 @@ public class SupplierManagementService {
 
     private String normalizeEmail(String email) {
         return email == null ? null : email.trim().toLowerCase();
-    }
-
-    private String normalizeSupplierCode(String supplierCode) {
-        String normalized = trimToNull(supplierCode);
-        return normalized == null ? null : normalized.toUpperCase();
     }
 
     private String trimToNull(String value) {

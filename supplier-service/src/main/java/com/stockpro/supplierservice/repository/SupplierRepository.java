@@ -20,9 +20,15 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long>, JpaSp
 
     Optional<Supplier> findBySupplierCode(String supplierCode);
 
+    Optional<Supplier> findByNameIgnoreCase(String name);
+
     Optional<Supplier> findByEmail(String email);
 
+    Optional<Supplier> findByPhone(String phone);
+
     Optional<Supplier> findByTaxId(String taxId);
+
+    Optional<Supplier> findByGstNumberIgnoreCase(String gstNumber);
 
     Optional<Supplier> findByEmailIgnoreCase(String email);
 

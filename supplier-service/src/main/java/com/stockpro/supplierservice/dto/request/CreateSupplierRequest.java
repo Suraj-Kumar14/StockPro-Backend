@@ -10,7 +10,6 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
 public record CreateSupplierRequest(
-        @Size(max = 50) String supplierCode,
         @NotBlank @Size(max = 200) String name,
         @Size(max = 200) String contactPerson,
         @Email @Size(max = 100) String email,
