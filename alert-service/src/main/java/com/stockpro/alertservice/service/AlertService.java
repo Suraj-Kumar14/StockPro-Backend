@@ -78,7 +78,7 @@ public class AlertService {
             AlertType.OVERSTOCK,
             AlertType.PO_APPROVAL_PENDING,
             AlertType.OVERDUE_RECEIPT,
-            AlertType.SYSTEM_BROADCAST);
+            AlertType.PAYMENT_COMPLETED);
     private static final EnumSet<AlertType> ARCHIVED_NON_BUSINESS_ALERT_TYPES = EnumSet.of(
             AlertType.SYSTEM_ERROR,
             AlertType.UNAUTHORIZED_ACCESS,
@@ -702,8 +702,24 @@ public class AlertService {
             String role,
             AlertDispatch dispatch,
             String actionUrl) {
+        if (isDuplicatePendingApprovalAlert(event, role, dispatch.type())) {
+            log.info("Duplicate alert skipped by business key type={} purchaseOrderId={} recipientRole={}",
+                    dispatch.type(), event.getPurchaseOrderId(), role);
+            return;
+        }
         createRoleAlertFromEvent(role, dispatch,
                 builder -> enrichPurchaseAlert(builder, event, actionUrl));
+    }
+
+    private boolean isDuplicatePendingApprovalAlert(PurchaseAlertEvent event, String role, AlertType type) {
+        if (type != AlertType.PO_APPROVAL_PENDING || event.getPurchaseOrderId() == null) {
+            return false;
+        }
+        return alertRepository.existsByTypeAndReferenceTypeAndReferenceIdAndRecipientRole(
+                type,
+                REFERENCE_PURCHASE_ORDER,
+                String.valueOf(event.getPurchaseOrderId()),
+                role);
     }
 
     private void enrichPurchaseAlert(Alert.AlertBuilder builder, PurchaseAlertEvent event, String actionUrl) {

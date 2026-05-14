@@ -439,6 +439,25 @@ class AlertServiceTest {
     }
 
     @Test
+    void createAlertFromPurchaseEvent_shouldSkipDuplicatePendingApprovalByBusinessKey() {
+        PurchaseAlertEvent event = new PurchaseAlertEvent();
+        event.setEventType("purchase.submitted");
+        event.setPurchaseOrderId(44L);
+        event.setPurchaseOrderNumber("PO-20260505-0001");
+        event.setCreatedBy(7L);
+        event.setCorrelationId("purchase.submitted:44:7");
+
+        when(alertRepository.existsByTypeAndReferenceTypeAndReferenceIdAndRecipientRole(
+                AlertType.PO_APPROVAL_PENDING, "PURCHASE_ORDER", "44", "INVENTORY_MANAGER")).thenReturn(true);
+        when(alertRepository.existsByTypeAndReferenceTypeAndReferenceIdAndRecipientRole(
+                AlertType.PO_APPROVAL_PENDING, "PURCHASE_ORDER", "44", "ADMIN")).thenReturn(true);
+
+        alertService.createAlertFromPurchaseEvent(event);
+
+        verify(alertRepository, never()).save(any(Alert.class));
+    }
+
+    @Test
     void createAlertFromPurchaseEvent_shouldFallBackToStatusWhenEventTypeMissing() {
         PurchaseAlertEvent event = new PurchaseAlertEvent();
         event.setPurchaseOrderId(45L);

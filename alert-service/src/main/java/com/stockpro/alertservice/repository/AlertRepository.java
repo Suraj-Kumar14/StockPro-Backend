@@ -27,6 +27,12 @@ public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecific
 
     boolean existsByCorrelationIdAndTypeAndRecipientRole(String correlationId, AlertType type, String recipientRole);
 
+    boolean existsByTypeAndReferenceTypeAndReferenceIdAndRecipientRole(
+            AlertType type,
+            String referenceType,
+            String referenceId,
+            String recipientRole);
+
     Page<Alert> findByRecipientId(Long recipientId, Pageable pageable);
 
     Page<Alert> findByRecipientRole(String recipientRole, Pageable pageable);

@@ -202,38 +202,6 @@ public class AlertRabbitMQConfig {
     }
 
     @Bean
-    public Binding purchaseCreatedBinding(
-            Queue purchasePendingQueue,
-            TopicExchange purchaseExchange,
-            @Value("${stockpro.rabbitmq.purchase.created.routing-key}") String routingKey) {
-        return BindingBuilder.bind(purchasePendingQueue).to(purchaseExchange).with(routingKey);
-    }
-
-    @Bean
-    public Binding purchaseSubmittedBinding(
-            Queue purchasePendingQueue,
-            TopicExchange purchaseExchange,
-            @Value("${stockpro.rabbitmq.purchase.submitted.routing-key}") String routingKey) {
-        return BindingBuilder.bind(purchasePendingQueue).to(purchaseExchange).with(routingKey);
-    }
-
-    @Bean
-    public Binding purchaseCancelledBinding(
-            Queue purchasePendingQueue,
-            TopicExchange purchaseExchange,
-            @Value("${stockpro.rabbitmq.purchase.cancelled.routing-key}") String routingKey) {
-        return BindingBuilder.bind(purchasePendingQueue).to(purchaseExchange).with(routingKey);
-    }
-
-    @Bean
-    public Binding purchaseUpdatedBinding(
-            Queue purchasePendingQueue,
-            TopicExchange purchaseExchange,
-            @Value("${stockpro.rabbitmq.purchase.updated.routing-key}") String routingKey) {
-        return BindingBuilder.bind(purchasePendingQueue).to(purchaseExchange).with(routingKey);
-    }
-
-    @Bean
     public Binding purchaseApprovedBinding(
             Queue purchaseApprovedQueue,
             TopicExchange purchaseExchange,
