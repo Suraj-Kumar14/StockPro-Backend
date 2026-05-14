@@ -1,0 +1,266 @@
+server:
+  port: 8080
+
+jwt:
+  secret: ${JWT_SECRET}
+
+spring:
+  application:
+    name: API-GATEWAY
+
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:4200"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+              - PATCH
+            allowedHeaders:
+              - "*"
+            exposedHeaders:
+              - Authorization
+            allowCredentials: true
+            maxAge: 3600
+
+      routes:
+        # ================= NORMAL ROUTES =================
+        - id: auth-service
+          uri: lb://AUTH-SERVICE
+          predicates:
+            - Path=/auth/**,/oauth2/**,/login/oauth2/**
+
+        - id: auth-service-v1
+          uri: lb://AUTH-SERVICE
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            - RewritePath=/api/v1/auth(?<segment>/?.*), /auth${segment}
+
+        - id: product-service
+          uri: lb://PRODUCT-SERVICE
+          predicates:
+            - Path=/api/v1/products/**
+
+        - id: product-service-legacy
+          uri: lb://PRODUCT-SERVICE
+          predicates:
+            - Path=/products/**
+          filters:
+            - RewritePath=/products(?<segment>/?.*), /api/v1/products${segment}
+
+        - id: warehouse-service
+          uri: lb://WAREHOUSE-SERVICE
+          predicates:
+            - Path=/api/v1/warehouses/**,/api/v1/stocks/**
+
+        - id: warehouse-service-legacy-warehouses
+          uri: lb://WAREHOUSE-SERVICE
+          predicates:
+            - Path=/warehouses/**
+          filters:
+            - RewritePath=/warehouses(?<segment>/?.*), /api/v1/warehouses${segment}
+
+        - id: warehouse-service-legacy-stock
+          uri: lb://WAREHOUSE-SERVICE
+          predicates:
+            - Path=/stock/**
+          filters:
+            - RewritePath=/stock(?<segment>/?.*), /api/v1/stocks${segment}
+
+        - id: supplier-service
+          uri: lb://SUPPLIER-SERVICE
+          predicates:
+            - Path=/api/v1/suppliers/**
+
+        - id: supplier-service-legacy
+          uri: lb://SUPPLIER-SERVICE
+          predicates:
+            - Path=/suppliers/**
+          filters:
+            - RewritePath=/suppliers(?<segment>/?.*), /api/v1/suppliers${segment}
+
+        - id: purchase-service
+          uri: lb://PURCHASE-SERVICE
+          predicates:
+            - Path=/api/v1/purchase-orders/**
+
+        - id: movement-service
+          uri: lb://MOVEMENT-SERVICE
+          predicates:
+            - Path=/api/v1/movements/**
+
+        - id: movement-service-legacy
+          uri: lb://MOVEMENT-SERVICE
+          predicates:
+            - Path=/movements/**
+          filters:
+            - RewritePath=/movements(?<segment>/?.*), /api/v1/movements${segment}
+
+        - id: report-service
+          uri: lb://REPORT-SERVICE
+          predicates:
+            - Path=/api/v1/reports/**
+
+        - id: report-service-legacy
+          uri: lb://REPORT-SERVICE
+          predicates:
+            - Path=/reports/**
+          filters:
+            - RewritePath=/reports(?<segment>/?.*), /api/v1/reports${segment}
+
+        - id: payment-service
+          uri: lb://PAYMENT-SERVICE
+          predicates:
+            - Path=/api/v1/payments/**
+
+        - id: payment-service-legacy
+          uri: lb://PAYMENT-SERVICE
+          predicates:
+            - Path=/payments/**
+          filters:
+            - RewritePath=/payments(?<segment>/?.*), /api/v1/payments${segment}
+
+        - id: alert-service
+          uri: lb://ALERT-SERVICE
+          predicates:
+            - Path=/api/v1/alerts/**
+
+        - id: alert-service-legacy
+          uri: lb://ALERT-SERVICE
+          predicates:
+            - Path=/alerts/**
+          filters:
+            - RewritePath=/alerts(?<segment>/?.*), /api/v1/alerts${segment}
+
+        # ================= SWAGGER DOC ROUTES =================
+        - id: auth-service-docs
+          uri: lb://AUTH-SERVICE
+          predicates:
+            - Path=/auth-service/v3/api-docs
+          filters:
+            - RewritePath=/auth-service/v3/api-docs, /v3/api-docs
+
+        - id: product-service-docs
+          uri: lb://PRODUCT-SERVICE
+          predicates:
+            - Path=/product-service/v3/api-docs
+          filters:
+            - RewritePath=/product-service/v3/api-docs, /v3/api-docs
+
+        - id: supplier-service-docs
+          uri: lb://SUPPLIER-SERVICE
+          predicates:
+            - Path=/supplier-service/v3/api-docs
+          filters:
+            - RewritePath=/supplier-service/v3/api-docs, /v3/api-docs
+
+        - id: warehouse-service-docs
+          uri: lb://WAREHOUSE-SERVICE
+          predicates:
+            - Path=/warehouse-service/v3/api-docs
+          filters:
+            - RewritePath=/warehouse-service/v3/api-docs, /v3/api-docs
+
+        - id: movement-service-docs
+          uri: lb://MOVEMENT-SERVICE
+          predicates:
+            - Path=/movement-service/v3/api-docs
+          filters:
+            - RewritePath=/movement-service/v3/api-docs, /v3/api-docs
+
+        - id: purchase-service-docs
+          uri: lb://PURCHASE-SERVICE
+          predicates:
+            - Path=/purchase-service/v3/api-docs
+          filters:
+            - RewritePath=/purchase-service/v3/api-docs, /v3/api-docs
+
+        - id: report-service-docs
+          uri: lb://REPORT-SERVICE
+          predicates:
+            - Path=/report-service/v3/api-docs
+          filters:
+            - RewritePath=/report-service/v3/api-docs, /v3/api-docs
+
+        - id: payment-service-docs
+          uri: lb://PAYMENT-SERVICE
+          predicates:
+            - Path=/payment-service/v3/api-docs
+          filters:
+            - RewritePath=/payment-service/v3/api-docs, /v3/api-docs
+
+        - id: alert-service-docs
+          uri: lb://ALERT-SERVICE
+          predicates:
+            - Path=/alert-service/v3/api-docs
+          filters:
+            - RewritePath=/alert-service/v3/api-docs, /v3/api-docs
+
+# ================= TOP-LEVEL (NOT inside spring!) =================
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: auth-service
+        url: /auth-service/v3/api-docs
+      - name: product-service
+        url: /product-service/v3/api-docs
+      - name: supplier-service
+        url: /supplier-service/v3/api-docs
+      - name: warehouse-service
+        url: /warehouse-service/v3/api-docs
+      - name: movement-service
+        url: /movement-service/v3/api-docs
+      - name: purchase-service
+        url: /purchase-service/v3/api-docs
+      - name: report-service
+        url: /report-service/v3/api-docs
+      - name: payment-service
+        url: /payment-service/v3/api-docs
+      - name: alert-service
+        url: /alert-service/v3/api-docs
+
+  api-docs:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+    healthcheck:
+      enabled: true
+  instance:
+    prefer-ip-address: false
+    hostname: localhost
+    instance-id: ${spring.application.name}:${server.port}
+    home-page-url: http://localhost:${server.port}/
+    status-page-url: http://localhost:${server.port}/actuator/info
+    health-check-url: http://localhost:${server.port}/actuator/health

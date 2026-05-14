@@ -1,0 +1,88 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: PAYMENT-SERVICE
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/payment_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${PAYMENT_DB_USERNAME}
+    password: ${PAYMENT_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  mvc:
+    pathmatch:
+      use-suffix-pattern: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: /
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true
+
+jwt:
+  secret: ${JWT_SECRET}
+
+purchase-service:
+  base-url: ${PURCHASE_SERVICE_BASE_URL:http://localhost:8080/api/v1/purchase-orders}
+
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID}
+  key-secret: ${RAZORPAY_KEY_SECRET}
+
+payment:
+  razorpay:
+    max-transaction-amount: ${PAYMENT_RAZORPAY_MAX_TRANSACTION_AMOUNT:500000}
+
+stockpro:
+  rabbitmq:
+    payment:
+      exchange: ${PAYMENT_RABBITMQ_EXCHANGE:stockpro.payment.exchange}
+      routing:
+        pending: ${PAYMENT_PENDING_ROUTING_KEY:razorpay.payment.pending}
+        initiated: ${PAYMENT_INITIATED_ROUTING_KEY:razorpay.payment.initiated}
+        success: ${PAYMENT_SUCCESS_ROUTING_KEY:razorpay.payment.success}
+        failed: ${PAYMENT_FAILED_ROUTING_KEY:razorpay.payment.failed}
+        cancelled: ${PAYMENT_CANCELLED_ROUTING_KEY:razorpay.payment.cancelled}
+        limit-exceeded: ${PAYMENT_LIMIT_ROUTING_KEY:razorpay.payment.limit_exceeded}
+        split-recommended: ${PAYMENT_SPLIT_ROUTING_KEY:razorpay.payment.split_recommended}
+    alert:
+      exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
+      routing:
+        unauthorized: ${ALERT_UNAUTHORIZED_ROUTING_KEY:alert.system.unauthorized}
+        system-error: ${ALERT_SYSTEM_ERROR_ROUTING_KEY:alert.system.error}

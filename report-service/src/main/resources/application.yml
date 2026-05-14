@@ -1,0 +1,112 @@
+server:
+  port: 8088
+
+jwt:
+  secret: ${JWT_SECRET}
+
+spring:
+  application:
+    name: REPORT-SERVICE
+
+  datasource:
+    url: ${REPORT_DB_URL:jdbc:mysql://localhost:3306/report_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${REPORT_DB_USERNAME}
+    password: ${REPORT_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+  mvc:
+    pathmatch:
+      use-suffix-pattern: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+
+# Dead stock threshold (days)
+report:
+  dead-stock-days: 90
+  slow-moving-days: 30
+  scheduler:
+    enabled: ${REPORT_SCHEDULER_ENABLED:false}
+  internal-service-token: ${REPORT_INTERNAL_SERVICE_TOKEN:}
+
+services:
+  product-service-id: ${PRODUCT_SERVICE_ID:PRODUCT-SERVICE}
+  warehouse-service-id: ${WAREHOUSE_SERVICE_ID:WAREHOUSE-SERVICE}
+  purchase-service-id: ${PURCHASE_SERVICE_ID:PURCHASE-SERVICE}
+  supplier-service-id: ${SUPPLIER_SERVICE_ID:SUPPLIER-SERVICE}
+  movement-service-id: ${MOVEMENT_SERVICE_ID:MOVEMENT-SERVICE}
+  alert-service-id: ${ALERT_SERVICE_ID:ALERT-SERVICE}
+  payment-service-id: ${PAYMENT_SERVICE_ID:PAYMENT-SERVICE}
+  product-url: ${PRODUCT_SERVICE_URL:lb://PRODUCT-SERVICE}
+  warehouse-url: ${WAREHOUSE_SERVICE_URL:lb://WAREHOUSE-SERVICE}
+  purchase-url: ${PURCHASE_SERVICE_URL:lb://PURCHASE-SERVICE}
+  supplier-url: ${SUPPLIER_SERVICE_URL:lb://SUPPLIER-SERVICE}
+  movement-url: ${MOVEMENT_SERVICE_URL:lb://MOVEMENT-SERVICE}
+  alert-url: ${ALERT_SERVICE_URL:lb://ALERT-SERVICE}
+  report-url: ${REPORT_SERVICE_URL:lb://REPORT-SERVICE}
+  payment-url: ${PAYMENT_SERVICE_URL:lb://PAYMENT-SERVICE}
+  auth-url: ${AUTH_SERVICE_URL:lb://AUTH-SERVICE}
+
+stockpro:
+  rabbitmq:
+    report:
+      exchange: ${REPORT_EXCHANGE:stockpro.report.exchange}
+      generated-routing-key: report.generated
+      snapshot-routing-key: report.snapshot.created
+      export-requested-routing-key: report.export.requested
+      export-completed-routing-key: report.export.completed
+      export-failed-routing-key: report.export.failed
+      events-queue: stockpro.report.events.queue
+      audit-queue: stockpro.report.audit.queue
+      stock-queue: stockpro.stock.report.queue
+      purchase-queue: stockpro.purchase.report.queue
+      payment-queue: stockpro.payment.report.queue
+      supplier-queue: stockpro.supplier.report.queue
+      movement-queue: stockpro.movement.report.queue
+      alert-queue: stockpro.alert.events.queue
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: when_authorized

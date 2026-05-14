@@ -1,0 +1,78 @@
+server:
+  port: 8085
+
+jwt:
+  secret: ${JWT_SECRET:stockpro-local-jwt-secret-2026-change-this-before-production-8f4b2c9d7e1a6f3c}
+
+spring:
+  application:
+    name: SUPPLIER-SERVICE
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/supplier_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:Suraj@123}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    com.stockpro: INFO
+  file:
+    name: logs/supplier-service.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,caches
+  endpoint:
+    health:
+      show-details: always
+
+stockpro:
+  rabbitmq:
+    supplier:
+      exchange: ${SUPPLIER_RABBIT_EXCHANGE:stockpro.supplier.exchange}
+      routing:
+        created: supplier.created
+        updated: supplier.updated
+        activated: supplier.activated
+        deactivated: supplier.deactivated
+        blacklisted: supplier.blacklisted
+        ratingUpdated: supplier.rating-updated
+        performanceUpdated: supplier.performance-updated

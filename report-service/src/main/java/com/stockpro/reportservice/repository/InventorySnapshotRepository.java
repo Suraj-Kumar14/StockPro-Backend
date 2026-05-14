@@ -1,0 +1,71 @@
+package com.stockpro.reportservice.repository;
+
+import com.stockpro.reportservice.entity.InventorySnapshot;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface InventorySnapshotRepository
+        extends JpaRepository<InventorySnapshot, Long> {
+
+    List<InventorySnapshot> findByWarehouseId(Long warehouseId);
+
+    List<InventorySnapshot> findByProductId(Long productId);
+
+    List<InventorySnapshot> findBySnapshotDate(LocalDate snapshotDate);
+
+    Page<InventorySnapshot> findBySnapshotDate(LocalDate snapshotDate, Pageable pageable);
+
+    List<InventorySnapshot> findBySnapshotDateBetween(
+            LocalDate start, LocalDate end);
+
+    Page<InventorySnapshot> findBySnapshotDateBetween(
+            LocalDate start, LocalDate end, Pageable pageable);
+
+    List<InventorySnapshot> findByWarehouseIdAndSnapshotDate(
+            Long warehouseId, LocalDate snapshotDate);
+
+    Optional<InventorySnapshot> findBySnapshotDateAndProductIdAndWarehouseId(
+            LocalDate snapshotDate, Long productId, Long warehouseId);
+
+    List<InventorySnapshot> findByProductIdAndSnapshotDateBetween(Long productId, LocalDate from, LocalDate to);
+
+    List<InventorySnapshot> findByWarehouseIdAndSnapshotDateBetween(Long warehouseId, LocalDate from, LocalDate to);
+
+    @Query("SELECT COALESCE(SUM(s.totalValue), 0) " +
+           "FROM InventorySnapshot s WHERE s.snapshotDate = :date")
+    BigDecimal sumTotalStockValue(@Param("date") LocalDate date);
+
+    @Query("SELECT COALESCE(SUM(s.totalValue), 0) " +
+           "FROM InventorySnapshot s " +
+           "WHERE s.warehouseId = :warehouseId " +
+           "AND s.snapshotDate = :date")
+    BigDecimal sumStockValueByWarehouse(
+            @Param("warehouseId") Long warehouseId,
+            @Param("date") LocalDate date);
+
+    // Latest snapshot per product per warehouse
+    @Query("SELECT s FROM InventorySnapshot s " +
+           "WHERE s.snapshotDate = " +
+           "(SELECT MAX(s2.snapshotDate) FROM InventorySnapshot s2)")
+    List<InventorySnapshot> findLatestSnapshot();
+
+    @Query("SELECT MAX(s.snapshotDate) FROM InventorySnapshot s")
+    LocalDate findLatestSnapshotDate();
+
+    List<InventorySnapshot> findBySnapshotDateOrderByWarehouseIdAscProductIdAsc(LocalDate snapshotDate);
+
+    @Query("SELECT COALESCE(SUM(s.totalValue), 0) FROM InventorySnapshot s WHERE s.snapshotDate BETWEEN :startDate AND :endDate")
+    BigDecimal sumStockValueBetween(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
+    boolean existsBySnapshotDate(LocalDate date);
+}

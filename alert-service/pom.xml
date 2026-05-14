@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>com.stockpro</groupId>
+	<artifactId>alert-service</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>alert-service</name>
+	<description>StockPro Alert Service</description>
+
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>3.2.5</version>
+		<relativePath />
+	</parent>
+
+	<properties>
+		<java.version>17</java.version>
+		<spring-cloud.version>2023.0.1</spring-cloud.version>
+		<jacoco.version>0.8.14</jacoco.version>
+		<sonar.maven.plugin.version>5.6.0.6792</sonar.maven.plugin.version>
+		<sonar.projectKey>stockpro-alert-service</sonar.projectKey>
+		<sonar.projectName>Alert Service</sonar.projectName>
+		<sonar.host.url>http://localhost:9000</sonar.host.url>
+		<sonar.coverage.jacoco.xmlReportPaths>
+			target/site/jacoco/jacoco.xml
+		</sonar.coverage.jacoco.xmlReportPaths>
+		<sonar.sources>src/main/java</sonar.sources>
+		<sonar.tests>src/test/java</sonar.tests>
+		<sonar.cpd.exclusions>src/test/java/**</sonar.cpd.exclusions>
+		<sonar.coverage.exclusions>
+			src/main/java/com/stockpro/alertservice/AlertServiceApplication.java,
+			src/main/java/com/stockpro/alertservice/aspect/**,
+			src/main/java/com/stockpro/alertservice/config/**,
+			src/main/java/com/stockpro/alertservice/dto/**,
+			src/main/java/com/stockpro/alertservice/entity/**,
+			src/main/java/com/stockpro/alertservice/enums/**,
+			src/main/java/com/stockpro/alertservice/events/**,
+			src/main/java/com/stockpro/alertservice/exception/**,
+			src/main/java/com/stockpro/alertservice/listener/**,
+			src/main/java/com/stockpro/alertservice/mail/**,
+			src/main/java/com/stockpro/alertservice/rabbitmq/**,
+			src/main/java/com/stockpro/alertservice/security/**,
+			src/main/java/com/stockpro/alertservice/service/AlertMapper.java,
+			src/main/java/com/stockpro/alertservice/service/AlertValidationService.java
+		</sonar.coverage.exclusions>
+	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.cloud</groupId>
+				<artifactId>spring-cloud-dependencies</artifactId>
+				<version>${spring-cloud.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+	</dependencies>
+	</dependencyManagement>
+
+	<dependencies>
+
+		<!-- WEB -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+
+		<!-- VALIDATION -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
+
+		<!-- SECURITY -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+
+		<!-- JPA -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+		</dependency>
+
+		<!-- MYSQL -->
+		<dependency>
+			<groupId>com.mysql</groupId>
+			<artifactId>mysql-connector-j</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+		<!-- H2 - TEST ONLY -->
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- LOMBOK -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<optional>true</optional>
+		</dependency>
+
+		<!-- EUREKA CLIENT -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+		</dependency>
+
+		<!-- AOP -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-aop</artifactId>
+		</dependency>
+
+		<!-- SWAGGER / OPENAPI -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>2.3.0</version>
+		</dependency>
+
+		<!-- ACTUATOR -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
+		<!-- EMAIL SUPPORT -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-amqp</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-api</artifactId>
+			<version>0.11.5</version>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-impl</artifactId>
+			<version>0.11.5</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-jackson</artifactId>
+			<version>0.11.5</version>
+			<scope>runtime</scope>
+		</dependency>
+
+		<!-- TEST -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+    </dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<exclude>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
+
+			<!-- JACOCO - Code Coverage -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+						<configuration>
+							<excludes>
+								<exclude>com/stockpro/alertservice/AlertServiceApplication*</exclude>
+								<exclude>com/stockpro/alertservice/aspect/**</exclude>
+								<exclude>com/stockpro/alertservice/config/**</exclude>
+								<exclude>com/stockpro/alertservice/dto/**</exclude>
+								<exclude>com/stockpro/alertservice/entity/**</exclude>
+								<exclude>com/stockpro/alertservice/enums/**</exclude>
+								<exclude>com/stockpro/alertservice/events/**</exclude>
+								<exclude>com/stockpro/alertservice/exception/**</exclude>
+								<exclude>com/stockpro/alertservice/listener/**</exclude>
+								<exclude>com/stockpro/alertservice/mail/**</exclude>
+								<exclude>com/stockpro/alertservice/rabbitmq/**</exclude>
+								<exclude>com/stockpro/alertservice/security/**</exclude>
+								<exclude>com/stockpro/alertservice/service/AlertMapper*</exclude>
+								<exclude>com/stockpro/alertservice/service/AlertValidationService*</exclude>
+							</excludes>
+						</configuration>
+					</execution>
+					<execution>
+						<id>check</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<excludes>
+								<exclude>com/stockpro/alertservice/AlertServiceApplication*</exclude>
+								<exclude>com/stockpro/alertservice/aspect/**</exclude>
+								<exclude>com/stockpro/alertservice/config/**</exclude>
+								<exclude>com/stockpro/alertservice/dto/**</exclude>
+								<exclude>com/stockpro/alertservice/entity/**</exclude>
+								<exclude>com/stockpro/alertservice/enums/**</exclude>
+								<exclude>com/stockpro/alertservice/events/**</exclude>
+								<exclude>com/stockpro/alertservice/exception/**</exclude>
+								<exclude>com/stockpro/alertservice/listener/**</exclude>
+								<exclude>com/stockpro/alertservice/mail/**</exclude>
+								<exclude>com/stockpro/alertservice/rabbitmq/**</exclude>
+								<exclude>com/stockpro/alertservice/security/**</exclude>
+								<exclude>com/stockpro/alertservice/service/AlertMapper*</exclude>
+								<exclude>com/stockpro/alertservice/service/AlertValidationService*</exclude>
+							</excludes>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>0.80</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>${sonar.maven.plugin.version}</version>
+			</plugin>
+		</plugins>
+	</build>
+
+</project>

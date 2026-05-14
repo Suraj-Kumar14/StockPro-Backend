@@ -1,0 +1,105 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: WAREHOUSE-SERVICE
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/warehouse_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: ${WAREHOUSE_DB_USERNAME}
+    password: ${WAREHOUSE_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  mvc:
+    pathmatch:
+      use-suffix-pattern: false
+
+  # RabbitMQ Configuration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: /
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+    healthcheck:
+      enabled: true
+  instance:
+    prefer-ip-address: false
+    hostname: localhost
+    instance-id: ${spring.application.name}:${server.port}
+    home-page-url: http://localhost:${server.port}/
+    status-page-url: http://localhost:${server.port}/actuator/info
+    health-check-url: http://localhost:${server.port}/actuator/health
+
+logging:
+  level:
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true
+
+product-service:
+  base-url: ${PRODUCT_SERVICE_BASE_URL:http://PRODUCT-SERVICE}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+stockpro:
+  rabbitmq:
+    alert:
+      exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
+      routing:
+        unauthorized: ${ALERT_UNAUTHORIZED_ROUTING_KEY:alert.system.unauthorized}
+        system-error: ${ALERT_SYSTEM_ERROR_ROUTING_KEY:alert.system.error}
+    warehouse:
+      exchange: ${WAREHOUSE_RABBITMQ_EXCHANGE:stockpro.warehouse.exchange}
+      routing:
+        warehouse-created: warehouse.created
+        warehouse-updated: warehouse.updated
+        warehouse-activated: warehouse.activated
+        warehouse-deactivated: warehouse.deactivated
+        stock-created: stock.created
+        stock-updated: stock.updated
+        stock-received: stock.received
+        stock-issued: stock.issued
+        stock-reserved: stock.reserved
+        stock-reservation-released: stock.reservation.released
+        stock-transfer-initiated: stock.transfer.initiated
+        stock-transferred: stock.transferred
+        stock-adjusted: stock.adjusted
+        stock-low: stock.low
+        stock-overstock: stock.overstock

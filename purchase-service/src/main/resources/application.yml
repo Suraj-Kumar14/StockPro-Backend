@@ -1,0 +1,102 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: PURCHASE-SERVICE
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/purchase_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${PURCHASE_DB_USERNAME}
+    password: ${PURCHASE_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  mvc:
+    pathmatch:
+      use-suffix-pattern: false
+
+  # RabbitMQ Configuration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: /
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    display-request-duration: true
+
+jwt:
+  secret: ${JWT_SECRET}
+
+product-service:
+  base-url: ${PRODUCT_SERVICE_BASE_URL}
+
+supplier-service:
+  base-url: ${SUPPLIER_SERVICE_BASE_URL}
+
+warehouse-service:
+  base-url: ${WAREHOUSE_SERVICE_BASE_URL}
+
+payment-service:
+  base-url: ${PAYMENT_SERVICE_BASE_URL:http://localhost:8080/api/v1/payments}
+
+stockpro:
+  rabbitmq:
+    alert:
+      exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
+      routing:
+        unauthorized: ${ALERT_UNAUTHORIZED_ROUTING_KEY:alert.system.unauthorized}
+        system-error: ${ALERT_SYSTEM_ERROR_ROUTING_KEY:alert.system.error}
+    purchase:
+      exchange: ${PURCHASE_RABBITMQ_EXCHANGE:stockpro.purchase.exchange}
+      routing:
+        created: purchase.created
+        updated: purchase.updated
+        submitted: purchase.submitted
+        approved: purchase.approved
+        rejected: purchase.rejected
+        cancelled: purchase.cancelled
+        partiallyReceived: purchase.partially-received
+        fullyReceived: purchase.fully-received
+        overdue: purchase.overdue
+        pendingApproval: purchase.pending-approval
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,caches
+  endpoint:
+    health:
+      show-details: always

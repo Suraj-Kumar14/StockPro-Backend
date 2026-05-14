@@ -1,0 +1,12 @@
+/.metadata/
+
+# Logs
+logs/
+**/logs/
+*.log
+*.log.gz
+.idea/
+.project
+target/
+
+*.iml

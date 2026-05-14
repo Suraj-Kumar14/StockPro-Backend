@@ -1,0 +1,46 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  cloud:
+    discovery:
+      enabled: false
+
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+eureka:
+  client:
+    enabled: false
+
+jwt:
+  secret: test-jwt-secret-test-jwt-secret-test-jwt-secret
+
+report:
+  dead-stock-days: 90
+  slow-moving-days: 30
+
+services:
+  product-url: http://localhost:8082
+  warehouse-url: http://localhost:8083
+  purchase-url: http://localhost:8084
+  supplier-url: http://localhost:8085
+  movement-url: http://localhost:8086
+  alert-url: http://localhost:8087
+  report-url: http://localhost:8088
+  payment-url: http://localhost:8089
+  auth-url: http://localhost:8081
