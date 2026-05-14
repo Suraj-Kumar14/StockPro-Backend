@@ -16,9 +16,11 @@ import com.stockpro.alertservice.enums.AlertStatus;
 import com.stockpro.alertservice.enums.AlertType;
 import com.stockpro.alertservice.events.AlertEvent;
 import com.stockpro.alertservice.events.MovementAlertEvent;
+import com.stockpro.alertservice.events.PaymentAlertEvent;
 import com.stockpro.alertservice.events.PurchaseAlertEvent;
 import com.stockpro.alertservice.events.StockAlertEvent;
 import com.stockpro.alertservice.events.SupplierAlertEvent;
+import com.stockpro.alertservice.events.SystemAlertEvent;
 import com.stockpro.alertservice.exception.AlertNotFoundException;
 import com.stockpro.alertservice.exception.InvalidAlertException;
 import com.stockpro.alertservice.mail.EmailNotificationService;
@@ -30,10 +32,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.EnumSet;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -45,6 +49,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,12 +62,104 @@ import org.springframework.transaction.annotation.Transactional;
 public class AlertService {
 
     private static final DateTimeFormatter NUMBER_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final String ROLE_ADMIN = "ADMIN";
+    private static final String ROLE_MANAGER = "INVENTORY_MANAGER";
+    private static final String ROLE_OFFICER = "PURCHASE_OFFICER";
+    private static final String ROLE_STAFF = "WAREHOUSE_STAFF";
+    private static final String ROLE_MANAGER_ALIAS = "MANAGER";
+    private static final String ROLE_OFFICER_ALIAS = "OFFICER";
+    private static final String ROLE_STAFF_ALIAS = "STAFF";
+    private static final String ROLE_ALL = "ALL";
+    private static final String FIELD_IS_READ = "isRead";
+    private static final String FIELD_RECIPIENT_ROLE = "recipientRole";
+    private static final List<String> BROADCAST_ROLES = List.of(ROLE_ADMIN, ROLE_MANAGER, ROLE_OFFICER, ROLE_STAFF);
+    private static final EnumSet<AlertType> USER_VISIBLE_ALERT_TYPES = EnumSet.of(
+            AlertType.LOW_STOCK,
+            AlertType.OVERSTOCK,
+            AlertType.PO_APPROVAL_PENDING,
+            AlertType.OVERDUE_RECEIPT,
+            AlertType.SYSTEM_BROADCAST);
+    private static final EnumSet<AlertType> ARCHIVED_NON_BUSINESS_ALERT_TYPES = EnumSet.of(
+            AlertType.SYSTEM_ERROR,
+            AlertType.UNAUTHORIZED_ACCESS,
+            AlertType.STOCK_UPDATED,
+            AlertType.PO_CREATED,
+            AlertType.PO_SUBMITTED,
+            AlertType.PO_APPROVED,
+            AlertType.PO_REJECTED,
+            AlertType.PO_CANCELLED,
+            AlertType.PO_RECEIVED,
+            AlertType.GRN_STARTED,
+            AlertType.GRN_PARTIAL,
+            AlertType.GRN_COMPLETED,
+            AlertType.SUPPLIER_DEACTIVATED,
+            AlertType.SUPPLIER_BLACKLISTED,
+            AlertType.MOVEMENT_ANOMALY,
+            AlertType.STOCK_TRANSFER,
+            AlertType.WAREHOUSE_TRANSFER_INITIATED,
+            AlertType.WAREHOUSE_TRANSFER_COMPLETED,
+            AlertType.REPORT_READY,
+            AlertType.PAYMENT_PENDING,
+            AlertType.PAYMENT_INITIATED,
+            AlertType.PAYMENT_SUCCESSFUL,
+            AlertType.PAYMENT_FAILED,
+            AlertType.PAYMENT_CANCELLED,
+            AlertType.PAYMENT_LIMIT_EXCEEDED,
+            AlertType.SPLIT_PAYMENT_RECOMMENDED,
+            AlertType.PAYMENT_COMPLETED,
+            AlertType.GENERAL);
+    private static final String STATUS_PENDING_PAYMENT = "PENDING_PAYMENT";
+    private static final String STATUS_PENDING_APPROVAL = "PENDING_APPROVAL";
+    private static final String STATUS_APPROVED = "APPROVED";
+    private static final String STATUS_REJECTED = "REJECTED";
+    private static final String STATUS_RECEIVED = "RECEIVED";
+    private static final String STATUS_FULLY_RECEIVED = "FULLY_RECEIVED";
+    private static final String STATUS_PARTIALLY_RECEIVED = "PARTIALLY_RECEIVED";
+    private static final String STATUS_CANCELLED = "CANCELLED";
+    private static final String STATUS_UNKNOWN = "unknown";
+    private static final String EVENT_SUBMITTED = "SUBMITTED";
+    private static final String EVENT_PENDING = "PENDING";
+    private static final String EVENT_OVERDUE = "OVERDUE";
+    private static final String EVENT_LOW = "LOW";
+    private static final String EVENT_OVER = "OVER";
+    private static final String SOURCE_ALERT_SERVICE = "alert-service";
+    private static final String REFERENCE_PURCHASE_ORDER = "PURCHASE_ORDER";
+    private static final int OUT_OF_STOCK_QUANTITY = 0;
 
     private final AlertRepository alertRepository;
     private final AlertValidationService validationService;
     private final AlertMapper alertMapper;
     private final AlertEventPublisher alertEventPublisher;
     private final EmailNotificationService emailNotificationService;
+
+    @Value("${stockpro.alert.overdue-critical-days:3}")
+    private int overdueCriticalDays;
+
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public void alignUserVisibleAlerts() {
+        int migratedOverdueAlerts = alertRepository.replaceAlertType(AlertType.PO_OVERDUE_RECEIPT, AlertType.OVERDUE_RECEIPT);
+        int normalizedManagerRoles = alertRepository.replaceRecipientRole(ROLE_MANAGER_ALIAS, ROLE_MANAGER);
+        int normalizedOfficerRoles = alertRepository.replaceRecipientRole(ROLE_OFFICER_ALIAS, ROLE_OFFICER);
+        int normalizedStaffRoles = alertRepository.replaceRecipientRole(ROLE_STAFF_ALIAS, ROLE_STAFF);
+        int archivedAlerts = alertRepository.archiveByTypes(List.copyOf(ARCHIVED_NON_BUSINESS_ALERT_TYPES));
+        int unarchivedBroadcastAlerts = alertRepository.unarchiveByTypes(List.of(AlertType.SYSTEM_BROADCAST));
+        if (migratedOverdueAlerts > 0
+                || normalizedManagerRoles > 0
+                || normalizedOfficerRoles > 0
+                || normalizedStaffRoles > 0
+                || archivedAlerts > 0
+                || unarchivedBroadcastAlerts > 0) {
+            log.info(
+                    "Aligned alert visibility model migratedOverdueAlerts={} normalizedManagerRoles={} normalizedOfficerRoles={} normalizedStaffRoles={} archivedAlerts={} unarchivedBroadcastAlerts={}",
+                    migratedOverdueAlerts,
+                    normalizedManagerRoles,
+                    normalizedOfficerRoles,
+                    normalizedStaffRoles,
+                    archivedAlerts,
+                    unarchivedBroadcastAlerts);
+        }
+    }
 
     @Transactional
     public AlertResponse createAlert(CreateAlertRequest request, Long actorId) {
@@ -78,9 +177,19 @@ public class AlertService {
     public List<AlertResponse> createBroadcastAlert(CreateBroadcastAlertRequest request, Long actorId) {
         validationService.validateBroadcast(request);
         List<AlertResponse> responses = new ArrayList<>();
+        List<String> recipientRoles = resolveBroadcastRoles(request);
 
-        if (request.getRecipientRoles() != null) {
-            for (String role : request.getRecipientRoles()) {
+        log.info("Preparing broadcast alert title={} severity={} requestedRoles={} normalizedRoles={} type={} recipientIds={}",
+                request.getTitle(),
+                request.getSeverity(),
+                request.resolveRecipientRoles(),
+                recipientRoles,
+                AlertType.SYSTEM_BROADCAST,
+                request.getRecipientIds());
+
+        if (!recipientRoles.isEmpty()) {
+            for (String role : recipientRoles) {
+                log.info("Creating broadcast alert for normalizedRecipientRole={} actorId={}", role, actorId);
                 CreateAlertRequest create = new CreateAlertRequest();
                 create.setRecipientRole(role);
                 create.setType(AlertType.SYSTEM_BROADCAST);
@@ -109,7 +218,8 @@ public class AlertService {
             }
         }
 
-        log.info("Broadcast alert created count={} actorId={}", responses.size(), actorId);
+        log.info("Broadcast alert created count={} actorId={} savedRecipientRoles={}",
+                responses.size(), actorId, responses.stream().map(AlertResponse::getRecipientRole).toList());
         return responses;
     }
 
@@ -130,14 +240,16 @@ public class AlertService {
                 valueOrDefault(request.getSize(), 10),
                 request.getSortBy(),
                 request.getSortDir());
-        Specification<Alert> spec = myAlertsSpec(userId, role).and(searchSpec(request));
+        Specification<Alert> spec = myAlertsSpec(userId, role)
+                .and(userVisibleAlertSpec())
+                .and(searchSpec(request));
         return alertRepository.findAll(spec, pageable).map(alertMapper::toResponse);
     }
 
     public Page<AlertResponse> searchAlerts(AlertSearchRequest request, Long userId, String role, boolean isAdmin) {
         Pageable pageable = pageRequest(valueOrDefault(request.getPage(), 0), valueOrDefault(request.getSize(), 10),
                 request.getSortBy(), request.getSortDir());
-        Specification<Alert> spec = searchSpec(request);
+        Specification<Alert> spec = userVisibleAlertSpec().and(searchSpec(request));
         if (!isAdmin) {
             spec = spec.and(myAlertsSpec(userId, role));
         }
@@ -162,7 +274,9 @@ public class AlertService {
 
     @Transactional
     public void markAllAsRead(Long userId, String role) {
-        List<Alert> alerts = alertRepository.findAll(myAlertsSpec(userId, role).and((root, query, cb) -> cb.isFalse(root.get("isRead"))));
+        List<Alert> alerts = alertRepository.findAll(myAlertsSpec(userId, role)
+                .and(userVisibleAlertSpec())
+                .and((root, query, cb) -> cb.isFalse(root.get(FIELD_IS_READ))));
         LocalDateTime now = LocalDateTime.now();
         alerts.forEach(alert -> {
             alert.setIsRead(true);
@@ -181,6 +295,9 @@ public class AlertService {
         if (alert.getStatus() == AlertStatus.DISMISSED) {
             throw new InvalidAlertException("Dismissed alerts cannot be acknowledged");
         }
+        if (Boolean.TRUE.equals(alert.getIsAcknowledged()) || alert.getStatus() == AlertStatus.ACKNOWLEDGED) {
+            return alertMapper.toResponse(alert);
+        }
         if (!Boolean.TRUE.equals(alert.getIsRead())) {
             alert.setIsRead(true);
             alert.setReadAt(LocalDateTime.now());
@@ -198,6 +315,9 @@ public class AlertService {
     @Transactional
     public AlertResponse dismissAlert(Long alertId, DismissAlertRequest request, Long userId, String role, boolean isAdmin) {
         Alert alert = authorizeAlert(alertId, userId, role, isAdmin);
+        if (Boolean.TRUE.equals(alert.getIsDismissed()) || alert.getStatus() == AlertStatus.DISMISSED) {
+            return alertMapper.toResponse(alert);
+        }
         alert.setIsDismissed(true);
         alert.setDismissedAt(LocalDateTime.now());
         alert.setDismissedBy(userId);
@@ -219,17 +339,18 @@ public class AlertService {
     }
 
     public long getUnreadCount(Long userId, String role) {
-        return alertRepository.countByRecipientIdAndIsReadFalse(userId)
-                + alertRepository.countByRecipientRoleAndIsReadFalse(role);
+        return alertRepository.count(myAlertsSpec(userId, role)
+                .and(userVisibleAlertSpec())
+                .and((root, query, cb) -> cb.isFalse(root.get(FIELD_IS_READ))));
     }
 
     public AlertSummaryResponse getMyAlertSummary(Long userId, String role) {
-        List<Alert> alerts = alertRepository.findAll(myAlertsSpec(userId, role));
+        List<Alert> alerts = alertRepository.findAll(myAlertsSpec(userId, role).and(userVisibleAlertSpec()));
         return buildSummary(alerts);
     }
 
     public AlertSummaryResponse getSystemAlertSummary() {
-        return buildSummary(alertRepository.findAll());
+        return buildSummary(alertRepository.findAll(userVisibleAlertSpec()));
     }
 
     public AlertAnalyticsResponse getAlertAnalytics(LocalDateTime fromDate, LocalDateTime toDate) {
@@ -243,50 +364,18 @@ public class AlertService {
             return;
         }
         String eventType = event.getEventType().toUpperCase(Locale.ROOT);
+        String sourceService = defaultSourceService(event.getSourceService(), "warehouse-service");
+        String correlationId = defaultCorrelationId(event.getCorrelationId(), eventType, event.getProductId(), event.getWarehouseId());
         BigDecimal availableQuantity = firstNonNull(event.getAvailableQuantity(), event.getCurrentQuantity());
-        if (eventType.contains("LOW")) {
-            AlertSeverity severity = severityForLowStock(event);
-            createRoleAlertFromEvent("MANAGER", AlertType.LOW_STOCK, severity, "Low Stock Alert",
-                    String.format("Low stock detected for %s in %s. Available: %s, reorder level: %s.",
-                            safe(event.getProductName()), safe(event.getWarehouseName()), safe(availableQuantity), safe(event.getReorderLevel())),
-                    defaultSourceService(event.getSourceService(), "warehouse-service"), defaultCorrelationId(event.getCorrelationId(), eventType, event.getProductId(), event.getWarehouseId()), builder -> {
-                        builder.relatedProductId(event.getProductId());
-                        builder.relatedWarehouseId(event.getWarehouseId());
-                        builder.referenceType(event.getReferenceType());
-                        builder.referenceId(event.getReferenceId());
-                        builder.referenceNumber(event.getReferenceNumber());
-                        builder.actionUrl("/stocks/low-stock");
-                    });
-            if (severity == AlertSeverity.CRITICAL) {
-                createRoleAlertFromEvent("ADMIN", AlertType.LOW_STOCK, AlertSeverity.CRITICAL, "Low Stock Alert",
-                        String.format("Critical low stock detected for %s.", safe(event.getProductName())),
-                        defaultSourceService(event.getSourceService(), "warehouse-service"), scopedCorrelationId(event.getCorrelationId(), eventType, event.getProductId(), event.getWarehouseId(), "ADMIN"), builder -> {
-                            builder.relatedProductId(event.getProductId());
-                            builder.relatedWarehouseId(event.getWarehouseId());
-                            builder.actionUrl("/stocks/low-stock");
-                        });
-            }
-        } else if (eventType.contains("OVER")) {
-            createRoleAlertFromEvent("MANAGER", AlertType.OVERSTOCK, AlertSeverity.WARNING, "Overstock Alert",
-                    String.format("Overstock detected for %s in %s. Current quantity: %s, max stock level: %s.",
-                            safe(event.getProductName()), safe(event.getWarehouseName()), safe(availableQuantity), safe(event.getMaxStockLevel())),
-                    defaultSourceService(event.getSourceService(), "warehouse-service"), defaultCorrelationId(event.getCorrelationId(), eventType, event.getProductId(), event.getWarehouseId()), builder -> {
-                        builder.relatedProductId(event.getProductId());
-                        builder.relatedWarehouseId(event.getWarehouseId());
-                        builder.referenceType(event.getReferenceType());
-                        builder.referenceId(event.getReferenceId());
-                        builder.referenceNumber(event.getReferenceNumber());
-                        builder.actionUrl("/stocks/overstock");
-                    });
-        } else if (eventType.contains("TRANSFER")) {
-            createRoleAlertFromEvent("STAFF", AlertType.STOCK_TRANSFER, AlertSeverity.INFO, "Stock Transfer Completed",
-                    String.format("Stock transfer completed for %s.", safe(event.getProductName())),
-                    defaultSourceService(event.getSourceService(), "warehouse-service"), defaultCorrelationId(event.getCorrelationId(), eventType, event.getProductId(), event.getWarehouseId()), builder -> {
-                        builder.relatedProductId(event.getProductId());
-                        builder.relatedWarehouseId(event.getWarehouseId());
-                        builder.actionUrl("/movements");
-                    });
+        if (eventType.contains(EVENT_LOW)) {
+            handleLowStockEvent(event, sourceService, correlationId, availableQuantity, eventType);
+            return;
         }
+        if (eventType.contains(EVENT_OVER)) {
+            handleOverstockEvent(event, sourceService, correlationId, availableQuantity);
+            return;
+        }
+        log.debug("Ignoring non case-study stock alert eventType={}", eventType);
     }
 
     @Transactional
@@ -297,125 +386,40 @@ public class AlertService {
         String eventType = normalizedPurchaseEventType(event);
         String sourceService = defaultSourceService(event.getSourceService(), "purchase-service");
         String baseCorrelationId = defaultCorrelationId(event.getCorrelationId(), eventType, event.getPurchaseOrderId(), event.getCreatedBy());
-        if (eventType.contains("PENDING")) {
-            createRoleAlertFromEvent("MANAGER", AlertType.PO_APPROVAL_PENDING, AlertSeverity.INFO,
-                    "Purchase Order Pending Approval",
-                    defaultMessage(event, String.format("Purchase order %s is pending approval.", safe(event.getPurchaseOrderNumber()))),
-                    sourceService, scopedCorrelationId(baseCorrelationId, "MANAGER"), builder -> {
-                        builder.relatedPurchaseOrderId(event.getPurchaseOrderId());
-                        builder.referenceType("PURCHASE_ORDER");
-                        builder.referenceId(stringify(event.getPurchaseOrderId()));
-                        builder.referenceNumber(event.getPurchaseOrderNumber());
-                        builder.actionUrl(purchaseOrderActionUrl(event));
-                    });
-            createRoleAlertFromEvent("ADMIN", AlertType.PO_APPROVAL_PENDING, AlertSeverity.INFO,
-                    "Purchase Order Pending Approval",
-                    defaultMessage(event, String.format("Purchase order %s is pending approval.", safe(event.getPurchaseOrderNumber()))),
-                    sourceService, scopedCorrelationId(baseCorrelationId, "ADMIN"), builder -> {
-                        builder.relatedPurchaseOrderId(event.getPurchaseOrderId());
-                        builder.referenceType("PURCHASE_ORDER");
-                        builder.referenceId(stringify(event.getPurchaseOrderId()));
-                        builder.referenceNumber(event.getPurchaseOrderNumber());
-                        builder.actionUrl(purchaseOrderActionUrl(event));
-                    });
-        } else if (eventType.contains("OVERDUE")) {
-            for (String role : List.of("OFFICER", "MANAGER", "ADMIN")) {
-                createRoleAlertFromEvent(role, AlertType.PO_OVERDUE_RECEIPT, AlertSeverity.CRITICAL,
-                        "Overdue Purchase Order Receipt",
-                        defaultMessage(event, String.format("Purchase order %s is overdue by %s day(s).",
-                                safe(event.getPurchaseOrderNumber()), safe(event.getDaysOverdue()))),
-                        sourceService, scopedCorrelationId(baseCorrelationId, role), builder -> {
-                            builder.relatedPurchaseOrderId(event.getPurchaseOrderId());
-                            builder.referenceType("PURCHASE_ORDER");
-                            builder.referenceId(stringify(event.getPurchaseOrderId()));
-                            builder.referenceNumber(event.getPurchaseOrderNumber());
-                            builder.actionUrl("/purchase-orders/overdue");
-                        });
-            }
-        } else if (eventType.contains("APPROVED")) {
-            if (event.getCreatedBy() != null) {
-                createUserAlertFromEvent(event.getCreatedBy(), AlertType.PO_APPROVED, AlertSeverity.INFO,
-                        "Purchase Order Approved", defaultMessage(event, "Purchase order approved"),
-                        sourceService, baseCorrelationId, builder -> {
-                            builder.relatedPurchaseOrderId(event.getPurchaseOrderId());
-                            builder.referenceType("PURCHASE_ORDER");
-                            builder.referenceId(stringify(event.getPurchaseOrderId()));
-                            builder.referenceNumber(event.getPurchaseOrderNumber());
-                            builder.actionUrl("/purchase-orders/" + event.getPurchaseOrderId());
-                        });
-            }
-        } else if (eventType.contains("REJECTED")) {
-            if (event.getCreatedBy() != null) {
-                createUserAlertFromEvent(event.getCreatedBy(), AlertType.PO_REJECTED, AlertSeverity.WARNING,
-                        "Purchase Order Rejected", defaultMessage(event, "Purchase order rejected"),
-                        sourceService, baseCorrelationId, builder -> {
-                            builder.relatedPurchaseOrderId(event.getPurchaseOrderId());
-                            builder.referenceType("PURCHASE_ORDER");
-                            builder.referenceId(stringify(event.getPurchaseOrderId()));
-                            builder.referenceNumber(event.getPurchaseOrderNumber());
-                            builder.actionUrl("/purchase-orders/" + event.getPurchaseOrderId());
-                        });
-            }
-        } else if (eventType.contains("RECEIVED")) {
-            createRoleAlertFromEvent("OFFICER", AlertType.PO_RECEIVED, AlertSeverity.INFO,
-                    "Purchase Order Received", defaultMessage(event, "Purchase order fully received"),
-                    sourceService, scopedCorrelationId(baseCorrelationId, "OFFICER"), builder -> {
-                        builder.relatedPurchaseOrderId(event.getPurchaseOrderId());
-                        builder.referenceType("PURCHASE_ORDER");
-                        builder.referenceId(stringify(event.getPurchaseOrderId()));
-                        builder.referenceNumber(event.getPurchaseOrderNumber());
-                        builder.actionUrl("/purchase-orders/" + event.getPurchaseOrderId());
-                    });
+        if (eventType.contains(EVENT_SUBMITTED) || eventType.contains(EVENT_PENDING)) {
+            handleSubmittedOrPendingPurchaseEvent(event, sourceService, baseCorrelationId);
+            return;
         }
+        if (eventType.contains(EVENT_OVERDUE)) {
+            handleOverduePurchaseEvent(event, sourceService, baseCorrelationId);
+            return;
+        }
+        log.debug("Ignoring non case-study purchase alert eventType={}", eventType);
     }
 
     @Transactional
     public void createAlertFromSupplierEvent(SupplierAlertEvent event) {
-        if (event == null || event.getEventType() == null) {
-            return;
-        }
-        String eventType = event.getEventType().toUpperCase(Locale.ROOT);
-        String sourceService = defaultSourceService(event.getSourceService(), "supplier-service");
-        String baseCorrelationId = defaultCorrelationId(event.getCorrelationId(), eventType, event.getSupplierId(), null);
-        if (eventType.contains("BLACKLIST")) {
-            for (String role : List.of("OFFICER", "ADMIN", "MANAGER")) {
-                createRoleAlertFromEvent(role, AlertType.SUPPLIER_BLACKLISTED, AlertSeverity.CRITICAL,
-                        "Supplier Blacklisted",
-                        String.format("Supplier %s has been blacklisted. %s", safe(event.getSupplierName()), safe(event.getReason())),
-                        sourceService, scopedCorrelationId(baseCorrelationId, role), builder -> {
-                            builder.relatedSupplierId(event.getSupplierId());
-                            builder.actionUrl("/suppliers/" + event.getSupplierId());
-                        });
-            }
-        } else if (eventType.contains("DEACTIV")) {
-            for (String role : List.of("OFFICER", "ADMIN", "MANAGER")) {
-                createRoleAlertFromEvent(role, AlertType.SUPPLIER_DEACTIVATED, AlertSeverity.WARNING,
-                        "Supplier Deactivated",
-                        String.format("Supplier %s has been deactivated.", safe(event.getSupplierName())),
-                        sourceService, scopedCorrelationId(baseCorrelationId, role), builder -> {
-                            builder.relatedSupplierId(event.getSupplierId());
-                            builder.actionUrl("/suppliers/" + event.getSupplierId());
-                        });
-            }
-        }
+        log.debug("Ignoring supplier alert event because supplier alerts are not user-facing in this case study. eventType={}",
+                event != null ? event.getEventType() : null);
     }
 
     @Transactional
     public void createAlertFromMovementEvent(MovementAlertEvent event) {
-        if (event == null || !notBlank(event.getMessage())) {
-            return;
-        }
-        for (String role : List.of("MANAGER", "ADMIN")) {
-            createRoleAlertFromEvent(role, AlertType.MOVEMENT_ANOMALY, AlertSeverity.CRITICAL,
-                    "Stock Movement Anomaly", safe(event.getMessage()),
-                    defaultSourceService(event.getSourceService(), "movement-service"),
-                    scopedCorrelationId(defaultCorrelationId(event.getCorrelationId(), event.getEventType(), event.getMovementId(), event.getProductId()), role), builder -> {
-                        builder.relatedMovementId(event.getMovementId());
-                        builder.relatedProductId(event.getProductId());
-                        builder.relatedWarehouseId(event.getWarehouseId());
-                        builder.actionUrl("/movements/" + event.getMovementId());
-                    });
-        }
+        log.debug("Ignoring movement alert event because movement anomaly alerts are not user-facing in this case study. eventType={}",
+                event != null ? event.getEventType() : null);
+    }
+
+    @Transactional
+    public void createAlertFromPaymentEvent(PaymentAlertEvent event) {
+        log.debug("Ignoring payment alert event because payment alerts are not user-facing in this case study. eventType={}",
+                event != null ? event.getEventType() : null);
+    }
+
+    @Transactional
+    public void createAlertFromSystemEvent(SystemAlertEvent event) {
+        log.warn("Ignoring technical/system alert event from sourceService={} eventType={} because technical alerts are log-only.",
+                event != null ? event.getSourceService() : null,
+                event != null ? event.getEventType() : null);
     }
 
     @Transactional
@@ -430,16 +434,22 @@ public class AlertService {
     }
 
     private Alert buildAlert(CreateAlertRequest request) {
+        String cleanMessage = sanitizedMessageFor(request.getType(), request.getMessage(), request.getUserMessage());
+        String sanitizedTechnicalDetails = sanitizeTechnicalDetails(
+                firstNonBlank(request.getTechnicalDetails(), request.getMessage()),
+                request.getType());
         return Alert.builder()
                 .alertNumber(generateAlertNumber())
                 .recipientId(request.getRecipientId())
-                .recipientRole(normalize(request.getRecipientRole()))
+                .recipientRole(notBlank(request.getRecipientRole()) ? canonicalRole(request.getRecipientRole()) : null)
                 .type(request.getType())
                 .severity(request.getSeverity())
                 .status(AlertStatus.NEW)
                 .channel(defaultChannel(request.getSeverity(), request.getChannel()))
                 .title(request.getTitle().trim())
-                .message(request.getMessage().trim())
+                .message(cleanMessage)
+                .userMessage(cleanMessage)
+                .technicalDetails(sanitizedTechnicalDetails)
                 .relatedProductId(request.getRelatedProductId())
                 .relatedWarehouseId(request.getRelatedWarehouseId())
                 .relatedPurchaseOrderId(request.getRelatedPurchaseOrderId())
@@ -449,10 +459,11 @@ public class AlertService {
                 .referenceId(normalize(request.getReferenceId()))
                 .referenceNumber(normalize(request.getReferenceNumber()))
                 .expiresAt(request.getExpiresAt())
-                .sourceService("alert-service")
+                .sourceService(SOURCE_ALERT_SERVICE)
                 .priority(priority(request.getSeverity()))
                 .actionUrl(normalize(request.getActionUrl()))
                 .metadataJson(normalize(request.getMetadataJson()))
+                .isArchived(false)
                 .build();
     }
 
@@ -470,7 +481,7 @@ public class AlertService {
             return alert;
         }
         boolean matchesUser = alert.getRecipientId() != null && Objects.equals(alert.getRecipientId(), userId);
-        boolean matchesRole = alert.getRecipientRole() != null && alert.getRecipientRole().equalsIgnoreCase(role);
+        boolean matchesRole = matchesRole(alert.getRecipientRole(), role);
         if (!matchesUser && !matchesRole) {
             throw new org.springframework.security.access.AccessDeniedException("You are not allowed to access this alert");
         }
@@ -484,10 +495,18 @@ public class AlertService {
     }
 
     private Specification<Alert> myAlertsSpec(Long userId, String role) {
+        List<String> roleVariants = canonicalRoleVariants(role);
         return (root, query, cb) -> cb.or(
                 cb.equal(root.get("recipientId"), userId),
-                cb.equal(cb.upper(root.get("recipientRole")), role.toUpperCase(Locale.ROOT))
+                cb.upper(root.get(FIELD_RECIPIENT_ROLE)).in(roleVariants),
+                cb.equal(cb.upper(root.get(FIELD_RECIPIENT_ROLE)), ROLE_ALL)
         );
+    }
+
+    private Specification<Alert> userVisibleAlertSpec() {
+        return (root, query, cb) -> cb.and(
+                cb.or(cb.isFalse(root.get("isArchived")), cb.isNull(root.get("isArchived"))),
+                root.get("type").in(USER_VISIBLE_ALERT_TYPES));
     }
 
     private Specification<Alert> searchSpec(AlertSearchRequest request) {
@@ -503,11 +522,13 @@ public class AlertService {
                 ));
             }
             if (request.getRecipientId() != null) predicates.add(cb.equal(root.get("recipientId"), request.getRecipientId()));
-            if (notBlank(request.getRecipientRole())) predicates.add(cb.equal(cb.upper(root.get("recipientRole")), request.getRecipientRole().toUpperCase(Locale.ROOT)));
+            if (notBlank(request.getRecipientRole())) {
+                predicates.add(cb.upper(root.get(FIELD_RECIPIENT_ROLE)).in(canonicalRoleVariants(request.getRecipientRole())));
+            }
             if (request.getType() != null) predicates.add(cb.equal(root.get("type"), request.getType()));
             if (request.getSeverity() != null) predicates.add(cb.equal(root.get("severity"), request.getSeverity()));
             if (request.getStatus() != null) predicates.add(cb.equal(root.get("status"), request.getStatus()));
-            if (request.getIsRead() != null) predicates.add(cb.equal(root.get("isRead"), request.getIsRead()));
+            if (request.getIsRead() != null) predicates.add(cb.equal(root.get(FIELD_IS_READ), request.getIsRead()));
             if (request.getIsAcknowledged() != null) predicates.add(cb.equal(root.get("isAcknowledged"), request.getIsAcknowledged()));
             if (request.getIsDismissed() != null) predicates.add(cb.equal(root.get("isDismissed"), request.getIsDismissed()));
             if (notBlank(request.getReferenceType())) predicates.add(cb.equal(root.get("referenceType"), request.getReferenceType()));
@@ -540,7 +561,7 @@ public class AlertService {
                 .lowStockCount(alerts.stream().filter(alert -> alert.getType() == AlertType.LOW_STOCK).count())
                 .overstockCount(alerts.stream().filter(alert -> alert.getType() == AlertType.OVERSTOCK).count())
                 .pendingPoApprovalCount(alerts.stream().filter(alert -> alert.getType() == AlertType.PO_APPROVAL_PENDING).count())
-                .overduePoCount(alerts.stream().filter(alert -> alert.getType() == AlertType.PO_OVERDUE_RECEIPT).count())
+                .overduePoCount(alerts.stream().filter(alert -> alert.getType() == AlertType.OVERDUE_RECEIPT).count())
                 .build();
     }
 
@@ -574,60 +595,26 @@ public class AlertService {
 
     private void createRoleAlertFromEvent(
             String recipientRole,
-            AlertType type,
-            AlertSeverity severity,
-            String title,
-            String message,
-            String sourceService,
-            String correlationId,
+            AlertDispatch dispatch,
             java.util.function.Consumer<Alert.AlertBuilder> customizer) {
-        if (notBlank(correlationId) && alertRepository.existsByCorrelationIdAndTypeAndRecipientRole(correlationId, type, recipientRole)) {
-            log.info("Duplicate alert event skipped correlationId={} type={} recipientRole={}", correlationId, type, recipientRole);
+        if (notBlank(dispatch.correlationId())
+                && alertRepository.existsByCorrelationIdAndTypeAndRecipientRole(dispatch.correlationId(), dispatch.type(), recipientRole)) {
+            log.info("Duplicate alert event skipped correlationId={} type={} recipientRole={}",
+                    dispatch.correlationId(), dispatch.type(), recipientRole);
             return;
         }
         Alert.AlertBuilder builder = Alert.builder()
                 .alertNumber(generateAlertNumber())
                 .recipientRole(recipientRole)
-                .type(type)
-                .severity(severity)
+                .type(dispatch.type())
+                .severity(dispatch.severity())
                 .status(AlertStatus.NEW)
-                .channel(defaultChannel(severity, null))
-                .title(title)
-                .message(message)
-                .sourceService(sourceService != null ? sourceService : "unknown")
-                .correlationId(correlationId)
-                .priority(priority(severity));
-        customizer.accept(builder);
-        Alert saved = alertRepository.save(builder.build());
-        publish("alert.created", toEvent(saved));
-        maybeSendCriticalEmail(saved);
-    }
-
-    private void createUserAlertFromEvent(
-            Long recipientId,
-            AlertType type,
-            AlertSeverity severity,
-            String title,
-            String message,
-            String sourceService,
-            String correlationId,
-            java.util.function.Consumer<Alert.AlertBuilder> customizer) {
-        if (notBlank(correlationId) && alertRepository.existsByCorrelationIdAndTypeAndRecipientId(correlationId, type, recipientId)) {
-            log.info("Duplicate alert event skipped correlationId={} type={} recipientId={}", correlationId, type, recipientId);
-            return;
-        }
-        Alert.AlertBuilder builder = Alert.builder()
-                .alertNumber(generateAlertNumber())
-                .recipientId(recipientId)
-                .type(type)
-                .severity(severity)
-                .status(AlertStatus.NEW)
-                .channel(defaultChannel(severity, null))
-                .title(title)
-                .message(message)
-                .sourceService(sourceService != null ? sourceService : "unknown")
-                .correlationId(correlationId)
-                .priority(priority(severity));
+                .channel(defaultChannel(dispatch.severity(), null))
+                .title(dispatch.title())
+                .message(dispatch.message())
+                .sourceService(dispatch.sourceService() != null ? dispatch.sourceService() : STATUS_UNKNOWN)
+                .correlationId(dispatch.correlationId())
+                .priority(priority(dispatch.severity()));
         customizer.accept(builder);
         Alert saved = alertRepository.save(builder.build());
         publish("alert.created", toEvent(saved));
@@ -646,9 +633,7 @@ public class AlertService {
 
     private AlertSeverity severityForLowStock(StockAlertEvent event) {
         BigDecimal availableQuantity = firstNonNull(event.getAvailableQuantity(), event.getCurrentQuantity());
-        if (availableQuantity != null && event.getReorderLevel() != null
-                && event.getReorderLevel().signum() > 0
-                && availableQuantity.compareTo(event.getReorderLevel().divide(BigDecimal.valueOf(2), java.math.RoundingMode.HALF_UP)) <= 0) {
+        if (availableQuantity != null && availableQuantity.compareTo(BigDecimal.valueOf(OUT_OF_STOCK_QUANTITY)) <= 0) {
             return AlertSeverity.CRITICAL;
         }
         return AlertSeverity.WARNING;
@@ -705,6 +690,30 @@ public class AlertService {
         return notBlank(event.getMessage()) ? event.getMessage() : fallback;
     }
 
+    private void createPurchaseRoleAlert(
+            PurchaseAlertEvent event,
+            String role,
+            AlertDispatch dispatch) {
+        createPurchaseRoleAlert(event, role, dispatch, purchaseOrderActionUrl(event));
+    }
+
+    private void createPurchaseRoleAlert(
+            PurchaseAlertEvent event,
+            String role,
+            AlertDispatch dispatch,
+            String actionUrl) {
+        createRoleAlertFromEvent(role, dispatch,
+                builder -> enrichPurchaseAlert(builder, event, actionUrl));
+    }
+
+    private void enrichPurchaseAlert(Alert.AlertBuilder builder, PurchaseAlertEvent event, String actionUrl) {
+        builder.relatedPurchaseOrderId(event.getPurchaseOrderId());
+        builder.referenceType(REFERENCE_PURCHASE_ORDER);
+        builder.referenceId(event.getPurchaseOrderId() == null ? null : String.valueOf(event.getPurchaseOrderId()));
+        builder.referenceNumber(event.getPurchaseOrderNumber());
+        builder.actionUrl(actionUrl);
+    }
+
     private boolean hasPurchaseAlertSignal(PurchaseAlertEvent event) {
         return event.getEventType() != null
                 || notBlank(event.getNewStatus())
@@ -716,23 +725,131 @@ public class AlertService {
         if (notBlank(event.getEventType())) {
             return event.getEventType().toUpperCase(Locale.ROOT);
         }
-        if ("PENDING_APPROVAL".equalsIgnoreCase(event.getNewStatus()) || "PENDING_APPROVAL".equalsIgnoreCase(event.getStatus())) {
+        if (matchesPurchaseStatus(event, STATUS_PENDING_PAYMENT)) {
+            return "PURCHASE_ORDER_UPDATED";
+        }
+        if (matchesPurchaseStatus(event, STATUS_PENDING_APPROVAL)) {
             return "PURCHASE_ORDER_PENDING_APPROVAL";
         }
-        if ("APPROVED".equalsIgnoreCase(event.getNewStatus()) || "APPROVED".equalsIgnoreCase(event.getStatus())) {
+        if (matchesPurchaseStatus(event, STATUS_APPROVED)) {
             return "PURCHASE_ORDER_APPROVED";
         }
-        if ("REJECTED".equalsIgnoreCase(event.getNewStatus()) || "REJECTED".equalsIgnoreCase(event.getStatus())) {
+        if (matchesPurchaseStatus(event, STATUS_REJECTED)) {
             return "PURCHASE_ORDER_REJECTED";
         }
-        if ("RECEIVED".equalsIgnoreCase(event.getNewStatus()) || "FULLY_RECEIVED".equalsIgnoreCase(event.getNewStatus())
-                || "RECEIVED".equalsIgnoreCase(event.getStatus()) || "FULLY_RECEIVED".equalsIgnoreCase(event.getStatus())) {
+        if (matchesAnyPurchaseStatus(event, STATUS_RECEIVED, STATUS_FULLY_RECEIVED)) {
             return "PURCHASE_ORDER_RECEIVED";
         }
-        if ("PARTIALLY_RECEIVED".equalsIgnoreCase(event.getNewStatus()) || "PARTIALLY_RECEIVED".equalsIgnoreCase(event.getStatus())) {
+        if (matchesPurchaseStatus(event, STATUS_PARTIALLY_RECEIVED)) {
             return "PURCHASE_ORDER_PARTIALLY_RECEIVED";
         }
+        if (matchesPurchaseStatus(event, STATUS_CANCELLED)) {
+            return "PURCHASE_ORDER_CANCELLED";
+        }
         return safe(event.getEventType()).toUpperCase(Locale.ROOT);
+    }
+
+    private boolean matchesPurchaseStatus(PurchaseAlertEvent event, String status) {
+        return status.equalsIgnoreCase(event.getNewStatus()) || status.equalsIgnoreCase(event.getStatus());
+    }
+
+    private boolean matchesAnyPurchaseStatus(PurchaseAlertEvent event, String firstStatus, String secondStatus) {
+        return matchesPurchaseStatus(event, firstStatus) || matchesPurchaseStatus(event, secondStatus);
+    }
+
+    private void handleLowStockEvent(StockAlertEvent event, String sourceService, String correlationId,
+                                     BigDecimal availableQuantity, String eventType) {
+        AlertSeverity severity = severityForLowStock(event);
+        createRoleAlertFromEvent(ROLE_MANAGER, dispatch(
+                AlertType.LOW_STOCK,
+                severity,
+                "Low Stock Alert",
+                String.format("Product stock has fallen below reorder level for %s in %s. Current quantity: %s, reorder level: %s.",
+                        safe(event.getProductName()), safe(event.getWarehouseName()), safe(availableQuantity), safe(event.getReorderLevel())),
+                sourceService,
+                correlationId), builder -> {
+                    builder.relatedProductId(event.getProductId());
+                    builder.relatedWarehouseId(event.getWarehouseId());
+                    builder.referenceType(event.getReferenceType());
+                    builder.referenceId(event.getReferenceId());
+                    builder.referenceNumber(event.getReferenceNumber());
+                    builder.actionUrl("/stocks/low-stock");
+                });
+        if (severity == AlertSeverity.CRITICAL) {
+            createRoleAlertFromEvent(ROLE_ADMIN, dispatch(
+                    AlertType.LOW_STOCK,
+                    AlertSeverity.CRITICAL,
+                    "Low Stock Alert",
+                    String.format("Critical low stock detected for %s in %s. Immediate replenishment is recommended.",
+                            safe(event.getProductName()), safe(event.getWarehouseName())),
+                    sourceService,
+                    scopedCorrelationId(event.getCorrelationId(), eventType, event.getProductId(), event.getWarehouseId(), ROLE_ADMIN)), builder -> {
+                        builder.relatedProductId(event.getProductId());
+                        builder.relatedWarehouseId(event.getWarehouseId());
+                        builder.actionUrl("/stocks/low-stock");
+                    });
+        }
+    }
+
+    private void handleOverstockEvent(StockAlertEvent event, String sourceService, String correlationId, BigDecimal availableQuantity) {
+        createRoleAlertFromEvent(ROLE_MANAGER, dispatch(
+                AlertType.OVERSTOCK,
+                AlertSeverity.WARNING,
+                "Overstock Alert",
+                String.format("Product stock exceeds the recommended maximum for %s in %s. Current quantity: %s, max stock level: %s.",
+                        safe(event.getProductName()), safe(event.getWarehouseName()), safe(availableQuantity), safe(event.getMaxStockLevel())),
+                sourceService,
+                correlationId), builder -> {
+                    builder.relatedProductId(event.getProductId());
+                    builder.relatedWarehouseId(event.getWarehouseId());
+                    builder.referenceType(event.getReferenceType());
+                    builder.referenceId(event.getReferenceId());
+                    builder.referenceNumber(event.getReferenceNumber());
+                    builder.actionUrl("/stocks/overstock");
+                });
+    }
+
+    private void handleSubmittedOrPendingPurchaseEvent(PurchaseAlertEvent event, String sourceService, String baseCorrelationId) {
+        AlertDispatch dispatch = dispatch(
+                AlertType.PO_APPROVAL_PENDING,
+                AlertSeverity.INFO,
+                "Purchase Order Pending Approval",
+                defaultMessage(event, String.format("Purchase order %s from the purchase officer is waiting for approval.",
+                        safe(event.getPurchaseOrderNumber()))),
+                sourceService,
+                null);
+        createPurchaseRoleAlert(event, ROLE_MANAGER, dispatch.withCorrelationId(scopedCorrelationId(baseCorrelationId, ROLE_MANAGER)));
+        createPurchaseRoleAlert(event, ROLE_ADMIN, dispatch.withCorrelationId(scopedCorrelationId(baseCorrelationId, ROLE_ADMIN)));
+    }
+
+    private void handleOverduePurchaseEvent(PurchaseAlertEvent event, String sourceService, String baseCorrelationId) {
+        AlertSeverity severity = resolveOverdueSeverity(event.getDaysOverdue());
+        for (String role : List.of(ROLE_STAFF, ROLE_MANAGER, ROLE_ADMIN)) {
+            createPurchaseRoleAlert(event, role, dispatch(
+                    AlertType.OVERDUE_RECEIPT,
+                    severity,
+                    "Overdue Receipt Alert",
+                    defaultMessage(event, String.format("PO %s expected delivery date has passed without GRN. Overdue by %s day(s).",
+                            safe(event.getPurchaseOrderNumber()), safe(event.getDaysOverdue()))),
+                    sourceService,
+                    scopedCorrelationId(baseCorrelationId, role)), "/purchase-orders/receiving");
+        }
+    }
+
+    private AlertSeverity resolveOverdueSeverity(Integer daysOverdue) {
+        return daysOverdue != null && daysOverdue >= overdueCriticalDays
+                ? AlertSeverity.CRITICAL
+                : AlertSeverity.WARNING;
+    }
+
+    private AlertDispatch dispatch(
+            AlertType type,
+            AlertSeverity severity,
+            String title,
+            String message,
+            String sourceService,
+            String correlationId) {
+        return new AlertDispatch(type, severity, title, message, sourceService, correlationId);
     }
 
     private String purchaseOrderActionUrl(PurchaseAlertEvent event) {
@@ -775,6 +892,113 @@ public class AlertService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    private String firstNonBlank(String preferred, String fallback) {
+        return notBlank(preferred) ? preferred : fallback;
+    }
+
+    private String sanitizedMessageFor(AlertType type, String message, String userMessage) {
+        String preferred = firstNonBlank(userMessage, message);
+        if (type == AlertType.SYSTEM_ERROR) {
+            return sanitizeUserMessage(preferred);
+        }
+        return normalize(preferred);
+    }
+
+    private String sanitizeUserMessage(String value) {
+        if (!notBlank(value)) {
+            return "A system operation failed. Please try again or contact admin.";
+        }
+        String normalized = value.trim();
+        String lowered = normalized.toLowerCase(Locale.ROOT);
+        if (lowered.contains("movement") && lowered.contains("revers")) {
+            return "Movement reversal failed. Please try again or contact admin.";
+        }
+        if (lowered.contains("could not execute statement")
+                || lowered.contains("data truncated")
+                || lowered.contains("jdbc")
+                || lowered.contains("sql")
+                || lowered.contains("stack")
+                || lowered.contains("exception")) {
+            return "A system operation failed. Please try again or contact admin.";
+        }
+        return truncate(normalized, 2000);
+    }
+
+    private String sanitizeTechnicalDetails(String value, AlertType type) {
+        if (!notBlank(value) || type != AlertType.SYSTEM_ERROR) {
+            return null;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (normalized.contains("select ") || normalized.contains("insert ") || normalized.contains("update ")
+                || normalized.contains("delete ") || normalized.contains("jdbc") || normalized.contains("sql")
+                || normalized.contains("stack") || normalized.contains("exception")) {
+            return "System error details were captured in backend logs for further investigation.";
+        }
+        return truncate(value.trim(), 2000);
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    private List<String> resolveBroadcastRoles(CreateBroadcastAlertRequest request) {
+        LinkedHashSet<String> resolved = new LinkedHashSet<>();
+        for (String role : request.resolveRecipientRoles()) {
+            String canonicalRole = canonicalRole(role);
+            if (ROLE_ALL.equals(canonicalRole)) {
+                resolved.addAll(BROADCAST_ROLES);
+            } else if (canonicalRole != null) {
+                resolved.add(canonicalRole);
+            }
+        }
+        return new ArrayList<>(resolved);
+    }
+
+    private String canonicalRole(String role) {
+        if (!notBlank(role)) {
+            return null;
+        }
+        return switch (role.trim().toUpperCase(Locale.ROOT)) {
+            case ROLE_ALL -> ROLE_ALL;
+            case ROLE_ADMIN -> ROLE_ADMIN;
+            case ROLE_MANAGER, ROLE_MANAGER_ALIAS -> ROLE_MANAGER;
+            case ROLE_OFFICER, ROLE_OFFICER_ALIAS -> ROLE_OFFICER;
+            case ROLE_STAFF, ROLE_STAFF_ALIAS -> ROLE_STAFF;
+            default -> throw new IllegalArgumentException("Unsupported target role: " + role);
+        };
+    }
+
+    private List<String> canonicalRoleVariants(String role) {
+        String canonicalRole = canonicalRole(role);
+        if (!notBlank(canonicalRole)) {
+            return List.of();
+        }
+        if (ROLE_ALL.equals(canonicalRole) || ROLE_ADMIN.equals(canonicalRole)) {
+            return List.of(canonicalRole);
+        }
+        if (ROLE_MANAGER.equals(canonicalRole)) {
+            return List.of(ROLE_MANAGER, ROLE_MANAGER_ALIAS);
+        }
+        if (ROLE_OFFICER.equals(canonicalRole)) {
+            return List.of(ROLE_OFFICER, ROLE_OFFICER_ALIAS);
+        }
+        if (ROLE_STAFF.equals(canonicalRole)) {
+            return List.of(ROLE_STAFF, ROLE_STAFF_ALIAS);
+        }
+        return List.of(canonicalRole);
+    }
+
+    private boolean matchesRole(String alertRecipientRole, String authenticatedRole) {
+        if (!notBlank(alertRecipientRole) || !notBlank(authenticatedRole)) {
+            return false;
+        }
+        return canonicalRoleVariants(authenticatedRole).contains(alertRecipientRole.trim().toUpperCase(Locale.ROOT))
+                || ROLE_ALL.equalsIgnoreCase(alertRecipientRole);
+    }
+
     private boolean notBlank(String value) {
         return value != null && !value.isBlank();
     }
@@ -783,7 +1007,16 @@ public class AlertService {
         return value == null ? "-" : String.valueOf(value);
     }
 
-    private String stringify(Object value) {
-        return value == null ? null : String.valueOf(value);
+    private record AlertDispatch(
+            AlertType type,
+            AlertSeverity severity,
+            String title,
+            String message,
+            String sourceService,
+            String correlationId) {
+
+        private AlertDispatch withCorrelationId(String updatedCorrelationId) {
+            return new AlertDispatch(type, severity, title, message, sourceService, updatedCorrelationId);
+        }
     }
 }

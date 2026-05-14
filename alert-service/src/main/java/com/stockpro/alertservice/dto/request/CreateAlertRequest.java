@@ -32,5 +32,7 @@ public class CreateAlertRequest {
     private String referenceNumber;
     private LocalDateTime expiresAt;
     private String actionUrl;
+    private String userMessage;
+    private String technicalDetails;
     private String metadataJson;
 }

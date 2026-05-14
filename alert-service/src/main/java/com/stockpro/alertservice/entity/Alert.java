@@ -70,6 +70,12 @@ public class Alert {
     @Column(nullable = false, length = 2000)
     private String message;
 
+    @Column(length = 2000)
+    private String userMessage;
+
+    @Column(length = 2000)
+    private String technicalDetails;
+
     private Long relatedProductId;
     private Long relatedWarehouseId;
     private Long relatedPurchaseOrderId;
@@ -93,6 +99,9 @@ public class Alert {
 
     @Column(nullable = false)
     private Boolean isDismissed;
+
+    @Column(nullable = false)
+    private Boolean isArchived;
 
     private LocalDateTime readAt;
     private LocalDateTime acknowledgedAt;
@@ -142,6 +151,9 @@ public class Alert {
         }
         if (isDismissed == null) {
             isDismissed = false;
+        }
+        if (isArchived == null) {
+            isArchived = false;
         }
     }
 }

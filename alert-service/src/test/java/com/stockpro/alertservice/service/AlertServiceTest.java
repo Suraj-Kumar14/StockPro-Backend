@@ -1,8 +1,9 @@
 package com.stockpro.alertservice.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -24,9 +25,11 @@ import com.stockpro.alertservice.enums.AlertSeverity;
 import com.stockpro.alertservice.enums.AlertStatus;
 import com.stockpro.alertservice.enums.AlertType;
 import com.stockpro.alertservice.events.MovementAlertEvent;
+import com.stockpro.alertservice.events.PaymentAlertEvent;
 import com.stockpro.alertservice.events.PurchaseAlertEvent;
 import com.stockpro.alertservice.events.StockAlertEvent;
 import com.stockpro.alertservice.events.SupplierAlertEvent;
+import com.stockpro.alertservice.events.SystemAlertEvent;
 import com.stockpro.alertservice.exception.InvalidAlertException;
 import com.stockpro.alertservice.mail.EmailNotificationService;
 import com.stockpro.alertservice.rabbitmq.AlertEventPublisher;
@@ -71,7 +74,7 @@ class AlertServiceTest {
     @BeforeEach
     void setUp() {
         request = new CreateAlertRequest();
-        request.setRecipientRole("MANAGER");
+        request.setRecipientRole("INVENTORY_MANAGER");
         request.setType(AlertType.LOW_STOCK);
         request.setSeverity(AlertSeverity.WARNING);
         request.setChannel(AlertChannel.IN_APP);
@@ -81,7 +84,7 @@ class AlertServiceTest {
         alert = Alert.builder()
                 .alertId(1L)
                 .alertNumber("ALT-20260501-000001")
-                .recipientRole("MANAGER")
+                .recipientRole("INVENTORY_MANAGER")
                 .type(AlertType.LOW_STOCK)
                 .severity(AlertSeverity.WARNING)
                 .status(AlertStatus.NEW)
@@ -92,6 +95,7 @@ class AlertServiceTest {
                 .isAcknowledged(false)
                 .isDismissed(false)
                 .createdAt(LocalDateTime.now())
+                .isArchived(false)
                 .build();
 
         org.mockito.Mockito.lenient().when(alertMapper.toResponse(any(Alert.class)))
@@ -116,9 +120,32 @@ class AlertServiceTest {
     }
 
     @Test
+    void createAlert_shouldSanitizeSystemErrorMessageBeforeSaving() {
+        request.setType(AlertType.SYSTEM_ERROR);
+        request.setSeverity(AlertSeverity.CRITICAL);
+        request.setMessage("could not execute statement [Data truncated for column 'movement_type']");
+        request.setUserMessage("Movement reversal failed due to invalid movement type configuration.");
+        request.setTechnicalDetails("java.sql.SQLException: Data truncated for column 'movement_type'");
+
+        when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
+        when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(emailNotificationService.sendCriticalAlertEmail(any(), any())).thenReturn(false);
+
+        AlertResponse response = alertService.createAlert(request, 77L);
+
+        ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
+        verify(alertRepository).save(captor.capture());
+        assertEquals("Movement reversal failed. Please try again or contact admin.", response.getMessage());
+        assertEquals("Movement reversal failed. Please try again or contact admin.", response.getUserMessage());
+        assertEquals("Movement reversal failed. Please try again or contact admin.", captor.getValue().getMessage());
+        assertEquals("System error details were captured in backend logs for further investigation.",
+                captor.getValue().getTechnicalDetails());
+    }
+
+    @Test
     void createBroadcastAlert_shouldCreateAlertsForRolesAndRecipients() {
         CreateBroadcastAlertRequest broadcast = new CreateBroadcastAlertRequest();
-        broadcast.setRecipientRoles(List.of("MANAGER", "ADMIN"));
+        broadcast.setRecipientRoles(List.of("INVENTORY_MANAGER", "ADMIN"));
         broadcast.setRecipientIds(List.of(11L));
         broadcast.setSeverity(AlertSeverity.WARNING);
         broadcast.setTitle("System message");
@@ -135,14 +162,48 @@ class AlertServiceTest {
     }
 
     @Test
+    void createBroadcastAlert_shouldExpandAllAndCanonicalizeFrontendRoles() {
+        CreateBroadcastAlertRequest broadcast = new CreateBroadcastAlertRequest();
+        broadcast.setTargetRole("ALL");
+        broadcast.setRecipientRoles(List.of("INVENTORY_MANAGER", "PURCHASE_OFFICER", "WAREHOUSE_STAFF"));
+        broadcast.setSeverity(AlertSeverity.INFO);
+        broadcast.setTitle("System message");
+        broadcast.setMessage("Read this");
+
+        when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
+        when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<AlertResponse> responses = alertService.createBroadcastAlert(broadcast, 7L);
+
+        ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
+        verify(alertRepository, org.mockito.Mockito.times(4)).save(captor.capture());
+        List<String> roles = captor.getAllValues().stream().map(Alert::getRecipientRole).toList();
+        assertEquals(4, responses.size());
+        assertTrue(roles.containsAll(List.of("ADMIN", "INVENTORY_MANAGER", "PURCHASE_OFFICER", "WAREHOUSE_STAFF")));
+    }
+
+    @Test
+    void createBroadcastAlert_shouldRejectUnsupportedRole() {
+        CreateBroadcastAlertRequest broadcast = new CreateBroadcastAlertRequest();
+        broadcast.setRecipientRoles(List.of("UNKNOWN_ROLE"));
+        broadcast.setSeverity(AlertSeverity.INFO);
+        broadcast.setTitle("System message");
+        broadcast.setMessage("Read this");
+
+        doNothing().when(validationService).validateBroadcast(broadcast);
+
+        assertThrows(IllegalArgumentException.class, () -> alertService.createBroadcastAlert(broadcast, 7L));
+    }
+
+    @Test
     void markAsRead_shouldUpdateStatus() {
         when(alertRepository.findByAlertId(1L)).thenReturn(Optional.of(alert));
         when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        AlertResponse response = alertService.markAsRead(1L, 7L, "MANAGER", false);
+        AlertResponse response = alertService.markAsRead(1L, 7L, "INVENTORY_MANAGER", false);
 
         assertEquals(AlertStatus.READ, response.getStatus());
-        assertFalse(Boolean.FALSE.equals(response.getIsRead()));
+        assertNotEquals(Boolean.FALSE, response.getIsRead());
         verify(alertEventPublisher).publish(eq("alert.read"), any());
     }
 
@@ -157,9 +218,9 @@ class AlertServiceTest {
 
     @Test
     void getMyAlertsAndSearchAlerts_shouldDelegateToRepository() {
-        AlertSearchRequest request = AlertSearchRequest.builder()
+        AlertSearchRequest searchRequest = AlertSearchRequest.builder()
                 .keyword("low")
-                .recipientRole("MANAGER")
+                .recipientRole("INVENTORY_MANAGER")
                 .page(0)
                 .size(5)
                 .sortBy("createdAt")
@@ -168,9 +229,9 @@ class AlertServiceTest {
         when(alertRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(alert)));
 
-        var mine = alertService.getMyAlerts(7L, "MANAGER", request);
-        var adminSearch = alertService.searchAlerts(request, 7L, "MANAGER", true);
-        var userSearch = alertService.searchAlerts(request, 7L, "MANAGER", false);
+        var mine = alertService.getMyAlerts(7L, "INVENTORY_MANAGER", searchRequest);
+        var adminSearch = alertService.searchAlerts(searchRequest, 7L, "INVENTORY_MANAGER", true);
+        var userSearch = alertService.searchAlerts(searchRequest, 7L, "INVENTORY_MANAGER", false);
 
         assertEquals(1, mine.getTotalElements());
         assertEquals(1, adminSearch.getTotalElements());
@@ -190,10 +251,10 @@ class AlertServiceTest {
         when(alertRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
                 .thenReturn(List.of(unread));
 
-        AlertResponse acknowledged = alertService.acknowledgeAlert(1L, new AcknowledgeAlertRequest(), 7L, "MANAGER", false);
-        AlertResponse dismissed = alertService.dismissAlert(1L, new DismissAlertRequest(), 7L, "MANAGER", true);
+        AlertResponse acknowledged = alertService.acknowledgeAlert(1L, new AcknowledgeAlertRequest(), 7L, "INVENTORY_MANAGER", false);
+        AlertResponse dismissed = alertService.dismissAlert(1L, new DismissAlertRequest(), 7L, "INVENTORY_MANAGER", true);
         AlertResponse resolved = alertService.resolveAlert(1L, 8L);
-        alertService.markAllAsRead(7L, "MANAGER");
+        alertService.markAllAsRead(7L, "INVENTORY_MANAGER");
 
         assertEquals(AlertStatus.ACKNOWLEDGED, acknowledged.getStatus());
         assertEquals(AlertStatus.DISMISSED, dismissed.getStatus());
@@ -205,13 +266,29 @@ class AlertServiceTest {
     }
 
     @Test
+    void acknowledgeAlert_shouldBeIdempotentWhenAlreadyAcknowledged() {
+        Alert acknowledged = copyAlert(alert);
+        acknowledged.setStatus(AlertStatus.ACKNOWLEDGED);
+        acknowledged.setIsAcknowledged(true);
+        when(alertRepository.findByAlertId(1L)).thenReturn(Optional.of(acknowledged));
+
+        AlertResponse response = alertService.acknowledgeAlert(1L, new AcknowledgeAlertRequest(), 7L, "INVENTORY_MANAGER", false);
+
+        assertEquals(AlertStatus.ACKNOWLEDGED, response.getStatus());
+        verify(alertRepository, never()).save(any(Alert.class));
+        verify(alertEventPublisher, never()).publish(eq("alert.acknowledged"), any());
+    }
+
+    @Test
     void acknowledgeAlert_shouldRejectDismissedAlert() {
         Alert dismissed = copyAlert(alert);
         dismissed.setStatus(AlertStatus.DISMISSED);
         when(alertRepository.findByAlertId(1L)).thenReturn(Optional.of(dismissed));
 
+        AcknowledgeAlertRequest acknowledgeRequest = new AcknowledgeAlertRequest();
+
         assertThrows(InvalidAlertException.class,
-                () -> alertService.acknowledgeAlert(1L, new AcknowledgeAlertRequest(), 7L, "MANAGER", true));
+                () -> alertService.acknowledgeAlert(1L, acknowledgeRequest, 7L, "INVENTORY_MANAGER", true));
     }
 
     @Test
@@ -227,17 +304,15 @@ class AlertServiceTest {
         second.setIsRead(true);
         second.setIsAcknowledged(true);
         second.setCreatedAt(LocalDateTime.now().minusDays(1));
-        when(alertRepository.countByRecipientIdAndIsReadFalse(7L)).thenReturn(2L);
-        when(alertRepository.countByRecipientRoleAndIsReadFalse("MANAGER")).thenReturn(3L);
+        when(alertRepository.count(any(org.springframework.data.jpa.domain.Specification.class))).thenReturn(1L);
         when(alertRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class))).thenReturn(List.of(alert, second));
-        when(alertRepository.findAll()).thenReturn(List.of(alert, second));
 
-        long unread = alertService.getUnreadCount(7L, "MANAGER");
-        AlertSummaryResponse mySummary = alertService.getMyAlertSummary(7L, "MANAGER");
+        long unread = alertService.getUnreadCount(7L, "INVENTORY_MANAGER");
+        AlertSummaryResponse mySummary = alertService.getMyAlertSummary(7L, "INVENTORY_MANAGER");
         AlertSummaryResponse systemSummary = alertService.getSystemAlertSummary();
         AlertAnalyticsResponse analytics = alertService.getAlertAnalytics(LocalDateTime.now().minusDays(2), LocalDateTime.now());
 
-        assertEquals(5L, unread);
+        assertEquals(1L, unread);
         assertEquals(2L, mySummary.getTotalAlerts());
         assertEquals(2L, systemSummary.getTotalAlerts());
         assertEquals(2, analytics.getAlertsByType().size());
@@ -274,11 +349,11 @@ class AlertServiceTest {
         event.setWarehouseId(4L);
         event.setProductName("Widget");
         event.setWarehouseName("Central");
-        event.setAvailableQuantity(BigDecimal.valueOf(2));
+        event.setAvailableQuantity(BigDecimal.ZERO);
         event.setReorderLevel(BigDecimal.valueOf(10));
         event.setCorrelationId("stock-9-4");
 
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("stock-9-4", AlertType.LOW_STOCK, "MANAGER")).thenReturn(false);
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("stock-9-4", AlertType.LOW_STOCK, "INVENTORY_MANAGER")).thenReturn(false);
         when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("stock-9-4:ADMIN", AlertType.LOW_STOCK, "ADMIN")).thenReturn(false);
         when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
         when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -303,22 +378,37 @@ class AlertServiceTest {
         overstock.setMaxStockLevel(BigDecimal.valueOf(12));
         overstock.setCorrelationId("over-10-4");
 
-        StockAlertEvent transfer = new StockAlertEvent();
-        transfer.setEventType("STOCK_TRANSFER_COMPLETED");
-        transfer.setProductId(10L);
-        transfer.setWarehouseId(4L);
-        transfer.setProductName("Widget");
-        transfer.setCorrelationId("transfer-10-4");
-
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("over-10-4", AlertType.OVERSTOCK, "MANAGER")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("transfer-10-4", AlertType.STOCK_TRANSFER, "STAFF")).thenReturn(false);
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("over-10-4", AlertType.OVERSTOCK, "INVENTORY_MANAGER")).thenReturn(false);
         when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
         when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         alertService.createAlertFromStockEvent(overstock);
-        alertService.createAlertFromStockEvent(transfer);
 
-        verify(alertRepository, org.mockito.Mockito.atLeast(2)).save(any(Alert.class));
+        verify(alertRepository, org.mockito.Mockito.times(1)).save(any(Alert.class));
+    }
+
+    @Test
+    void createAlertFromStockEvent_shouldHandleStockUpdatedAndTransferInitiated() {
+        StockAlertEvent updated = new StockAlertEvent();
+        updated.setEventType("STOCK_UPDATED");
+        updated.setProductId(11L);
+        updated.setWarehouseId(2L);
+        updated.setProductName("Cable");
+        updated.setWarehouseName("North");
+        updated.setAvailableQuantity(BigDecimal.valueOf(14));
+        updated.setCorrelationId("stock-updated");
+
+        StockAlertEvent transferInitiated = new StockAlertEvent();
+        transferInitiated.setEventType("STOCK_TRANSFER_INITIATED");
+        transferInitiated.setProductId(11L);
+        transferInitiated.setWarehouseId(2L);
+        transferInitiated.setProductName("Cable");
+        transferInitiated.setCorrelationId("stock-transfer-start");
+
+        alertService.createAlertFromStockEvent(updated);
+        alertService.createAlertFromStockEvent(transferInitiated);
+
+        verify(alertRepository, never()).save(any(Alert.class));
     }
 
     @Test
@@ -331,7 +421,7 @@ class AlertServiceTest {
         event.setCorrelationId("purchase.pending-approval:44:7");
         event.setCreatedBy(7L);
 
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("purchase.pending-approval:44:7:MANAGER", AlertType.PO_APPROVAL_PENDING, "MANAGER"))
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("purchase.pending-approval:44:7:INVENTORY_MANAGER", AlertType.PO_APPROVAL_PENDING, "INVENTORY_MANAGER"))
                 .thenReturn(false);
         when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("purchase.pending-approval:44:7:ADMIN", AlertType.PO_APPROVAL_PENDING, "ADMIN"))
                 .thenReturn(false);
@@ -342,7 +432,7 @@ class AlertServiceTest {
 
         ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
         verify(alertRepository, org.mockito.Mockito.times(2)).save(captor.capture());
-        assertEquals("MANAGER", captor.getAllValues().get(0).getRecipientRole());
+        assertEquals("INVENTORY_MANAGER", captor.getAllValues().get(0).getRecipientRole());
         assertEquals("ADMIN", captor.getAllValues().get(1).getRecipientRole());
         assertEquals("/purchase-orders/44", captor.getAllValues().get(0).getActionUrl());
         assertEquals(AlertType.PO_APPROVAL_PENDING, captor.getAllValues().get(0).getType());
@@ -355,7 +445,7 @@ class AlertServiceTest {
         event.setPurchaseOrderNumber("PO-20260505-0002");
         event.setStatus("PENDING_APPROVAL");
 
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("PURCHASE_ORDER_PENDING_APPROVAL:45:-:MANAGER", AlertType.PO_APPROVAL_PENDING, "MANAGER"))
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("PURCHASE_ORDER_PENDING_APPROVAL:45:-:INVENTORY_MANAGER", AlertType.PO_APPROVAL_PENDING, "INVENTORY_MANAGER"))
                 .thenReturn(false);
         when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("PURCHASE_ORDER_PENDING_APPROVAL:45:-:ADMIN", AlertType.PO_APPROVAL_PENDING, "ADMIN"))
                 .thenReturn(false);
@@ -366,7 +456,8 @@ class AlertServiceTest {
 
         ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
         verify(alertRepository, org.mockito.Mockito.times(2)).save(captor.capture());
-        assertEquals("Purchase order PO-20260505-0002 is pending approval.", captor.getAllValues().get(0).getMessage());
+        assertEquals("Purchase order PO-20260505-0002 from the purchase officer is waiting for approval.",
+                captor.getAllValues().get(0).getMessage());
     }
 
     @Test
@@ -395,12 +486,9 @@ class AlertServiceTest {
         received.setPurchaseOrderId(53L);
         received.setPurchaseOrderNumber("PO-53");
 
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("po-overdue:OFFICER", AlertType.PO_OVERDUE_RECEIPT, "OFFICER")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("po-overdue:MANAGER", AlertType.PO_OVERDUE_RECEIPT, "MANAGER")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("po-overdue:ADMIN", AlertType.PO_OVERDUE_RECEIPT, "ADMIN")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientId("PURCHASE.APPROVED:51:9", AlertType.PO_APPROVED, 9L)).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientId("PURCHASE.REJECTED:52:10", AlertType.PO_REJECTED, 10L)).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("PURCHASE.RECEIVED:53:-:OFFICER", AlertType.PO_RECEIVED, "OFFICER")).thenReturn(false);
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("po-overdue:WAREHOUSE_STAFF", AlertType.OVERDUE_RECEIPT, "WAREHOUSE_STAFF")).thenReturn(false);
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("po-overdue:INVENTORY_MANAGER", AlertType.OVERDUE_RECEIPT, "INVENTORY_MANAGER")).thenReturn(false);
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("po-overdue:ADMIN", AlertType.OVERDUE_RECEIPT, "ADMIN")).thenReturn(false);
         when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
         when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(emailNotificationService.sendCriticalAlertEmail(any(), any())).thenReturn(false);
@@ -410,7 +498,166 @@ class AlertServiceTest {
         alertService.createAlertFromPurchaseEvent(rejected);
         alertService.createAlertFromPurchaseEvent(received);
 
-        verify(alertRepository, org.mockito.Mockito.atLeast(6)).save(any(Alert.class));
+        verify(alertRepository, org.mockito.Mockito.times(3)).save(any(Alert.class));
+    }
+
+    @Test
+    void createAlertFromPurchaseEvent_shouldHandleCreatedSubmittedCancelledAndPaymentPending() {
+        PurchaseAlertEvent created = new PurchaseAlertEvent();
+        created.setEventType("purchase.created");
+        created.setPurchaseOrderId(61L);
+        created.setPurchaseOrderNumber("PO-61");
+
+        PurchaseAlertEvent submitted = new PurchaseAlertEvent();
+        submitted.setEventType("purchase.submitted");
+        submitted.setPurchaseOrderId(62L);
+        submitted.setPurchaseOrderNumber("PO-62");
+        submitted.setCreatedBy(15L);
+
+        PurchaseAlertEvent cancelled = new PurchaseAlertEvent();
+        cancelled.setEventType("purchase.cancelled");
+        cancelled.setPurchaseOrderId(63L);
+        cancelled.setPurchaseOrderNumber("PO-63");
+
+        PurchaseAlertEvent pendingPayment = new PurchaseAlertEvent();
+        pendingPayment.setEventType("purchase.updated");
+        pendingPayment.setPurchaseOrderId(64L);
+        pendingPayment.setPurchaseOrderNumber("PO-64");
+        pendingPayment.setNewStatus("PENDING_PAYMENT");
+
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("PURCHASE.SUBMITTED:62:15:INVENTORY_MANAGER", AlertType.PO_APPROVAL_PENDING, "INVENTORY_MANAGER")).thenReturn(false);
+        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("PURCHASE.SUBMITTED:62:15:ADMIN", AlertType.PO_APPROVAL_PENDING, "ADMIN")).thenReturn(false);
+        when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
+        when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        alertService.createAlertFromPurchaseEvent(created);
+        alertService.createAlertFromPurchaseEvent(submitted);
+        alertService.createAlertFromPurchaseEvent(cancelled);
+        alertService.createAlertFromPurchaseEvent(pendingPayment);
+
+        verify(alertRepository, org.mockito.Mockito.times(2)).save(any(Alert.class));
+    }
+
+    @Test
+    void createAlertFromPaymentAndSystemEvents_shouldCreateExpectedAlerts() {
+        PaymentAlertEvent paymentFailed = new PaymentAlertEvent();
+        paymentFailed.setEventType("payment.failed");
+        paymentFailed.setPaymentId(71L);
+        paymentFailed.setPaymentNumber("PAY-71");
+        paymentFailed.setPurchaseOrderId(171L);
+        paymentFailed.setPurchaseOrderNumber("PO-171");
+        paymentFailed.setCorrelationId("payment-failed");
+
+        SystemAlertEvent systemAlert = new SystemAlertEvent();
+        systemAlert.setEventType("UNAUTHORIZED_ACCESS");
+        systemAlert.setSeverity(AlertSeverity.CRITICAL);
+        systemAlert.setTitle("Unauthorized Access Attempt");
+        systemAlert.setMessage("Forbidden access blocked.");
+        systemAlert.setRecipientRoles(List.of("ADMIN"));
+        systemAlert.setCorrelationId("system-unauthorized");
+
+        alertService.createAlertFromPaymentEvent(paymentFailed);
+        alertService.createAlertFromSystemEvent(systemAlert);
+
+        verify(alertRepository, never()).save(any(Alert.class));
+    }
+
+    @Test
+    void createAlertFromPaymentEvent_shouldHandlePendingInitiatedCancelledLimitAndSplitBranches() {
+        PaymentAlertEvent pending = paymentEvent("payment.pending", "pending-correlation");
+        PaymentAlertEvent initiated = paymentEvent("payment.initiated", "initiated-correlation");
+        PaymentAlertEvent cancelled = paymentEvent("payment.cancelled", "cancelled-correlation");
+        PaymentAlertEvent limited = paymentEvent("payment.limit_exceeded", "limit-correlation");
+        PaymentAlertEvent split = paymentEvent("payment.split_recommended", "split-correlation");
+        split.setPaymentNumber(null);
+        split.setPaymentReference("PAY-REF-75");
+        split.setActionUrl(" /payments/custom ");
+
+        alertService.createAlertFromPaymentEvent(pending);
+        alertService.createAlertFromPaymentEvent(initiated);
+        alertService.createAlertFromPaymentEvent(cancelled);
+        alertService.createAlertFromPaymentEvent(limited);
+        alertService.createAlertFromPaymentEvent(split);
+
+        verify(alertRepository, never()).save(any(Alert.class));
+    }
+
+    @Test
+    void createAlertFromPurchaseEvent_shouldHandlePartialReceivedAndCancelledStatusFallbacks() {
+        PurchaseAlertEvent partial = new PurchaseAlertEvent();
+        partial.setPurchaseOrderId(66L);
+        partial.setPurchaseOrderNumber("PO-66");
+        partial.setStatus("PARTIALLY_RECEIVED");
+
+        PurchaseAlertEvent cancelled = new PurchaseAlertEvent();
+        cancelled.setPurchaseOrderId(67L);
+        cancelled.setPurchaseOrderNumber("PO-67");
+        cancelled.setStatus("CANCELLED");
+
+        alertService.createAlertFromPurchaseEvent(partial);
+        alertService.createAlertFromPurchaseEvent(cancelled);
+
+        verify(alertRepository, never()).save(any(Alert.class));
+    }
+
+    @Test
+    void createAlertFromSystemEvent_shouldDefaultRoleAndCreateRecipientIdAlerts() {
+        SystemAlertEvent systemAlert = new SystemAlertEvent();
+        systemAlert.setTitle("System Failure");
+        systemAlert.setMessage("Critical path failed");
+        systemAlert.setUserMessage("Movement reversal failed due to invalid movement type configuration.");
+        systemAlert.setTechnicalDetails("insert into stock_movements values (?, ?, ?)");
+        systemAlert.setRecipientIds(List.of(91L, 92L));
+        systemAlert.setReferenceType("HTTP_PATH");
+        systemAlert.setReferenceId("/health");
+        systemAlert.setActionUrl(" /ops ");
+        systemAlert.setExpiresAt(LocalDateTime.now().plusDays(1));
+
+        alertService.createAlertFromSystemEvent(systemAlert);
+
+        verify(alertRepository, never()).save(any(Alert.class));
+    }
+
+    @Test
+    void getAlertById_shouldNeverExposeTechnicalDetailsInResponse() {
+        Alert systemAlert = copyAlert(alert);
+        systemAlert.setType(AlertType.SYSTEM_ERROR);
+        systemAlert.setMessage("Movement reversal failed. Please try again or contact admin.");
+        systemAlert.setUserMessage("Movement reversal failed. Please try again or contact admin.");
+        systemAlert.setTechnicalDetails("System error details were captured in backend logs for further investigation.");
+        when(alertRepository.findByAlertId(1L)).thenReturn(Optional.of(systemAlert));
+
+        AlertResponse staffView = alertService.getAlertById(1L, 7L, "INVENTORY_MANAGER", false);
+        AlertResponse adminView = alertService.getAlertById(1L, 7L, "ADMIN", true);
+
+        assertEquals("Movement reversal failed. Please try again or contact admin.", staffView.getMessage());
+        assertEquals("Movement reversal failed. Please try again or contact admin.", adminView.getMessage());
+    }
+
+    @Test
+    void createBroadcastAlert_shouldRejectMissingRecipients() {
+        CreateBroadcastAlertRequest broadcast = new CreateBroadcastAlertRequest();
+        broadcast.setSeverity(AlertSeverity.INFO);
+        broadcast.setTitle("System message");
+        broadcast.setMessage("Read this");
+
+        org.mockito.Mockito.doAnswer(invocation -> {
+            new AlertValidationService().validateBroadcast(invocation.getArgument(0));
+            return null;
+        }).when(validationService).validateBroadcast(any(CreateBroadcastAlertRequest.class));
+
+        assertThrows(InvalidAlertException.class, () -> alertService.createBroadcastAlert(broadcast, 7L));
+    }
+
+    @Test
+    void getAlertById_shouldAllowLegacyShortRoleRowsForCanonicalRoleUsers() {
+        Alert legacyRoleAlert = copyAlert(alert);
+        legacyRoleAlert.setRecipientRole("STAFF");
+        when(alertRepository.findByAlertId(3L)).thenReturn(Optional.of(legacyRoleAlert));
+
+        AlertResponse response = alertService.getAlertById(3L, 21L, "WAREHOUSE_STAFF", false);
+
+        assertEquals("STAFF", response.getRecipientRole());
     }
 
     @Test
@@ -436,16 +683,6 @@ class AlertServiceTest {
         movement.setMessage("Unusual stock drop");
         movement.setCorrelationId("movement-anomaly");
 
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("supplier-blacklisted:OFFICER", AlertType.SUPPLIER_BLACKLISTED, "OFFICER")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("supplier-blacklisted:ADMIN", AlertType.SUPPLIER_BLACKLISTED, "ADMIN")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("supplier-blacklisted:MANAGER", AlertType.SUPPLIER_BLACKLISTED, "MANAGER")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("supplier-deactivated:OFFICER", AlertType.SUPPLIER_DEACTIVATED, "OFFICER")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("supplier-deactivated:ADMIN", AlertType.SUPPLIER_DEACTIVATED, "ADMIN")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("supplier-deactivated:MANAGER", AlertType.SUPPLIER_DEACTIVATED, "MANAGER")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("movement-anomaly:MANAGER", AlertType.MOVEMENT_ANOMALY, "MANAGER")).thenReturn(false);
-        when(alertRepository.existsByCorrelationIdAndTypeAndRecipientRole("movement-anomaly:ADMIN", AlertType.MOVEMENT_ANOMALY, "ADMIN")).thenReturn(false);
-        when(alertRepository.findTopByAlertNumberStartingWithOrderByAlertNumberDesc(any())).thenReturn(Optional.empty());
-        when(alertRepository.save(any(Alert.class))).thenAnswer(invocation -> invocation.getArgument(0));
         Alert expired = copyAlert(alert);
         expired.setExpiresAt(LocalDateTime.now().minusDays(1));
         expired.setStatus(AlertStatus.NEW);
@@ -458,7 +695,7 @@ class AlertServiceTest {
         alertService.createAlertFromMovementEvent(new MovementAlertEvent());
         alertService.expireOldAlerts();
 
-        verify(alertRepository, org.mockito.Mockito.atLeast(8)).save(any(Alert.class));
+        verify(alertRepository, never()).save(any(Alert.class));
         verify(alertRepository).saveAll(any());
     }
 
@@ -470,6 +707,7 @@ class AlertServiceTest {
                 .recipientRole(saved.getRecipientRole())
                 .title(saved.getTitle())
                 .message(saved.getMessage())
+                .userMessage(saved.getUserMessage())
                 .type(saved.getType())
                 .severity(saved.getSeverity())
                 .status(saved.getStatus())
@@ -479,6 +717,19 @@ class AlertServiceTest {
                 .isDismissed(saved.getIsDismissed())
                 .createdAt(saved.getCreatedAt())
                 .build();
+    }
+
+    private PaymentAlertEvent paymentEvent(String eventType, String correlationId) {
+        PaymentAlertEvent event = new PaymentAlertEvent();
+        event.setEventType(eventType);
+        event.setPaymentId(75L);
+        event.setPaymentNumber("PAY-75");
+        event.setPurchaseOrderId(175L);
+        event.setPurchaseOrderNumber("PO-175");
+        event.setSupplierId(8L);
+        event.setSupplierName("Acme");
+        event.setCorrelationId(correlationId);
+        return event;
     }
 
     private Alert copyAlert(Alert source) {
@@ -504,6 +755,7 @@ class AlertServiceTest {
                 .isRead(source.getIsRead())
                 .isAcknowledged(source.getIsAcknowledged())
                 .isDismissed(source.getIsDismissed())
+                .isArchived(source.getIsArchived())
                 .readAt(source.getReadAt())
                 .acknowledgedAt(source.getAcknowledgedAt())
                 .dismissedAt(source.getDismissedAt())
@@ -515,6 +767,8 @@ class AlertServiceTest {
                 .correlationId(source.getCorrelationId())
                 .priority(source.getPriority())
                 .actionUrl(source.getActionUrl())
+                .userMessage(source.getUserMessage())
+                .technicalDetails(source.getTechnicalDetails())
                 .metadataJson(source.getMetadataJson())
                 .version(source.getVersion())
                 .build();

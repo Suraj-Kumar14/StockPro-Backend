@@ -21,6 +21,7 @@ public class AlertResponse {
     private AlertChannel channel;
     private String title;
     private String message;
+    private String userMessage;
     private Long relatedProductId;
     private Long relatedWarehouseId;
     private Long relatedPurchaseOrderId;

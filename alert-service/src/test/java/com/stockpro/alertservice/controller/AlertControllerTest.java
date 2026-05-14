@@ -85,7 +85,25 @@ class AlertControllerTest {
                         .contentType(APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.title").exists());
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors.title").exists());
+    }
+
+    @Test
+    void createBroadcast_shouldRejectInvalidSeverityValue() throws Exception {
+        mockMvc.perform(post("/api/v1/alerts/broadcast")
+                        .with(authentication(auth(10L, "ADMIN")))
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "targetRole": "ALL",
+                                  "severity": "INVALID",
+                                  "title": "Alert title",
+                                  "message": "Alert message"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
     }
 
     @Test

@@ -27,4 +27,11 @@ public class StockAlertEventConsumer {
         log.info("Consumed stock overstock event productId={} warehouseId={}", event.getProductId(), event.getWarehouseId());
         alertService.createAlertFromStockEvent(event);
     }
+
+    @RabbitListener(queues = "${stockpro.rabbitmq.warehouse.activity.queue}")
+    public void consumeActivity(StockAlertEvent event) {
+        log.info("Consumed stock activity event productId={} warehouseId={} eventType={}",
+                event.getProductId(), event.getWarehouseId(), event.getEventType());
+        alertService.createAlertFromStockEvent(event);
+    }
 }

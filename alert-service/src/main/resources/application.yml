@@ -61,11 +61,10 @@ eureka:
 
 logging:
   level:
+    root: INFO
     com.stockpro: DEBUG
-  file:
-    name: logs/alert-service.log
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
 
 springdoc:
   api-docs:
@@ -94,12 +93,16 @@ stockpro:
       enabled: ${ALERT_MAIL_ENABLED:false}
       from-address: ${ALERT_FROM_EMAIL:noreply@stockpro.local}
     expiry-cron: ${ALERT_EXPIRY_CRON:0 0/30 * * * *}
+    overdue-critical-days: ${ALERT_OVERDUE_CRITICAL_DAYS:3}
   rabbitmq:
     alert:
       exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
       events-queue: ${ALERT_EVENTS_QUEUE:stockpro.alert.events.queue}
       email-queue: ${ALERT_EMAIL_QUEUE:stockpro.alert.email.queue}
       audit-queue: ${ALERT_AUDIT_QUEUE:stockpro.alert.audit.queue}
+      system:
+        queue: ${ALERT_SYSTEM_QUEUE:stockpro.alert.system.queue}
+        routing-key: ${ALERT_SYSTEM_ROUTING_KEY:alert.system.*}
     warehouse:
       exchange: ${WAREHOUSE_RABBITMQ_EXCHANGE:stockpro.warehouse.exchange}
       low:
@@ -108,17 +111,28 @@ stockpro:
       overstock:
         queue: ${ALERT_WAREHOUSE_OVERSTOCK_QUEUE:stockpro.alert.warehouse.overstock.queue}
         routing-key: ${WAREHOUSE_OVERSTOCK_ROUTING_KEY:stock.overstock}
+      activity:
+        queue: ${ALERT_WAREHOUSE_ACTIVITY_QUEUE:stockpro.alert.warehouse.activity.queue}
+        updated-routing-key: ${WAREHOUSE_UPDATED_ROUTING_KEY:stock.updated}
+        transfer-initiated-routing-key: ${WAREHOUSE_TRANSFER_INITIATED_ROUTING_KEY:stock.transfer.initiated}
+        transfer-completed-routing-key: ${WAREHOUSE_TRANSFER_COMPLETED_ROUTING_KEY:stock.transferred}
     purchase:
       exchange: ${PURCHASE_RABBITMQ_EXCHANGE:stockpro.purchase.exchange}
+      created:
+        routing-key: ${PURCHASE_CREATED_ROUTING_KEY:purchase.created}
       pending:
         queue: ${ALERT_PURCHASE_PENDING_QUEUE:stockpro.alert.purchase.pending-approval.queue}
         routing-key: ${PURCHASE_PENDING_ROUTING_KEY:purchase.pending-approval}
+      submitted:
+        routing-key: ${PURCHASE_SUBMITTED_ROUTING_KEY:purchase.submitted}
       approved:
         queue: ${ALERT_PURCHASE_APPROVED_QUEUE:stockpro.alert.purchase.approved.queue}
         routing-key: ${PURCHASE_APPROVED_ROUTING_KEY:purchase.approved}
       rejected:
         queue: ${ALERT_PURCHASE_REJECTED_QUEUE:stockpro.alert.purchase.rejected.queue}
         routing-key: ${PURCHASE_REJECTED_ROUTING_KEY:purchase.rejected}
+      cancelled:
+        routing-key: ${PURCHASE_CANCELLED_ROUTING_KEY:purchase.cancelled}
       received:
         queue: ${ALERT_PURCHASE_RECEIVED_QUEUE:stockpro.alert.purchase.received.queue}
         partial-routing-key: ${PURCHASE_PARTIALLY_RECEIVED_ROUTING_KEY:purchase.partially-received}
@@ -126,6 +140,13 @@ stockpro:
       overdue:
         queue: ${ALERT_PURCHASE_OVERDUE_QUEUE:stockpro.alert.purchase.overdue.queue}
         routing-key: ${PURCHASE_OVERDUE_ROUTING_KEY:purchase.overdue}
+      updated:
+        routing-key: ${PURCHASE_UPDATED_ROUTING_KEY:purchase.updated}
+    payment:
+      exchange: ${PAYMENT_RABBITMQ_EXCHANGE:stockpro.payment.exchange}
+      alert:
+        queue: ${ALERT_PAYMENT_QUEUE:stockpro.alert.payment.queue}
+        routing-key: ${PAYMENT_ALERT_ROUTING_KEY:payment.*}
     supplier:
       exchange: ${SUPPLIER_RABBIT_EXCHANGE:stockpro.supplier.exchange}
       alert:
@@ -137,3 +158,8 @@ stockpro:
       alert:
         queue: ${ALERT_MOVEMENT_QUEUE:stockpro.alert.movement.queue}
         routing-key: ${MOVEMENT_ALERT_ROUTING_KEY:movement.*}
+    auth:
+      exchange: ${AUTH_RABBITMQ_EXCHANGE:stockpro.auth.exchange}
+      otp:
+        queue: ${AUTH_OTP_QUEUE:stockpro.auth.otp.queue}
+        routing-key: ${AUTH_OTP_ROUTING_KEY:auth.otp.send}

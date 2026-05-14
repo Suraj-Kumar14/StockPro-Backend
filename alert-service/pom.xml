@@ -31,7 +31,6 @@
 		</sonar.coverage.jacoco.xmlReportPaths>
 		<sonar.sources>src/main/java</sonar.sources>
 		<sonar.tests>src/test/java</sonar.tests>
-		<sonar.test.exclusions>src/test/java/**</sonar.test.exclusions>
 		<sonar.cpd.exclusions>src/test/java/**</sonar.cpd.exclusions>
 		<sonar.coverage.exclusions>
 			src/main/java/com/stockpro/alertservice/AlertServiceApplication.java,
@@ -60,7 +59,7 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
-		</dependencies>
+	</dependencies>
 	</dependencyManagement>
 
 	<dependencies>

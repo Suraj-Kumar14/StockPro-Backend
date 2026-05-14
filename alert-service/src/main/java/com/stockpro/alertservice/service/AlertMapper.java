@@ -19,6 +19,7 @@ public class AlertMapper {
                 .channel(alert.getChannel())
                 .title(alert.getTitle())
                 .message(alert.getMessage())
+                .userMessage(alert.getUserMessage())
                 .relatedProductId(alert.getRelatedProductId())
                 .relatedWarehouseId(alert.getRelatedWarehouseId())
                 .relatedPurchaseOrderId(alert.getRelatedPurchaseOrderId())
