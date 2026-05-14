@@ -22,3 +22,10 @@ management:
   endpoint:
     health:
       show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
