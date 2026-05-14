@@ -1,7 +1,7 @@
 package com.stockpro.purchaseservice.config;
 
 import com.stockpro.purchaseservice.security.JwtAuthenticationFilter;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -16,6 +16,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
 
     private static final String[] SWAGGER_WHITELIST = {
@@ -26,7 +27,7 @@ public class SecurityConfig {
             "/actuator/**"
     };
 
-    @Value("${jwt.secret}")
+    @org.springframework.beans.factory.annotation.Value("${jwt.secret}")
     private String jwtSecret;
 
     @Bean

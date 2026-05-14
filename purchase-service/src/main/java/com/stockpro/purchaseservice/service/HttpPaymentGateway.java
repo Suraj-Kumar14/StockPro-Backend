@@ -44,18 +44,21 @@ public class HttpPaymentGateway implements PaymentGateway {
             PaymentSummaryItem latest = payments.stream()
                     .findFirst()
                     .orElse(null);
-            PaymentSummaryItem completed = payments.stream()
-                    .filter(payment -> "PAID".equalsIgnoreCase(payment.getStatus())
-                            || "PARTIALLY_PAID".equalsIgnoreCase(payment.getStatus()))
+            PaymentSummaryItem fullyPaid = payments.stream()
+                    .filter(payment -> "PAID".equalsIgnoreCase(payment.getStatus()))
                     .findFirst()
                     .orElse(null);
-            PaymentSummaryItem selected = completed != null ? completed : latest;
+            PaymentSummaryItem partiallyPaid = payments.stream()
+                    .filter(payment -> "PARTIALLY_PAID".equalsIgnoreCase(payment.getStatus()))
+                    .findFirst()
+                    .orElse(null);
+            PaymentSummaryItem selected = selectPreferredPayment(latest, fullyPaid, partiallyPaid);
 
             return PaymentStatusSnapshotDTO.builder()
                     .paymentId(selected != null ? selected.getPaymentId() : null)
                     .paymentNumber(selected != null ? selected.getPaymentNumber() : null)
                     .paymentStatus(selected != null ? selected.getStatus() : "UNPAID")
-                    .paymentCompleted(completed != null)
+                    .paymentCompleted(fullyPaid != null)
                     .paymentAmount(selected != null ? selected.getPaymentAmount() : null)
                     .razorpayOrderId(selected != null ? selected.getRazorpayOrderId() : null)
                     .razorpayPaymentId(selected != null ? selected.getRazorpayPaymentId() : null)
@@ -72,6 +75,19 @@ public class HttpPaymentGateway implements PaymentGateway {
                 .paymentStatus("UNPAID")
                 .paymentCompleted(false)
                 .build();
+    }
+
+    private PaymentSummaryItem selectPreferredPayment(
+            PaymentSummaryItem latest,
+            PaymentSummaryItem fullyPaid,
+            PaymentSummaryItem partiallyPaid) {
+        if (fullyPaid != null) {
+            return fullyPaid;
+        }
+        if (partiallyPaid != null) {
+            return partiallyPaid;
+        }
+        return latest;
     }
 
     @Data

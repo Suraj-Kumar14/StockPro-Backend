@@ -217,9 +217,27 @@ class PurchaseOrderManagementServiceTest {
 
         when(purchaseOrderRepository.findById(10L)).thenReturn(Optional.of(approved));
         approved.setStatus(POStatus.PAYMENT_INITIATED);
+        PurchaseOrderResponse partiallyPaid = service.markPaymentCompleted(10L, new PaymentTransitionRequest(
+                "PARTIALLY_PAID", 1L, "PAY-1", "order-1", "payment-0", LocalDateTime.now(), 55L));
+        assertEquals("PAYMENT_INITIATED", partiallyPaid.status());
+
+        when(purchaseOrderRepository.findById(10L)).thenReturn(Optional.of(approved));
+        approved.setStatus(POStatus.PAYMENT_INITIATED);
         PurchaseOrderResponse paid = service.markPaymentCompleted(10L, new PaymentTransitionRequest(
                 "PAID", 1L, "PAY-1", "order-1", "payment-1", LocalDateTime.now(), 55L));
         assertEquals("PAID", paid.status());
+    }
+
+    @Test
+    void markPaymentInitiated_shouldReopenIncorrectlyPaidPurchaseOrder() {
+        PurchaseOrder order = baseOrder(POStatus.PAID);
+        when(purchaseOrderRepository.findById(10L)).thenReturn(Optional.of(order));
+        when(purchaseOrderRepository.save(any(PurchaseOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PurchaseOrderResponse response = service.markPaymentInitiated(10L, new PaymentTransitionRequest(
+                "INITIATED", 1L, "PAY-2", "order-2", null, null, 55L));
+
+        assertEquals("PAYMENT_INITIATED", response.status());
     }
 
     @Test

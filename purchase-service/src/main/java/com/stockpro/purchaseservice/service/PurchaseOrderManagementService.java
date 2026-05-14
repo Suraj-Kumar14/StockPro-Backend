@@ -45,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class PurchaseOrderManagementService {
 
+    private static final String PARTIALLY_PAID = "PARTIALLY_PAID";
     private static final EnumSet<POStatus> OVERDUE_STATUSES = EnumSet.of(POStatus.APPROVED, POStatus.PAID, POStatus.PARTIALLY_RECEIVED);
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
             "poId",
@@ -202,7 +203,7 @@ public class PurchaseOrderManagementService {
     @Transactional
     public PurchaseOrderResponse markPaymentInitiated(Long poId, PaymentTransitionRequest request) {
         PurchaseOrder purchaseOrder = getEntity(poId);
-        ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_PAYMENT, POStatus.PAYMENT_INITIATED), "start payment");
+        ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_PAYMENT, POStatus.PAYMENT_INITIATED, POStatus.PAID), "start payment");
         POStatus oldStatus = purchaseOrder.getStatus();
         purchaseOrder.setStatus(POStatus.PAYMENT_INITIATED);
         PurchaseOrder saved = purchaseOrderRepository.save(purchaseOrder);
@@ -217,13 +218,20 @@ public class PurchaseOrderManagementService {
         PurchaseOrder purchaseOrder = getEntity(poId);
         ensureStatus(purchaseOrder, Set.of(POStatus.PENDING_PAYMENT, POStatus.PAYMENT_INITIATED), "complete payment");
         POStatus oldStatus = purchaseOrder.getStatus();
-        purchaseOrder.setStatus(POStatus.PAID);
+        POStatus nextStatus = PARTIALLY_PAID.equalsIgnoreCase(request.paymentStatus())
+                ? POStatus.PAYMENT_INITIATED
+                : POStatus.PAID;
+        purchaseOrder.setStatus(nextStatus);
         PurchaseOrder saved = purchaseOrderRepository.save(purchaseOrder);
         saveHistory(saved.getPoId(), PurchaseOrderAction.PAYMENT_COMPLETED, oldStatus, saved.getStatus(), request.actorId(),
-                "Razorpay payment completed" + (request.razorpayPaymentId() != null ? " (" + request.razorpayPaymentId() + ")" : ""));
-        log.info("Payment completed for purchase order. poId={}, actorId={}, fromStatus={}, toStatus={}, paymentId={}",
-                poId, request.actorId(), oldStatus, saved.getStatus(), request.razorpayPaymentId());
-        publish(saved, oldStatus, saved.getStatus(), request.actorId(), updatedRouting, "PAYMENT_COMPLETED");
+                (PARTIALLY_PAID.equalsIgnoreCase(request.paymentStatus())
+                        ? "Partial Razorpay payment completed"
+                        : "Razorpay payment completed")
+                        + (request.razorpayPaymentId() != null ? " (" + request.razorpayPaymentId() + ")" : ""));
+        log.info("Payment completed for purchase order. poId={}, actorId={}, fromStatus={}, toStatus={}, paymentStatus={}, paymentId={}",
+                poId, request.actorId(), oldStatus, saved.getStatus(), request.paymentStatus(), request.razorpayPaymentId());
+        publish(saved, oldStatus, saved.getStatus(), request.actorId(), updatedRouting,
+                PARTIALLY_PAID.equalsIgnoreCase(request.paymentStatus()) ? "PAYMENT_PARTIALLY_COMPLETED" : "PAYMENT_COMPLETED");
         return toResponse(saved);
     }
 

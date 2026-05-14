@@ -198,4 +198,5 @@ public class GlobalExceptionHandler {
                         request.getRequestURI()),
                 HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
 }

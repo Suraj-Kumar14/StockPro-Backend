@@ -6,7 +6,7 @@ spring:
     name: PURCHASE-SERVICE
 
   datasource:
-    url: jdbc:mysql://localhost:3306/purchase_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/purchase_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${PURCHASE_DB_USERNAME}
     password: ${PURCHASE_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -42,11 +42,10 @@ eureka:
 
 logging:
   level:
-    com.stockpro: INFO
-  file:
-    name: logs/purchase-service.log
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
 
 springdoc:
   api-docs:
@@ -74,6 +73,11 @@ payment-service:
 
 stockpro:
   rabbitmq:
+    alert:
+      exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
+      routing:
+        unauthorized: ${ALERT_UNAUTHORIZED_ROUTING_KEY:alert.system.unauthorized}
+        system-error: ${ALERT_SYSTEM_ERROR_ROUTING_KEY:alert.system.error}
     purchase:
       exchange: ${PURCHASE_RABBITMQ_EXCHANGE:stockpro.purchase.exchange}
       routing:

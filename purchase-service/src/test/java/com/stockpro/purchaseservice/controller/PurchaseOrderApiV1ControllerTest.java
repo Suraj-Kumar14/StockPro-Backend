@@ -19,6 +19,7 @@ import com.stockpro.purchaseservice.dto.response.PurchaseOrderReportRowResponse;
 import com.stockpro.purchaseservice.dto.response.PurchaseOrderSummaryResponse;
 import com.stockpro.purchaseservice.entity.POStatus;
 import com.stockpro.purchaseservice.exception.InvalidPOStateException;
+import com.stockpro.purchaseservice.publisher.SystemAlertPublisher;
 import com.stockpro.purchaseservice.security.AuthenticatedUser;
 import com.stockpro.purchaseservice.service.PurchaseOrderManagementService;
 import java.math.BigDecimal;
@@ -53,6 +54,9 @@ class PurchaseOrderApiV1ControllerTest {
 
     @MockBean
     private PurchaseOrderManagementService purchaseOrderManagementService;
+
+    @MockBean
+    private SystemAlertPublisher systemAlertPublisher;
 
     @Test
     void createReturnsCreatedAndPassesAuthenticatedActorId() throws Exception {
