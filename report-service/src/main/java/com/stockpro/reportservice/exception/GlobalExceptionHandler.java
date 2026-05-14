@@ -19,6 +19,7 @@ import org.springframework.security.access.AccessDeniedException;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+    private static final String VALIDATION_ERROR = "VALIDATION_ERROR";
 
     @ExceptionHandler(DataNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDataNotFound(
@@ -45,7 +46,7 @@ public class GlobalExceptionHandler {
             IllegalArgumentException ex, HttpServletRequest request) {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
-                        HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
+                        HttpStatus.BAD_REQUEST.value(), VALIDATION_ERROR,
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
     }
@@ -66,7 +67,7 @@ public class GlobalExceptionHandler {
             ConstraintViolationException ex, HttpServletRequest request) {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
-                        HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
+                        HttpStatus.BAD_REQUEST.value(), VALIDATION_ERROR,
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
     }
@@ -76,7 +77,7 @@ public class GlobalExceptionHandler {
             MissingServletRequestParameterException ex, HttpServletRequest request) {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
-                        HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
+                        HttpStatus.BAD_REQUEST.value(), VALIDATION_ERROR,
                         ex.getParameterName() + " is required",
                         request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);

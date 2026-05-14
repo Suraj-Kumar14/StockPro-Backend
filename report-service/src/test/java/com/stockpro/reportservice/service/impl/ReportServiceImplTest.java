@@ -316,8 +316,9 @@ class ReportServiceImplTest {
         when(reportingDataClient.searchPurchaseOrders(any()))
                 .thenThrow(new ReportGenerationException("Failed to call PURCHASE-SERVICE from searchPurchaseOrders"));
 
+        ReportFilterRequest request = ReportFilterRequest.builder().size(10).build();
         var exception = assertThrows(ReportGenerationException.class,
-                () -> reportService.getPurchaseSummary(ReportFilterRequest.builder().size(10).build()));
+                () -> reportService.getPurchaseSummary(request));
 
         assertThat(exception.getMessage()).isEqualTo("Purchase summary data is temporarily unavailable.");
     }
