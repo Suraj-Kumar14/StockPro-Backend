@@ -1,17 +1,22 @@
 package com.stockpro.authservice.exception;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 public class ErrorResponse {
 
-    private String message;
-    private int status;
-    private LocalDateTime timestamp;
+    private final LocalDateTime timestamp;
+    private final int status;
+    private final String errorCode;
+    private final String message;
+    private final Map<String, String> fieldErrors;
 
-    public ErrorResponse(String message, int status, LocalDateTime timestamp) {
-        this.message = message;
-        this.status = status;
+    public ErrorResponse(LocalDateTime timestamp, int status, String errorCode, String message, Map<String, String> fieldErrors) {
         this.timestamp = timestamp;
+        this.status = status;
+        this.errorCode = errorCode;
+        this.message = message;
+        this.fieldErrors = fieldErrors;
     }
 
     public String getMessage() {
@@ -24,5 +29,13 @@ public class ErrorResponse {
 
     public LocalDateTime getTimestamp() {
         return timestamp;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public Map<String, String> getFieldErrors() {
+        return fieldErrors;
     }
 }

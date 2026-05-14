@@ -172,7 +172,7 @@ class AuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(request)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.email").value("Invalid email format"));
+                .andExpect(jsonPath("$.fieldErrors.email").value("Invalid email format"));
     }
 
     @Test

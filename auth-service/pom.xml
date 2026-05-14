@@ -161,6 +161,11 @@
 			<artifactId>spring-boot-starter-mail</artifactId>
 		</dependency>
 
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-amqp</artifactId>
+		</dependency>
+
 		<!-- GOOGLE OAUTH -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -178,6 +183,7 @@
 			<artifactId>spring-security-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
 
 	</dependencies>
 

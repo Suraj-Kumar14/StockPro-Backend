@@ -33,6 +33,7 @@ import com.stockpro.authservice.entity.OtpPurpose;
 import com.stockpro.authservice.entity.OtpToken;
 import com.stockpro.authservice.entity.User;
 import com.stockpro.authservice.entity.UserRole;
+import com.stockpro.authservice.exception.EmailDeliveryException;
 import com.stockpro.authservice.exception.InactiveAccountException;
 import com.stockpro.authservice.exception.InvalidOtpException;
 import com.stockpro.authservice.exception.InvalidCredentialsException;
@@ -54,6 +55,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final OtpMailService otpMailService;
+    private final OtpEventPublisher otpEventPublisher;
 
     @Value("${app.otp.expiry-minutes}")
     private long otpExpiryMinutes;
@@ -63,12 +65,14 @@ public class AuthService {
             OtpTokenRepository otpTokenRepository,
             PasswordEncoder passwordEncoder,
             JwtUtil jwtUtil,
-            OtpMailService otpMailService) {
+            OtpMailService otpMailService,
+            OtpEventPublisher otpEventPublisher) {
         this.userRepository = userRepository;
         this.otpTokenRepository = otpTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.otpMailService = otpMailService;
+        this.otpEventPublisher = otpEventPublisher;
     }
 
     public RegisterResponseDTO register(UserRequestDTO dto) {
@@ -88,12 +92,13 @@ public class AuthService {
         otpToken.setDepartment(dto.getDepartment());
         otpToken.setExpiresAt(LocalDateTime.now().plusMinutes(otpExpiryMinutes));
         otpTokenRepository.save(otpToken);
-        log.info("OTP generated for signup: {}", email);
+        log.info("OTP generated email={} purpose={} expiresAt={}", email, OtpPurpose.SIGNUP_VERIFICATION, otpToken.getExpiresAt());
 
-        otpMailService.sendSignupOtp(email, otpToken.getOtpCode());
-        log.info("OTP sent for signup: {}", email);
+        if (!publishOtpEvent(otpToken.getEmail(), otpToken.getOtpCode(), otpToken.getPurpose().name(), otpToken.getName(), otpToken.getExpiresAt())) {
+            throw new EmailDeliveryException("OTP delivery is temporarily unavailable. Please try again.");
+        }
 
-        return new RegisterResponseDTO(null, "OTP sent to your email. Please verify to complete registration.");
+        return new RegisterResponseDTO(null, "OTP sent successfully. Please check your email.");
     }
 
     public RegisterResponseDTO verifyOtp(OtpVerificationRequestDTO dto) {
@@ -137,9 +142,10 @@ public class AuthService {
             otpToken.setPurpose(OtpPurpose.PASSWORD_RESET);
             otpToken.setExpiresAt(LocalDateTime.now().plusMinutes(otpExpiryMinutes));
             otpTokenRepository.save(otpToken);
-            log.info("OTP generated for password reset: {}", user.getEmail());
-            otpMailService.sendPasswordResetOtp(user.getEmail(), otpToken.getOtpCode());
-            log.info("OTP sent for password reset: {}", user.getEmail());
+            log.info("OTP generated email={} purpose={} expiresAt={}", user.getEmail(), OtpPurpose.PASSWORD_RESET, otpToken.getExpiresAt());
+            if (!publishOtpEvent(user.getEmail(), otpToken.getOtpCode(), otpToken.getPurpose().name(), user.getName(), otpToken.getExpiresAt())) {
+                log.error("Password reset OTP event publication failed for {}", user.getEmail());
+            }
         });
 
         return new MessageResponseDTO("OTP sent successfully");
@@ -485,7 +491,7 @@ public class AuthService {
         }
 
         if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new UserAlreadyExistsException("Email is already registered");
+            throw new UserAlreadyExistsException("Email already registered");
         }
 
         return email;
@@ -497,6 +503,17 @@ public class AuthService {
         }
 
         return email.trim().toLowerCase();
+    }
+
+    private boolean publishOtpEvent(String email, String otpCode, String purpose, String recipientName, LocalDateTime expiresAt) {
+        return otpEventPublisher.publish(new OtpNotificationEvent(
+                UUID.randomUUID().toString(),
+                email,
+                otpCode,
+                purpose,
+                recipientName,
+                expiresAt,
+                LocalDateTime.now()));
     }
 
     private UserRole parseRole(String role) {

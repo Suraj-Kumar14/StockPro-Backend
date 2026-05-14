@@ -16,6 +16,7 @@ import com.stockpro.authservice.entity.OtpPurpose;
 import com.stockpro.authservice.entity.OtpToken;
 import com.stockpro.authservice.entity.User;
 import com.stockpro.authservice.entity.UserRole;
+import com.stockpro.authservice.exception.EmailDeliveryException;
 import com.stockpro.authservice.exception.InactiveAccountException;
 import com.stockpro.authservice.exception.InvalidOtpException;
 import com.stockpro.authservice.exception.InvalidCredentialsException;
@@ -26,6 +27,7 @@ import com.stockpro.authservice.repository.OtpTokenRepository;
 import com.stockpro.authservice.repository.UserRepository;
 import com.stockpro.authservice.security.JwtUtil;
 import com.stockpro.authservice.service.AuthService;
+import com.stockpro.authservice.service.OtpEventPublisher;
 import com.stockpro.authservice.service.OtpMailService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,6 +75,9 @@ class AuthServiceTest {
 
     @Mock
     private OtpMailService otpMailService;
+
+    @Mock
+    private OtpEventPublisher otpEventPublisher;
 
     @InjectMocks
     private AuthService authService;
@@ -153,13 +158,14 @@ class AuthServiceTest {
     void register_shouldGenerateSignupOtp_whenValidData() {
         when(userRepository.existsByEmailIgnoreCase("user@example.com")).thenReturn(false);
         when(passwordEncoder.encode("Password@123")).thenReturn("$2a$encoded");
+        when(otpEventPublisher.publish(any())).thenReturn(true);
 
         RegisterResponseDTO response = authService.register(registerRequest);
 
-        assertEquals("OTP sent to your email. Please verify to complete registration.", response.getMessage());
+        assertEquals("OTP sent successfully. Please check your email.", response.getMessage());
         ArgumentCaptor<OtpToken> otpCaptor = ArgumentCaptor.forClass(OtpToken.class);
         verify(otpTokenRepository).save(otpCaptor.capture());
-        verify(otpMailService).sendSignupOtp(anyString(), anyString());
+        verify(otpEventPublisher).publish(any());
         assertEquals(OtpPurpose.SIGNUP_VERIFICATION, otpCaptor.getValue().getPurpose());
         assertEquals("$2a$encoded", otpCaptor.getValue().getPasswordHash());
     }
@@ -169,13 +175,14 @@ class AuthServiceTest {
         registerRequest.setEmail("  USER@Example.COM ");
         when(userRepository.existsByEmailIgnoreCase("user@example.com")).thenReturn(false);
         when(passwordEncoder.encode("Password@123")).thenReturn("$2a$encoded");
+        when(otpEventPublisher.publish(any())).thenReturn(true);
 
         authService.register(registerRequest);
 
         ArgumentCaptor<OtpToken> otpCaptor = ArgumentCaptor.forClass(OtpToken.class);
         verify(otpTokenRepository).save(otpCaptor.capture());
         assertEquals("user@example.com", otpCaptor.getValue().getEmail());
-        verify(otpMailService).sendSignupOtp(eq("user@example.com"), anyString());
+        verify(otpEventPublisher).publish(any());
     }
 
     @Test
@@ -185,9 +192,22 @@ class AuthServiceTest {
         UserAlreadyExistsException exception = assertThrows(UserAlreadyExistsException.class,
                 () -> authService.register(registerRequest));
 
-        assertEquals("Email is already registered", exception.getMessage());
+        assertEquals("Email already registered", exception.getMessage());
         verify(otpTokenRepository, never()).save(any());
-        verify(otpMailService, never()).sendSignupOtp(anyString(), anyString());
+        verify(otpEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    void register_shouldThrowEmailDeliveryException_whenOtpPublicationFails() {
+        when(userRepository.existsByEmailIgnoreCase("user@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("Password@123")).thenReturn("$2a$encoded");
+        when(otpEventPublisher.publish(any())).thenReturn(false);
+
+        EmailDeliveryException exception = assertThrows(EmailDeliveryException.class,
+                () -> authService.register(registerRequest));
+
+        assertEquals("OTP delivery is temporarily unavailable. Please try again.", exception.getMessage());
+        verify(otpTokenRepository).save(any(OtpToken.class));
     }
 
     @Test
@@ -196,12 +216,13 @@ class AuthServiceTest {
         request.setEmail("user@example.com");
 
         when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+        when(otpEventPublisher.publish(any())).thenReturn(true);
 
         authService.forgotPassword(request);
 
         ArgumentCaptor<OtpToken> otpCaptor = ArgumentCaptor.forClass(OtpToken.class);
         verify(otpTokenRepository).save(otpCaptor.capture());
-        verify(otpMailService).sendPasswordResetOtp(anyString(), anyString());
+        verify(otpEventPublisher).publish(any());
         assertEquals(OtpPurpose.PASSWORD_RESET, otpCaptor.getValue().getPurpose());
         assertEquals("user@example.com", otpCaptor.getValue().getEmail());
     }
@@ -216,7 +237,7 @@ class AuthServiceTest {
         authService.forgotPassword(request);
 
         verify(otpTokenRepository, never()).save(any());
-        verify(otpMailService, never()).sendPasswordResetOtp(anyString(), anyString());
+        verify(otpEventPublisher, never()).publish(any());
     }
 
     @Test
@@ -299,7 +320,7 @@ class AuthServiceTest {
         UserAlreadyExistsException exception = assertThrows(UserAlreadyExistsException.class,
                 () -> authService.verifyOtp(request));
 
-        assertEquals("Email is already registered", exception.getMessage());
+        assertEquals("Email already registered", exception.getMessage());
         verify(userRepository, never()).save(any(User.class));
     }
 
@@ -320,7 +341,7 @@ class AuthServiceTest {
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
         assertEquals("new@example.com", userCaptor.getValue().getEmail());
-        verify(otpMailService, never()).sendSignupOtp(anyString(), anyString());
+        verify(otpEventPublisher, never()).publish(any());
     }
 
     @Test
@@ -331,7 +352,7 @@ class AuthServiceTest {
         UserAlreadyExistsException exception = assertThrows(UserAlreadyExistsException.class,
                 () -> authService.createAdminUser(request));
 
-        assertEquals("Email is already registered", exception.getMessage());
+        assertEquals("Email already registered", exception.getMessage());
         verify(userRepository, never()).save(any(User.class));
     }
 

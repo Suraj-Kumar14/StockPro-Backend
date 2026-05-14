@@ -1,7 +1,7 @@
 package com.stockpro.authservice.exception;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -21,10 +21,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(UserAlreadyExistsException.class)
     public ResponseEntity<ErrorResponse> handleUserExists(UserAlreadyExistsException ex) {
-        log.error("UserAlreadyExistsException: {}", ex.getMessage());
-        return new ResponseEntity<>(
-                new ErrorResponse(ex.getMessage(), HttpStatus.CONFLICT.value(), LocalDateTime.now()),
-                HttpStatus.CONFLICT);
+        log.warn("UserAlreadyExistsException: {}", ex.getMessage());
+        return build(HttpStatus.CONFLICT, "EMAIL_ALREADY_REGISTERED", ex.getMessage(), null);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -35,87 +33,73 @@ public class GlobalExceptionHandler {
                 : ex.getMessage();
 
         if (message != null && message.toLowerCase().contains("email")) {
-            return new ResponseEntity<>(
-                    new ErrorResponse("Email is already registered", HttpStatus.CONFLICT.value(), LocalDateTime.now()),
-                    HttpStatus.CONFLICT);
+            return build(HttpStatus.CONFLICT, "EMAIL_ALREADY_REGISTERED", "Email already registered", null);
         }
 
-        return new ResponseEntity<>(
-                new ErrorResponse("Duplicate or invalid data", HttpStatus.CONFLICT.value(), LocalDateTime.now()),
-                HttpStatus.CONFLICT);
+        return build(HttpStatus.CONFLICT, "DATA_INTEGRITY_VIOLATION", "Duplicate or invalid data", null);
     }
 
     @ExceptionHandler({InvalidOtpException.class, EmailDeliveryException.class})
     public ResponseEntity<ErrorResponse> handleOtp(RuntimeException ex) {
         log.error("Auth flow exception: {}", ex.getMessage());
-        return new ResponseEntity<>(
-                new ErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST.value(), LocalDateTime.now()),
-                HttpStatus.BAD_REQUEST);
+        return build(HttpStatus.BAD_REQUEST, "OTP_FLOW_ERROR", ex.getMessage(), null);
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleInvalidCredentials(InvalidCredentialsException ex) {
         log.warn("Invalid credentials: {}", ex.getMessage());
-        return new ResponseEntity<>(
-                new ErrorResponse(ex.getMessage(), HttpStatus.UNAUTHORIZED.value(), LocalDateTime.now()),
-                HttpStatus.UNAUTHORIZED);
+        return build(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", ex.getMessage(), null);
     }
 
     @ExceptionHandler(InactiveAccountException.class)
     public ResponseEntity<ErrorResponse> handleInactiveAccount(InactiveAccountException ex) {
         log.warn("Inactive account access blocked: {}", ex.getMessage());
-        return new ResponseEntity<>(
-                new ErrorResponse(ex.getMessage(), HttpStatus.FORBIDDEN.value(), LocalDateTime.now()),
-                HttpStatus.FORBIDDEN);
+        return build(HttpStatus.FORBIDDEN, "INACTIVE_ACCOUNT", ex.getMessage(), null);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {
         log.warn("Resource not found: {}", ex.getMessage());
-        return new ResponseEntity<>(
-                new ErrorResponse(ex.getMessage(), HttpStatus.NOT_FOUND.value(), LocalDateTime.now()),
-                HttpStatus.NOT_FOUND);
+        return build(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", ex.getMessage(), null);
     }
 
     @ExceptionHandler(SelfDeactivationNotAllowedException.class)
     public ResponseEntity<ErrorResponse> handleSelfDeactivation(SelfDeactivationNotAllowedException ex) {
         log.warn("User action blocked: {}", ex.getMessage());
-        return new ResponseEntity<>(
-                new ErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST.value(), LocalDateTime.now()),
-                HttpStatus.BAD_REQUEST);
+        return build(HttpStatus.BAD_REQUEST, "ACTION_NOT_ALLOWED", ex.getMessage(), null);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
+    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new LinkedHashMap<>();
         ex.getBindingResult().getFieldErrors()
                 .forEach(error -> errors.put(error.getField(), error.getDefaultMessage()));
-        return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
+        return build(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Validation failed", errors);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
         log.debug("Resource not found: {}", ex.getResourcePath());
-        return new ResponseEntity<>(
-                new ErrorResponse("Resource not found", HttpStatus.NOT_FOUND.value(), LocalDateTime.now()),
-                HttpStatus.NOT_FOUND);
+        return build(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Resource not found", null);
     }
 
   
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ErrorResponse> handleRuntime(RuntimeException ex) {
         log.error("RuntimeException: {}", ex.getMessage());
-        return new ResponseEntity<>(
-                new ErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST.value(), LocalDateTime.now()),
-                HttpStatus.BAD_REQUEST);
+        return build(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), null);
     }
 
     // 4. Catch-all for unexpected errors → 500
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneral(Exception ex) {
         log.error("Unhandled exception: {}", ex.getMessage());
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR", "Internal server error", null);
+    }
+
+    private ResponseEntity<ErrorResponse> build(HttpStatus status, String errorCode, String message, Map<String, String> fieldErrors) {
         return new ResponseEntity<>(
-                new ErrorResponse("Internal server error", HttpStatus.INTERNAL_SERVER_ERROR.value(), LocalDateTime.now()),
-                HttpStatus.INTERNAL_SERVER_ERROR);
+                new ErrorResponse(LocalDateTime.now(), status.value(), errorCode, message, fieldErrors),
+                status);
     }
 }
