@@ -8,6 +8,7 @@ import com.itextpdf.text.pdf.PdfPCell;
 import com.itextpdf.text.pdf.PdfPTable;
 import com.itextpdf.text.pdf.PdfWriter;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.apache.poi.ss.usermodel.Row;
@@ -75,9 +76,7 @@ public class ReportExportService {
             document.add(table);
             document.close();
             return outputStream.toByteArray();
-        } catch (DocumentException ex) {
-            throw new IllegalStateException("Unable to generate PDF export", ex);
-        } catch (Exception ex) {
+        } catch (DocumentException | IOException | RuntimeException ex) {
             throw new IllegalStateException("Unable to generate PDF export", ex);
         }
     }

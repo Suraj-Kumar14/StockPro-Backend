@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,11 +30,33 @@ import reactor.core.publisher.Mono;
 public class ReportingDataClient {
 
     private static final int FETCH_SIZE = 500;
+    private static final String QUERY_PAGE = "page";
+    private static final String QUERY_SIZE = "size";
+    private static final String QUERY_SORT_BY = "sortBy";
+    private static final String QUERY_SORT_DIR = "sortDir";
+    private static final String QUERY_WAREHOUSE_ID = "warehouseId";
+    private static final String QUERY_PRODUCT_ID = "productId";
+    private static final String QUERY_SUPPLIER_ID = "supplierId";
+    private static final String QUERY_STATUS = "status";
+    private static final String QUERY_FROM_DATE = "fromDate";
+    private static final String QUERY_TO_DATE = "toDate";
+    private static final String SORT_BY_NAME = "name";
+    private static final String SORT_BY_CREATED_AT = "createdAt";
+    private static final String SORT_BY_MOVEMENT_DATE = "movementDate";
+    private static final String SORT_ASC = "asc";
+    private static final String SORT_DESC = "desc";
+    private static final String WAREHOUSE_SERVICE = "WAREHOUSE-SERVICE";
+    private static final String MOVEMENT_SERVICE = "MOVEMENT-SERVICE";
+    private static final String PURCHASE_SERVICE = "PURCHASE-SERVICE";
+    private static final String SUPPLIER_SERVICE = "SUPPLIER-SERVICE";
+    private static final String PAYMENT_SERVICE = "PAYMENT-SERVICE";
+    private static final String ALERT_SERVICE = "ALERT-SERVICE";
     private static final ParameterizedTypeReference<PageResponse<ProductRecord>> PRODUCT_PAGE = new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<PageResponse<WarehouseRecord>> WAREHOUSE_PAGE = new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<PageResponse<StockRecord>> STOCK_PAGE = new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<PageResponse<MovementRecord>> MOVEMENT_PAGE = new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<PageResponse<PurchaseOrderRecord>> PURCHASE_PAGE = new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<PageResponse<PurchaseOrderReportRecord>> PURCHASE_REPORT_PAGE = new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<PageResponse<SupplierRecord>> SUPPLIER_PAGE = new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<PageResponse<PaymentRecord>> PAYMENT_PAGE = new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<PageResponse<AlertRecord>> ALERT_PAGE = new ParameterizedTypeReference<>() {};
@@ -66,140 +89,184 @@ public class ReportingDataClient {
     private String internalServiceToken;
 
     public List<ProductRecord> getProducts() {
-        return getPage(productUrl, "/api/v1/products", "PRODUCT-SERVICE", "getProducts", PRODUCT_PAGE, builder -> builder
-                .queryParam("page", 0)
-                .queryParam("size", FETCH_SIZE)
-                .queryParam("sortBy", "name")
-                .queryParam("sortDir", "asc")).content();
+        return getAllPages(productUrl, "/api/v1/products", "PRODUCT-SERVICE", "getProducts", PRODUCT_PAGE,
+                builder -> applyPageAndSort(builder, 0, FETCH_SIZE, SORT_BY_NAME, SORT_ASC));
     }
 
     public List<WarehouseRecord> getWarehouses() {
-        return getPage(warehouseUrl, "/api/v1/warehouses", "WAREHOUSE-SERVICE", "getWarehouses", WAREHOUSE_PAGE, builder -> builder
-                .queryParam("page", 0)
-                .queryParam("size", FETCH_SIZE)
-                .queryParam("sortBy", "name")
-                .queryParam("sortDir", "asc")).content();
+        return getAllPages(warehouseUrl, "/api/v1/warehouses", WAREHOUSE_SERVICE, "getWarehouses", WAREHOUSE_PAGE,
+                builder -> applyPageAndSort(builder, 0, FETCH_SIZE, SORT_BY_NAME, SORT_ASC));
     }
 
     public List<StockRecord> getStocks(ReportFilterRequest filter) {
-        return getPage(warehouseUrl, "/api/v1/stocks", "WAREHOUSE-SERVICE", "getStocks", STOCK_PAGE, builder -> {
-            if (filter.getWarehouseId() != null) {
-                builder.queryParam("warehouseId", filter.getWarehouseId());
-            }
-            if (filter.getProductId() != null) {
-                builder.queryParam("productId", filter.getProductId());
-            }
-            builder.queryParam("page", 0).queryParam("size", FETCH_SIZE);
-        }).content();
+        return getAllPages(warehouseUrl, "/api/v1/stocks", WAREHOUSE_SERVICE, "getStocks", STOCK_PAGE, builder -> {
+            addOptionalQueryParam(builder, QUERY_WAREHOUSE_ID, filter.getWarehouseId());
+            addOptionalQueryParam(builder, QUERY_PRODUCT_ID, filter.getProductId());
+            builder.queryParam(QUERY_PAGE, 0).queryParam(QUERY_SIZE, FETCH_SIZE);
+        });
     }
 
     public List<StockRecord> getLowStockItems() {
-        return getList(warehouseUrl, "/api/v1/stocks/low-stock", "WAREHOUSE-SERVICE", "getLowStockItems", STOCK_LIST, null);
+        return getList(warehouseUrl, "/api/v1/stocks/low-stock", WAREHOUSE_SERVICE, "getLowStockItems", STOCK_LIST, null);
     }
 
     public List<StockRecord> getOverstockItems() {
-        return getList(warehouseUrl, "/api/v1/stocks/overstock", "WAREHOUSE-SERVICE", "getOverstockItems", STOCK_LIST, null);
+        return getList(warehouseUrl, "/api/v1/stocks/overstock", WAREHOUSE_SERVICE, "getOverstockItems", STOCK_LIST, null);
     }
 
     public PageResponse<MovementRecord> searchMovements(ReportFilterRequest filter) {
-        return getPage(movementUrl, "/api/v1/movements/search", "MOVEMENT-SERVICE", "searchMovements", MOVEMENT_PAGE, builder -> {
+        return getPage(movementUrl, "/api/v1/movements/search", MOVEMENT_SERVICE, "searchMovements", MOVEMENT_PAGE, builder -> {
             applyFilterRange(filter, builder);
-            if (filter.getWarehouseId() != null) {
-                builder.queryParam("warehouseId", filter.getWarehouseId());
-            }
-            if (filter.getProductId() != null) {
-                builder.queryParam("productId", filter.getProductId());
-            }
+            addOptionalQueryParam(builder, QUERY_WAREHOUSE_ID, filter.getWarehouseId());
+            addOptionalQueryParam(builder, QUERY_PRODUCT_ID, filter.getProductId());
             if (StringUtils.hasText(filter.getMovementType())) {
                 builder.queryParam("movementType", filter.getMovementType());
             }
-            builder.queryParam("page", filter.getPage())
-                    .queryParam("size", Math.max(filter.getSize(), FETCH_SIZE))
-                    .queryParam("sortBy", StringUtils.hasText(filter.getSortBy()) ? filter.getSortBy() : "movementDate")
-                    .queryParam("sortDir", StringUtils.hasText(filter.getSortDir()) ? filter.getSortDir() : "desc");
+            applyPageAndSort(
+                    builder,
+                    filter.getPage(),
+                    Math.max(filter.getSize(), FETCH_SIZE),
+                    StringUtils.hasText(filter.getSortBy()) ? filter.getSortBy() : SORT_BY_MOVEMENT_DATE,
+                    StringUtils.hasText(filter.getSortDir()) ? filter.getSortDir() : SORT_DESC);
+        });
+    }
+
+    public List<MovementRecord> searchAllMovements(ReportFilterRequest filter) {
+        return getAllPages(movementUrl, "/api/v1/movements/search", MOVEMENT_SERVICE, "searchAllMovements", MOVEMENT_PAGE, builder -> {
+            applyFilterRange(filter, builder);
+            addOptionalQueryParam(builder, QUERY_WAREHOUSE_ID, filter.getWarehouseId());
+            addOptionalQueryParam(builder, QUERY_PRODUCT_ID, filter.getProductId());
+            if (StringUtils.hasText(filter.getMovementType())) {
+                builder.queryParam("movementType", filter.getMovementType());
+            }
+            applyPageAndSort(
+                    builder,
+                    0,
+                    FETCH_SIZE,
+                    StringUtils.hasText(filter.getSortBy()) ? filter.getSortBy() : SORT_BY_MOVEMENT_DATE,
+                    StringUtils.hasText(filter.getSortDir()) ? filter.getSortDir() : SORT_DESC);
         });
     }
 
     public List<PurchaseOrderRecord> searchPurchaseOrders(ReportFilterRequest filter) {
-        return getPage(purchaseUrl, "/api/v1/purchase-orders/search", "PURCHASE-SERVICE", "searchPurchaseOrders", PURCHASE_PAGE, builder -> {
-            if (filter.getSupplierId() != null) {
-                builder.queryParam("supplierId", filter.getSupplierId());
-            }
-            if (filter.getWarehouseId() != null) {
-                builder.queryParam("warehouseId", filter.getWarehouseId());
-            }
+        String url = buildUrl(purchaseUrl, "/api/v1/purchase-orders/search", builder -> {
+            addOptionalQueryParam(builder, QUERY_SUPPLIER_ID, filter.getSupplierId());
+            addOptionalQueryParam(builder, QUERY_WAREHOUSE_ID, filter.getWarehouseId());
             if (StringUtils.hasText(filter.getPoStatus())) {
-                builder.queryParam("status", filter.getPoStatus());
+                builder.queryParam(QUERY_STATUS, filter.getPoStatus());
             }
-            if (filter.getFromDate() != null) {
-                builder.queryParam("fromDate", filter.getFromDate());
+            applyDateRange(filter, builder);
+            applyPageAndSort(builder, 0, FETCH_SIZE, SORT_BY_CREATED_AT, SORT_DESC);
+        });
+        log.info(
+                "Fetching poSummary purchase orders url={} from={} to={} warehouseId={} supplierId={}",
+                url,
+                filter.getFromDate(),
+                filter.getToDate(),
+                filter.getWarehouseId(),
+                filter.getSupplierId());
+        List<PurchaseOrderRecord> orders = getAllPages(purchaseUrl, "/api/v1/purchase-orders/search", PURCHASE_SERVICE, "searchPurchaseOrders", PURCHASE_PAGE, builder -> {
+            addOptionalQueryParam(builder, QUERY_SUPPLIER_ID, filter.getSupplierId());
+            addOptionalQueryParam(builder, QUERY_WAREHOUSE_ID, filter.getWarehouseId());
+            if (StringUtils.hasText(filter.getPoStatus())) {
+                builder.queryParam(QUERY_STATUS, filter.getPoStatus());
             }
-            if (filter.getToDate() != null) {
-                builder.queryParam("toDate", filter.getToDate());
+            applyDateRange(filter, builder);
+            applyPageAndSort(builder, 0, FETCH_SIZE, SORT_BY_CREATED_AT, SORT_DESC);
+        });
+        log.info("Fetched poSummary purchase orders url={} count={}", url, orders.size());
+        return orders;
+    }
+
+    public List<PurchaseOrderReportRecord> getPurchaseOrderReportRows(ReportFilterRequest filter) {
+        return getAllPages(purchaseUrl, "/api/v1/purchase-orders/reports", PURCHASE_SERVICE, "getPurchaseOrderReportRows", PURCHASE_REPORT_PAGE, builder -> {
+            addOptionalQueryParam(builder, QUERY_SUPPLIER_ID, filter.getSupplierId());
+            if (StringUtils.hasText(filter.getPoStatus())) {
+                builder.queryParam(QUERY_STATUS, filter.getPoStatus());
             }
-            builder.queryParam("page", 0)
-                    .queryParam("size", FETCH_SIZE)
-                    .queryParam("sortBy", "createdAt")
-                    .queryParam("sortDir", "desc");
-        }).content();
+            if (StringUtils.hasText(filter.getPaymentStatus())) {
+                builder.queryParam("paymentStatus", filter.getPaymentStatus());
+            }
+            applyDateRange(filter, builder);
+            builder.queryParam(QUERY_PAGE, 0).queryParam(QUERY_SIZE, FETCH_SIZE);
+        });
+    }
+
+    public PurchaseOrderDetailRecord getPurchaseOrder(Long purchaseOrderId) {
+        return getObject(purchaseUrl, "/api/v1/purchase-orders/" + purchaseOrderId, PURCHASE_SERVICE, "getPurchaseOrder",
+                PurchaseOrderDetailRecord.class, null);
     }
 
     public List<SupplierRecord> getSuppliers() {
-        return getPage(supplierUrl, "/api/v1/suppliers", "SUPPLIER-SERVICE", "getSuppliers", SUPPLIER_PAGE, builder -> builder
-                .queryParam("page", 0)
-                .queryParam("size", FETCH_SIZE)
-                .queryParam("sortBy", "name")
-                .queryParam("sortDir", "asc")).content();
+        return getAllPages(supplierUrl, "/api/v1/suppliers", SUPPLIER_SERVICE, "getSuppliers", SUPPLIER_PAGE,
+                builder -> applyPageAndSort(builder, 0, FETCH_SIZE, SORT_BY_NAME, SORT_ASC));
     }
 
     public List<PaymentRecord> searchPayments(ReportFilterRequest filter) {
-        return getPage(paymentUrl, "/api/v1/payments/search", "PAYMENT-SERVICE", "searchPayments", PAYMENT_PAGE, builder -> {
-            if (filter.getSupplierId() != null) {
-                builder.queryParam("supplierId", filter.getSupplierId());
-            }
+        return getAllPages(paymentUrl, "/api/v1/payments/search", PAYMENT_SERVICE, "searchPayments", PAYMENT_PAGE, builder -> {
+            addOptionalQueryParam(builder, QUERY_SUPPLIER_ID, filter.getSupplierId());
             if (StringUtils.hasText(filter.getPaymentStatus())) {
-                builder.queryParam("status", filter.getPaymentStatus());
+                builder.queryParam(QUERY_STATUS, filter.getPaymentStatus());
             }
-            if (filter.getFromDate() != null) {
-                builder.queryParam("fromDate", filter.getFromDate());
-            }
-            if (filter.getToDate() != null) {
-                builder.queryParam("toDate", filter.getToDate());
-            }
-            builder.queryParam("page", 0)
-                    .queryParam("size", FETCH_SIZE)
-                    .queryParam("sortBy", "createdAt")
-                    .queryParam("sortDir", "desc");
-        }).content();
+            applyDateRange(filter, builder);
+            applyPageAndSort(builder, 0, FETCH_SIZE, SORT_BY_CREATED_AT, SORT_DESC);
+        });
+    }
+
+    public List<PaymentRecord> getPaymentsByPurchaseOrder(Long purchaseOrderId) {
+        return getAllPages(paymentUrl, "/api/v1/payments/purchase-order/" + purchaseOrderId, PAYMENT_SERVICE, "getPaymentsByPurchaseOrder",
+                PAYMENT_PAGE, builder -> builder
+                        .queryParam(QUERY_PAGE, 0)
+                        .queryParam(QUERY_SIZE, FETCH_SIZE));
+    }
+
+    public RemainingAmountRecord getRemainingAmount(Long purchaseOrderId) {
+        return getObject(paymentUrl, "/api/v1/payments/purchase-order/" + purchaseOrderId + "/remaining-amount", PAYMENT_SERVICE,
+                "getRemainingAmount", RemainingAmountRecord.class, null);
     }
 
     public PaymentSummaryRecord getPaymentSummary() {
-        return getObject(paymentUrl, "/api/v1/payments/summary", "PAYMENT-SERVICE", "getPaymentSummary", PaymentSummaryRecord.class, null);
+        return getObject(paymentUrl, "/api/v1/payments/summary", PAYMENT_SERVICE, "getPaymentSummary", PaymentSummaryRecord.class, null);
     }
 
     public AlertSummaryRecord getSystemAlertSummary() {
-        return getObject(alertUrl, "/api/v1/alerts/summary/system", "ALERT-SERVICE", "getSystemAlertSummary", AlertSummaryRecord.class, null);
+        return getObject(alertUrl, "/api/v1/alerts/summary/system", ALERT_SERVICE, "getSystemAlertSummary", AlertSummaryRecord.class, null);
     }
 
     public AlertSummaryRecord getMyAlertSummary() {
-        return getObject(alertUrl, "/api/v1/alerts/summary/my", "ALERT-SERVICE", "getMyAlertSummary", AlertSummaryRecord.class, null);
+        return getObject(alertUrl, "/api/v1/alerts/summary/my", ALERT_SERVICE, "getMyAlertSummary", AlertSummaryRecord.class, null);
     }
 
     public List<AlertRecord> getRecentAlerts(boolean admin) {
-        return getPage(alertUrl, admin ? "/api/v1/alerts/search" : "/api/v1/alerts/my", "ALERT-SERVICE", "getRecentAlerts", ALERT_PAGE, builder -> builder
-                .queryParam("page", 0)
-                .queryParam("size", 5)
-                .queryParam("sortBy", "createdAt")
-                .queryParam("sortDir", "desc")).content();
+        return getPage(alertUrl, admin ? "/api/v1/alerts/search" : "/api/v1/alerts/my", ALERT_SERVICE, "getRecentAlerts", ALERT_PAGE,
+                builder -> applyPageAndSort(builder, 0, 5, SORT_BY_CREATED_AT, SORT_DESC)).content();
     }
 
     private void applyFilterRange(ReportFilterRequest filter, UriBuilder builder) {
         if (filter.getFromDate() != null) {
-            builder.queryParam("fromDate", filter.getFromDate().atStartOfDay());
+            builder.queryParam(QUERY_FROM_DATE, filter.getFromDate().atStartOfDay());
         }
         if (filter.getToDate() != null) {
-            builder.queryParam("toDate", filter.getToDate().plusDays(1).atStartOfDay().minusNanos(1));
+            builder.queryParam(QUERY_TO_DATE, filter.getToDate().plusDays(1).atStartOfDay().minusNanos(1));
         }
+    }
+
+    private void applyDateRange(ReportFilterRequest filter, UriBuilder builder) {
+        addOptionalQueryParam(builder, QUERY_FROM_DATE, filter.getFromDate());
+        addOptionalQueryParam(builder, QUERY_TO_DATE, filter.getToDate());
+    }
+
+    private void addOptionalQueryParam(UriBuilder builder, String name, Object value) {
+        if (value != null) {
+            builder.queryParam(name, value);
+        }
+    }
+
+    private void applyPageAndSort(UriBuilder builder, int page, int size, String sortBy, String sortDir) {
+        builder.queryParam(QUERY_PAGE, page)
+                .queryParam(QUERY_SIZE, size)
+                .queryParam(QUERY_SORT_BY, sortBy)
+                .queryParam(QUERY_SORT_DIR, sortDir);
     }
 
     private <T> PageResponse<T> getPage(
@@ -310,6 +377,32 @@ public class ReportingDataClient {
         return value;
     }
 
+    private <T> List<T> getAllPages(
+            String baseUrl,
+            String path,
+            String serviceName,
+            String methodName,
+            ParameterizedTypeReference<PageResponse<T>> type,
+            Consumer<UriBuilder> customizer) {
+        List<T> content = new ArrayList<>();
+        int currentPage = 0;
+        int totalPages;
+        do {
+            final int pageNumber = currentPage;
+            PageResponse<T> response = getPage(baseUrl, path, serviceName, methodName, type, builder -> {
+                if (customizer != null) {
+                    customizer.accept(builder);
+                }
+                builder.replaceQueryParam("page", pageNumber);
+                builder.replaceQueryParam("size", FETCH_SIZE);
+            });
+            content.addAll(response.content() != null ? response.content() : List.of());
+            totalPages = response.totalPages() != null ? response.totalPages() : 0;
+            currentPage++;
+        } while (currentPage < Math.max(totalPages, 1));
+        return content;
+    }
+
     private void applyAuth(HttpHeaders headers) {
         String token = resolveToken();
         if (StringUtils.hasText(token)) {
@@ -380,17 +473,57 @@ public class ReportingDataClient {
                                       LocalDate actualDeliveryDate, Boolean isOverdue, LocalDateTime createdAt, LocalDateTime receivedAt) {
     }
 
+    public record PurchaseOrderLineItemRecord(Long lineItemId, Long productId, String productSku, String productName,
+                                              Integer orderedQuantity, Integer receivedQuantity, Integer pendingQuantity,
+                                              BigDecimal unitCost, BigDecimal lineTotal, String notes) {
+    }
+
+    public record PurchaseOrderHistoryRecord(Long historyId, String action, String oldStatus, String newStatus, Long actorId,
+                                             String remarks, LocalDateTime actionAt) {
+    }
+
+    public record PurchaseOrderDetailRecord(Long purchaseOrderId, String poNumber, Long supplierId, String supplierName,
+                                            Long warehouseId, String warehouseName, Long createdBy, String createdByName,
+                                            Long approvedBy, String approvedByName, String status, BigDecimal subtotalAmount,
+                                            BigDecimal taxAmount, BigDecimal discountAmount, BigDecimal shippingAmount,
+                                            BigDecimal totalAmount, LocalDate expectedDeliveryDate, LocalDate actualDeliveryDate,
+                                            String paymentTerms, String notes, String approvalRemarks, String rejectionReason,
+                                            String cancellationReason, LocalDateTime submittedAt, LocalDateTime approvedAt,
+                                            LocalDateTime rejectedAt, LocalDateTime cancelledAt, LocalDateTime receivedAt,
+                                            LocalDateTime createdAt, LocalDateTime updatedAt, Boolean isOverdue,
+                                            String paymentStatus, Boolean paymentCompleted,
+                                            List<PurchaseOrderLineItemRecord> lineItems,
+                                            List<PurchaseOrderHistoryRecord> history) {
+    }
+
+    public record PurchaseOrderReportRecord(Long purchaseOrderId, String poNumber, String purchaseOrderStatus, String paymentStatus,
+                                            String paymentNumber, String razorpayOrderId, String razorpayPaymentId,
+                                            BigDecimal paymentAmount, LocalDateTime paidAt, Long supplierId, String supplierName,
+                                            Long warehouseId, String warehouseName, Long productId, String productSku,
+                                            String productName, String productCategory, BigDecimal unitPrice, Integer orderedQuantity,
+                                            Integer receivedQuantity, Integer remainingQuantity, BigDecimal lineTotal,
+                                            BigDecimal purchaseOrderTotalAmount, LocalDate orderDate, LocalDate expectedDate,
+                                            Long approvedBy, LocalDateTime approvedAt, LocalDateTime createdAt) {
+    }
+
     public record SupplierRecord(Long supplierId, String name, Integer leadTimeDays, BigDecimal rating, Boolean isActive) {
     }
 
-    public record PaymentRecord(Long paymentId, String paymentNumber, Long purchaseOrderId, Long supplierId, String supplierName,
-                                String status, BigDecimal paymentAmount, BigDecimal remainingAmount) {
+    public record PaymentRecord(Long paymentId, String paymentNumber, Long purchaseOrderId, String poNumber, Long supplierId, String supplierName,
+                                String status, String paymentMethod, BigDecimal paymentAmount, BigDecimal poTotalAmount,
+                                BigDecimal previouslyPaidAmount, BigDecimal remainingAmount, String currency, LocalDate paymentDate,
+                                String transactionReference, String razorpayOrderId, String razorpayPaymentId,
+                                Long createdBy, Long paidBy, LocalDateTime paidAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
     }
 
     public record PaymentSummaryRecord(Long totalPayments, Long draftCount, Long pendingApprovalCount, Long approvedCount,
                                        Long partiallyPaidCount, Long paidCount, Long cancelledCount, Long rejectedCount,
                                        Long reversedCount, BigDecimal totalPaidAmount, BigDecimal pendingPaymentAmount,
                                        BigDecimal remainingPaymentAmount) {
+    }
+
+    public record RemainingAmountRecord(Long purchaseOrderId, String poNumber, BigDecimal purchaseOrderTotalAmount,
+                                        BigDecimal paidAmount, BigDecimal remainingAmount, String status) {
     }
 
     public record AlertSummaryRecord(Long totalAlerts, Long unreadCount, Long acknowledgedCount, Long dismissedCount,

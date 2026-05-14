@@ -95,6 +95,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             case "OFFICER" -> authorities.add("ROLE_PURCHASE_OFFICER");
             case "STAFF" -> authorities.add("ROLE_WAREHOUSE_STAFF");
             default -> {
+                // Keep the original role-only authority for any other valid role claim.
             }
         }
 

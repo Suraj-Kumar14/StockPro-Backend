@@ -1,16 +1,16 @@
 package com.stockpro.reportservice.dto.response;
 
+import java.time.LocalDate;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 public record DeadStockResponse(
         Long productId,
-        String sku,
         String productName,
+        String sku,
         Long warehouseId,
         String warehouseName,
-        BigDecimal currentQuantity,
+        BigDecimal quantity,
         BigDecimal stockValue,
-        LocalDateTime lastMovementDate,
+        LocalDate lastMovementDate,
         long daysWithoutMovement) {
 }

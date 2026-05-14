@@ -1,15 +1,16 @@
 package com.stockpro.reportservice.dto.response;
 
+import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 
 public record InventoryValuationResponse(
+        LocalDate asOfDate,
         BigDecimal totalInventoryValue,
         BigDecimal totalQuantity,
         long totalProducts,
         long totalWarehouses,
-        List<WarehouseValuationItem> valuationByWarehouse,
-        Map<String, BigDecimal> valuationByCategory,
-        List<ProductValuationItem> valuationByProduct) {
+        List<WarehouseValuationItem> warehouseBreakdown,
+        List<ProductValuationItem> productBreakdown,
+        List<String> warnings) {
 }

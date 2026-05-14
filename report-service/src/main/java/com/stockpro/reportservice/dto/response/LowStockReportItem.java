@@ -4,12 +4,13 @@ import java.math.BigDecimal;
 
 public record LowStockReportItem(
         Long productId,
-        String sku,
         String productName,
+        String sku,
         Long warehouseId,
         String warehouseName,
         BigDecimal availableQuantity,
         BigDecimal reorderLevel,
-        BigDecimal shortageQuantity,
-        String severity) {
+        BigDecimal maxStockLevel,
+        String severity,
+        String recommendedAction) {
 }

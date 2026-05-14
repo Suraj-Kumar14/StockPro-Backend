@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.*;
 import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +25,7 @@ public class GlobalExceptionHandler {
             DataNotFoundException ex, HttpServletRequest request) {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
-                        HttpStatus.NOT_FOUND.value(), "Not Found",
+                        HttpStatus.NOT_FOUND.value(), "REPORT_DATA_UNAVAILABLE",
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.NOT_FOUND);
     }
@@ -34,7 +35,7 @@ public class GlobalExceptionHandler {
             ReportGenerationException ex, HttpServletRequest request) {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
-                        HttpStatus.SERVICE_UNAVAILABLE.value(), "Service Unavailable",
+                        HttpStatus.SERVICE_UNAVAILABLE.value(), "DOWNSTREAM_SERVICE_UNAVAILABLE",
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.SERVICE_UNAVAILABLE);
     }
@@ -44,7 +45,7 @@ public class GlobalExceptionHandler {
             IllegalArgumentException ex, HttpServletRequest request) {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
-                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
                         ex.getMessage(), request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
     }
@@ -65,8 +66,19 @@ public class GlobalExceptionHandler {
             ConstraintViolationException ex, HttpServletRequest request) {
         return new ResponseEntity<>(
                 new ErrorResponse(LocalDateTime.now(),
-                        HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                        HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
                         ex.getMessage(), request.getRequestURI()),
+                HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingRequestParameter(
+            MissingServletRequestParameterException ex, HttpServletRequest request) {
+        return new ResponseEntity<>(
+                new ErrorResponse(LocalDateTime.now(),
+                        HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
+                        ex.getParameterName() + " is required",
+                        request.getRequestURI()),
                 HttpStatus.BAD_REQUEST);
     }
 

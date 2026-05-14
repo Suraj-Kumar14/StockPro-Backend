@@ -16,18 +16,18 @@ public class LoggingAspect {
 
     @Around("execution(* com.stockpro.reportservice.service.*.*(..))")
     public Object logAround(ProceedingJoinPoint pjp) throws Throwable {
-        log.debug("Entering: {}", pjp.getSignature().toShortString());
+        boolean debugEnabled = log.isDebugEnabled();
+        String signature = debugEnabled ? pjp.getSignature().toShortString() : null;
+        if (debugEnabled) {
+            log.debug("Entering: {}", signature);
+        }
         long start = System.currentTimeMillis();
         try {
-            Object result = pjp.proceed();
-            log.debug("Exiting: {} ({}ms)",
-                    pjp.getSignature().toShortString(),
-                    System.currentTimeMillis() - start);
-            return result;
-        } catch (Exception ex) {
-            log.error("Exception in {}: {}",
-                    pjp.getSignature().toShortString(), ex.getMessage());
-            throw ex;
+            return pjp.proceed();
+        } finally {
+            if (debugEnabled) {
+                log.debug("Exiting: {} ({}ms)", signature, System.currentTimeMillis() - start);
+            }
         }
     }
 }

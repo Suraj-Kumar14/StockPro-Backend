@@ -87,11 +87,10 @@ eureka:
 
 logging:
   level:
-    com.stockpro.reportservice: INFO
-  file:
-    name: logs/report-service.log
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
 
 springdoc:
   api-docs:

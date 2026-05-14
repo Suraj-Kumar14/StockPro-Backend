@@ -4,9 +4,11 @@ import java.math.BigDecimal;
 
 public record TopMovingProductResponse(
         Long productId,
-        String sku,
         String productName,
-        BigDecimal totalMovementQuantity,
+        String sku,
+        BigDecimal unitsIn,
+        BigDecimal unitsOut,
+        BigDecimal totalMoved,
         long movementCount,
         BigDecimal totalMovementValue) {
 }

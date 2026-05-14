@@ -6,5 +6,5 @@ public record WarehouseValuationItem(
         Long warehouseId,
         String warehouseName,
         BigDecimal totalQuantity,
-        BigDecimal totalValue) {
+        BigDecimal stockValue) {
 }

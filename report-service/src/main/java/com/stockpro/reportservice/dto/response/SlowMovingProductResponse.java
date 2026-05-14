@@ -1,14 +1,14 @@
 package com.stockpro.reportservice.dto.response;
 
+import java.time.LocalDate;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 public record SlowMovingProductResponse(
         Long productId,
-        String sku,
         String productName,
-        LocalDateTime lastMovementDate,
+        String sku,
+        BigDecimal totalMoved,
+        LocalDate lastMovementDate,
         long daysSinceLastMovement,
-        BigDecimal currentQuantity,
-        BigDecimal stockValue) {
+        BigDecimal currentQuantity) {
 }
