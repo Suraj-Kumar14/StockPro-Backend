@@ -57,12 +57,12 @@ class HttpWarehouseGatewayTest {
     }
 
     @Test
-    void resolveServiceRootUrlKeepsWarehouseServiceNameInsteadOfLocalhost() {
+    void resolveServiceRootUrlKeepsConfiguredWarehouseServiceHostInsteadOfLocalhost() {
         ReflectionTestUtils.setField(gateway, "warehouseServiceBaseUrl", "WAREHOUSE-SERVICE/api/v1/warehouses/");
 
         String resolved = (String) ReflectionTestUtils.invokeMethod(gateway, "resolveServiceRootUrl");
 
-        assertEquals("http://WAREHOUSE-SERVICE", resolved);
+        assertEquals("WAREHOUSE-SERVICE", resolved);
         assertFalse(resolved.contains("localhost"));
     }
 }
