@@ -1,6 +1,7 @@
 package com.stockpro.movementservice;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -14,6 +15,7 @@ import com.stockpro.movementservice.dto.request.CreateMovementRequest;
 import com.stockpro.movementservice.dto.request.MovementSearchRequest;
 import com.stockpro.movementservice.dto.request.ReverseMovementRequest;
 import com.stockpro.movementservice.dto.response.MovementAnalyticsResponse;
+import com.stockpro.movementservice.dto.response.MovementResponse;
 import com.stockpro.movementservice.dto.response.MovementSummaryResponse;
 import com.stockpro.movementservice.entity.StockMovement;
 import com.stockpro.movementservice.enums.MovementDirection;
@@ -29,6 +31,7 @@ import com.stockpro.movementservice.service.impl.MovementServiceImpl;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.mockito.ArgumentCaptor;
 import java.util.Optional;
 import org.springframework.data.domain.PageImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -183,10 +186,20 @@ class MovementServiceImplTest {
         });
 
         var response = movementService.reverseMovement(5L, new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "Duplicate GRN"), 200L);
+        ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
+        verify(movementRepository).save(captor.capture());
+        StockMovement reversal = captor.getValue();
 
-        assertEquals(MovementType.REVERSAL, response.movementType());
+        assertEquals(MovementType.ADJUSTMENT, response.movementType());
         assertEquals(MovementDirection.OUT, response.direction());
         assertEquals(Long.valueOf(5L), response.relatedMovementId());
+        assertEquals(MovementType.ADJUSTMENT, reversal.getMovementType());
+        assertEquals(MovementDirection.OUT, reversal.getDirection());
+        assertEquals(original.getQuantity(), reversal.getQuantity());
+        assertEquals(original.getBalanceAfter().subtract(original.getQuantity()), reversal.getBalanceAfter());
+        assertEquals(MovementType.STOCK_IN, original.getMovementType());
+        assertEquals(MovementDirection.IN, original.getDirection());
+        assertNotEquals(Boolean.TRUE, original.getIsReversal());
     }
 
     @Test
@@ -209,8 +222,18 @@ class MovementServiceImplTest {
         when(movementRepository.findByMovementId(5L)).thenReturn(Optional.of(original));
         when(movementRepository.existsByRelatedMovementId(5L)).thenReturn(true);
 
+        ReverseMovementRequest request = new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "Duplicate GRN");
         assertThrows(InvalidMovementException.class,
-                () -> movementService.reverseMovement(5L, new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "Duplicate GRN"), 200L));
+                () -> movementService.reverseMovement(5L, request, 200L));
+    }
+
+    @Test
+    void reverseMovement_shouldThrowNotFoundWhenMovementDoesNotExist() {
+        when(movementRepository.findByMovementId(404L)).thenReturn(Optional.empty());
+
+        ReverseMovementRequest request = new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "missing");
+        assertThrows(MovementNotFoundException.class,
+                () -> movementService.reverseMovement(404L, request, 200L));
     }
 
     @Test
@@ -230,7 +253,7 @@ class MovementServiceImplTest {
                 .movementDate(LocalDateTime.now())
                 .build();
 
-        when(movementRepository.findByIdempotencyKey(eq("evt-1:STOCK_IN:20"))).thenReturn(Optional.of(existing));
+        when(movementRepository.findByIdempotencyKey("evt-1:STOCK_IN:20")).thenReturn(Optional.of(existing));
 
         var response = movementService.createMovementFromEvent(new CreateMovementFromEventRequest(
                 "evt-1", "STOCK_RECEIVED", 10L, null, null,
@@ -452,8 +475,9 @@ class MovementServiceImplTest {
 
     @Test
     void reverseAndAnalyticsAndExport_shouldCoverAdditionalBranches() {
+        ReverseMovementRequest missingReasonRequest = new ReverseMovementRequest(null, "missing reason");
         assertThrows(InvalidMovementException.class,
-                () -> movementService.reverseMovement(1L, new ReverseMovementRequest(null, "missing reason"), 1L));
+                () -> movementService.reverseMovement(1L, missingReasonRequest, 1L));
 
         when(movementRepository.findAll()).thenReturn(List.of(
                 namedMovement("MOV-1", "Widget", "Main", MovementType.ADJUSTMENT, MovementDirection.IN, new BigDecimal("3"), new BigDecimal("30")),
@@ -499,8 +523,9 @@ class MovementServiceImplTest {
 
         when(movementRepository.findByMovementId(10L)).thenReturn(Optional.of(original));
 
+        ReverseMovementRequest request = new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "already reversal");
         assertThrows(InvalidMovementException.class,
-                () -> movementService.reverseMovement(10L, new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "already reversal"), 200L));
+                () -> movementService.reverseMovement(10L, request, 200L));
     }
 
     @Test
@@ -524,8 +549,9 @@ class MovementServiceImplTest {
         when(movementRepository.findByMovementId(9L)).thenReturn(Optional.of(original));
         when(movementRepository.existsByRelatedMovementId(9L)).thenReturn(false);
 
+        ReverseMovementRequest request = new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "would go negative");
         assertThrows(InvalidMovementException.class,
-                () -> movementService.reverseMovement(9L, new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "would go negative"), 200L));
+                () -> movementService.reverseMovement(9L, request, 200L));
     }
 
     @Test
@@ -577,6 +603,25 @@ class MovementServiceImplTest {
         assertEquals(new BigDecimal("10.0000"), summary.totalTransferQuantity());
         assertEquals(new BigDecimal("1.0000"), summary.totalAdjustmentQuantity());
         assertEquals(new BigDecimal("2.0000"), summary.totalReturnQuantity());
+    }
+
+    @Test
+    void getRecentMovements_shouldClampRequestedLimitAndMapRepositoryResults() {
+        StockMovement newest = namedMovement(
+                "MOV-RECENT-1", "Widget", "Main", MovementType.STOCK_IN, MovementDirection.IN,
+                new BigDecimal("2"), new BigDecimal("20"));
+        StockMovement older = namedMovement(
+                "MOV-RECENT-2", "Gadget", "Reserve", MovementType.STOCK_OUT, MovementDirection.OUT,
+                new BigDecimal("1"), new BigDecimal("10"));
+
+        when(movementRepository.findRecentMovements(10)).thenReturn(List.of(newest, older));
+
+        List<MovementResponse> responses = movementService.getRecentMovements(99);
+
+        assertEquals(2, responses.size());
+        assertEquals("MOV-RECENT-1", responses.get(0).movementNumber());
+        assertEquals("MOV-RECENT-2", responses.get(1).movementNumber());
+        verify(movementRepository).findRecentMovements(10);
     }
 
     private StockMovement stockMovement(MovementType type, BigDecimal quantity, BigDecimal value) {

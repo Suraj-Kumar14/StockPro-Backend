@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,14 @@ public class GlobalExceptionHandler {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
+        String technicalMessage = rootCauseMessage(ex);
+        String userMessage = resolvePersistenceUserMessage(technicalMessage);
+        log.error("Movement persistence error at path={} message={}", request.getRequestURI(), technicalMessage, ex);
+        return buildErrorResponse(HttpStatus.UNPROCESSABLE_ENTITY, userMessage, request);
+    }
+
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleOptimisticLocking(OptimisticLockingFailureException ex, HttpServletRequest request) {
         return buildErrorResponse(HttpStatus.CONFLICT, "Movement was updated by another transaction. Please retry.", request);
@@ -78,5 +87,21 @@ public class GlobalExceptionHandler {
     private ResponseEntity<ErrorResponse> buildErrorResponse(HttpStatus status, String message, HttpServletRequest request) {
         ErrorResponse error = new ErrorResponse(LocalDateTime.now(), status.value(), status.getReasonPhrase(), message, request.getRequestURI());
         return new ResponseEntity<>(error, status);
+    }
+
+    private String resolvePersistenceUserMessage(String technicalMessage) {
+        String normalized = technicalMessage == null ? "" : technicalMessage.toLowerCase();
+        if (normalized.contains("movement_type")) {
+            return "Movement reversal failed. Please check movement configuration or contact admin.";
+        }
+        return "The movement could not be saved because of a database validation error.";
+    }
+
+    private String rootCauseMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current.getMessage() != null ? current.getMessage() : throwable.getMessage();
     }
 }

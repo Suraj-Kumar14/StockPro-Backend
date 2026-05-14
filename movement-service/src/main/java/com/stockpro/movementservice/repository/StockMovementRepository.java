@@ -6,7 +6,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
@@ -44,4 +46,11 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
     boolean existsByRelatedMovementId(Long relatedMovementId);
 
     Optional<StockMovement> findByIdempotencyKey(String idempotencyKey);
+
+    List<StockMovement> findTop10ByOrderByMovementDateDesc();
+
+    default List<StockMovement> findRecentMovements(int limit) {
+        Pageable pageable = PageRequest.of(0, Math.max(limit, 1), Sort.by(Sort.Direction.DESC, "movementDate"));
+        return findAll(pageable).getContent();
+    }
 }

@@ -8,6 +8,7 @@ import com.stockpro.movementservice.dto.response.MovementAnalyticsResponse;
 import com.stockpro.movementservice.dto.response.MovementResponse;
 import com.stockpro.movementservice.dto.response.MovementSummaryResponse;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.data.domain.Page;
 
 public interface MovementService {
@@ -35,6 +36,8 @@ public interface MovementService {
     MovementResponse reverseMovement(Long movementId, ReverseMovementRequest request, Long actorId);
 
     MovementSummaryResponse getMovementSummary(LocalDateTime fromDate, LocalDateTime toDate);
+
+    List<MovementResponse> getRecentMovements(int limit);
 
     MovementAnalyticsResponse getMovementAnalytics(LocalDateTime fromDate, LocalDateTime toDate);
 

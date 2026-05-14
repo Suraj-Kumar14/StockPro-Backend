@@ -41,11 +41,10 @@ eureka:
 
 logging:
   level:
+    root: INFO
     com.stockpro: DEBUG
-  file:
-    name: logs/movement-service.log
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
 
 springdoc:
   api-docs:
@@ -67,6 +66,11 @@ warehouse-service:
 
 stockpro:
   rabbitmq:
+    alert:
+      exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
+      routing:
+        unauthorized: ${ALERT_UNAUTHORIZED_ROUTING_KEY:alert.system.unauthorized}
+        system-error: ${ALERT_SYSTEM_ERROR_ROUTING_KEY:alert.system.error}
     movement:
       exchange: ${MOVEMENT_RABBITMQ_EXCHANGE:stockpro.movement.exchange}
       routing:

@@ -23,6 +23,9 @@ import com.stockpro.movementservice.enums.MovementDirection;
 import com.stockpro.movementservice.enums.MovementReasonCode;
 import com.stockpro.movementservice.enums.MovementType;
 import com.stockpro.movementservice.enums.ReferenceType;
+import com.stockpro.movementservice.exception.GlobalExceptionHandler;
+import com.stockpro.movementservice.exception.MovementNotFoundException;
+import com.stockpro.movementservice.publisher.SystemAlertPublisher;
 import com.stockpro.movementservice.service.MovementService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -42,7 +45,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(controllers = MovementApiV1Controller.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, GlobalExceptionHandler.class})
 @TestPropertySource(properties = "jwt.secret=my-secret-key-ayush-chouhan-stockpro-secret-key-2024")
 class MovementApiV1ControllerTest {
 
@@ -54,6 +57,9 @@ class MovementApiV1ControllerTest {
 
     @MockBean
     private MovementService movementService;
+
+    @MockBean
+    private SystemAlertPublisher systemAlertPublisher;
 
     @Test
     @WithMockUser(roles = "ADMIN")
@@ -115,6 +121,20 @@ class MovementApiV1ControllerTest {
 
     @Test
     @WithMockUser(roles = "MANAGER")
+    void postReverse_returns404WhenMovementDoesNotExist() throws Exception {
+        when(movementService.reverseMovement(eq(999L), any(ReverseMovementRequest.class), eq(null)))
+                .thenThrow(new MovementNotFoundException("Movement not found with id: 999"));
+
+        mockMvc.perform(post("/api/v1/movements/999/reverse")
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(new ReverseMovementRequest(MovementReasonCode.MANUAL_CORRECTION, "Fixing a double receipt"))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Movement not found with id: 999"));
+    }
+
+    @Test
+    @WithMockUser(roles = "MANAGER")
     void searchLookupSummaryAnalyticsAndExport_shouldReturnPayloads() throws Exception {
         when(movementService.searchMovements(any())).thenReturn(new PageImpl<>(List.of(sampleResponse())));
         when(movementService.getMovementById(1L)).thenReturn(sampleResponse());
@@ -122,6 +142,7 @@ class MovementApiV1ControllerTest {
         when(movementService.getMovementsByProduct(10L, 0, 10)).thenReturn(new PageImpl<>(List.of(sampleResponse())));
         when(movementService.getMovementsByWarehouse(20L, 0, 10)).thenReturn(new PageImpl<>(List.of(sampleResponse())));
         when(movementService.getMovementsByReference("GRN", "500", 0, 10)).thenReturn(new PageImpl<>(List.of(sampleResponse())));
+        when(movementService.getRecentMovements(5)).thenReturn(List.of(sampleResponse()));
         when(movementService.getMovementSummary(any(), any())).thenReturn(new MovementSummaryResponse(
                 3L, new BigDecimal("10.0000"), new BigDecimal("5.0000"), BigDecimal.ZERO,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("15.0000"), 1L, 3L));
@@ -159,6 +180,10 @@ class MovementApiV1ControllerTest {
         mockMvc.perform(get("/api/v1/movements/summary"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalMovements").value(3));
+
+        mockMvc.perform(get("/api/v1/movements/recent"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].movementNumber").value("MOV-20260501-000001"));
 
         mockMvc.perform(get("/api/v1/movements/analytics"))
                 .andExpect(status().isOk())

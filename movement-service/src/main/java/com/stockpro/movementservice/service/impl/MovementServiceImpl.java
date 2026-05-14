@@ -57,6 +57,15 @@ public class MovementServiceImpl implements MovementService {
 
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
             "movementDate", "createdAt", "movementNumber", "productId", "warehouseId", "movementType", "totalValue");
+    private static final Set<MovementType> REVERSIBLE_MOVEMENT_TYPES = EnumSet.of(
+            MovementType.STOCK_IN,
+            MovementType.STOCK_OUT,
+            MovementType.TRANSFER_IN,
+            MovementType.TRANSFER_OUT,
+            MovementType.ADJUSTMENT,
+            MovementType.WRITE_OFF,
+            MovementType.RETURN,
+            MovementType.CYCLE_COUNT_CORRECTION);
 
     private final StockMovementRepository movementRepository;
     private final MovementMapper movementMapper;
@@ -215,8 +224,20 @@ public class MovementServiceImpl implements MovementService {
         if (movementRepository.existsByRelatedMovementId(movementId)) {
             throw new InvalidMovementException("Movement has already been reversed");
         }
+        if (!REVERSIBLE_MOVEMENT_TYPES.contains(original.getMovementType())) {
+            throw new InvalidMovementException("This movement type cannot be reversed");
+        }
         MovementDirection reverseDirection = oppositeDirection(original.getDirection());
         BigDecimal reverseBalance = calculateReverseBalance(original);
+        MovementType reversalMovementType = resolveReversalMovementType();
+        log.info(
+                "Creating reversal movement movementId={} originalMovementType={} reversalMovementType={} direction={} quantity={} reasonCode={}",
+                original.getMovementId(),
+                original.getMovementType(),
+                reversalMovementType,
+                reverseDirection,
+                original.getQuantity(),
+                request.reasonCode());
         StockMovement reversal = movementRepository.save(StockMovement.builder()
                 .movementNumber(generateMovementNumber())
                 .productId(original.getProductId())
@@ -225,7 +246,7 @@ public class MovementServiceImpl implements MovementService {
                 .warehouseId(original.getWarehouseId())
                 .warehouseCode(original.getWarehouseCode())
                 .warehouseName(original.getWarehouseName())
-                .movementType(MovementType.REVERSAL)
+                .movementType(reversalMovementType)
                 .direction(reverseDirection)
                 .quantity(original.getQuantity())
                 .unitCost(original.getUnitCost())
@@ -275,6 +296,14 @@ public class MovementServiceImpl implements MovementService {
                 totalValue,
                 movementsToday,
                 movementsThisMonth);
+    }
+
+    @Override
+    public List<MovementResponse> getRecentMovements(int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 10);
+        return movementRepository.findRecentMovements(safeLimit).stream()
+                .map(movementMapper::toResponse)
+                .toList();
     }
 
     @Override
@@ -598,6 +627,11 @@ public class MovementServiceImpl implements MovementService {
         };
     }
 
+    private MovementType resolveReversalMovementType() {
+        // Use ADJUSTMENT for reversal persistence so older MySQL enum columns do not reject the write.
+        return MovementType.ADJUSTMENT;
+    }
+
     private BigDecimal calculateReverseBalance(StockMovement original) {
         BigDecimal result = switch (original.getDirection()) {
             case IN -> original.getBalanceAfter().subtract(original.getQuantity());
@@ -687,7 +721,9 @@ public class MovementServiceImpl implements MovementService {
     }
 
     private String productLabel(StockMovement movement) {
-        return defaultLabel(movement.getProductName(), movement.getProductId(), "Product");
+        return movement.getProductName() != null && !movement.getProductName().isBlank()
+                ? movement.getProductName()
+                : "Deleted/Unavailable Product";
     }
 
     private String defaultLabel(String value, Long id, String prefix) {
