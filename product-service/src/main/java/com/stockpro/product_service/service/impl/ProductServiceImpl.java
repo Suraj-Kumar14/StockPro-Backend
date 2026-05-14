@@ -269,21 +269,12 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public void deleteProduct(Long productId) {
         Product product = findProduct(productId);
-        if (Boolean.TRUE.equals(product.getIsActive())) {
-            log.warn("Product delete rejected because productId={} is still active", productId);
-            throw new InvalidProductDataException("Cannot delete product. Please deactivate it instead.");
-        }
-
-        if (inventoryAvailabilityGateway.hasInventoryUsage(productId)
-                || purchaseOrderUsageGateway.hasPurchaseOrderUsage(productId)) {
-            log.warn("Product delete rejected because productId={} is still referenced", productId);
-            throw new InvalidProductDataException("Cannot delete product. Please deactivate it instead.");
-        }
-
         String oldSnapshot = snapshot(product);
-        productRepository.delete(product);
         Long actorId = currentUserContext.getActorId();
-        log.info("Product deleted permanently for productId={}", productId);
+        product.setIsActive(false);
+        product.setUpdatedBy(actorId);
+        productRepository.save(product);
+        log.info("Product soft deleted for productId={}", productId);
         audit(actorId, "PRODUCT_DELETED", productId, oldSnapshot, null);
         productEventPublisher.publishProductDeleted(buildEvent(
                 product,
@@ -359,19 +350,19 @@ public class ProductServiceImpl implements ProductService {
     private void validateSkuAndBarcodeUniqueness(String sku, String barcode, Long productId) {
         if (productId == null && productRepository.existsBySkuIgnoreCase(sku)) {
             log.warn("Duplicate SKU detected: {}", sku);
-            throw new DuplicateSkuException("SKU already exists");
+            throw new DuplicateSkuException("Duplicate SKU number");
         }
         if (productId != null && productRepository.existsBySkuIgnoreCaseAndProductIdNot(sku, productId)) {
             log.warn("Duplicate SKU detected during update: {}", sku);
-            throw new DuplicateSkuException("SKU already exists");
+            throw new DuplicateSkuException("Duplicate SKU number");
         }
         if (barcode != null && productId == null && productRepository.existsByBarcode(barcode)) {
             log.warn("Duplicate barcode detected: {}", barcode);
-            throw new DuplicateBarcodeException("Barcode already exists");
+            throw new DuplicateBarcodeException("Duplicate barcode");
         }
         if (barcode != null && productId != null && productRepository.existsByBarcodeAndProductIdNot(barcode, productId)) {
             log.warn("Duplicate barcode detected during update: {}", barcode);
-            throw new DuplicateBarcodeException("Barcode already exists");
+            throw new DuplicateBarcodeException("Duplicate barcode");
         }
     }
 

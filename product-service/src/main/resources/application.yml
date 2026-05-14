@@ -43,11 +43,10 @@ eureka:
 
 logging:
   level:
+    root: INFO
     com.stockpro: DEBUG
-  file:
-    name: logs/product-service.log
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
 
 springdoc:
   api-docs:

@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,8 +25,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.security.access.AccessDeniedException;
-
 import com.stockpro.product_service.dto.request.CreateProductRequest;
 import com.stockpro.product_service.dto.request.UpdateProductRequest;
 import com.stockpro.product_service.dto.response.ProductResponse;
@@ -117,16 +114,18 @@ class ProductServiceImplTest {
     @Test
     void createProduct_shouldThrowConflict_whenSkuAlreadyExists() {
         when(productRepository.existsBySkuIgnoreCase("SKU-001")).thenReturn(true);
+        CreateProductRequest request = buildCreateRequest();
 
-        assertThrows(DuplicateSkuException.class, () -> productService.createProduct(buildCreateRequest(), 10L));
+        assertThrows(DuplicateSkuException.class, () -> productService.createProduct(request, 10L));
     }
 
     @Test
     void createProduct_shouldThrowConflict_whenBarcodeAlreadyExists() {
         when(productRepository.existsBySkuIgnoreCase("SKU-001")).thenReturn(false);
         when(productRepository.existsByBarcode("BAR-001")).thenReturn(true);
+        CreateProductRequest request = buildCreateRequest();
 
-        assertThrows(DuplicateBarcodeException.class, () -> productService.createProduct(buildCreateRequest(), 10L));
+        assertThrows(DuplicateBarcodeException.class, () -> productService.createProduct(request, 10L));
     }
 
     @Test
@@ -156,11 +155,14 @@ class ProductServiceImplTest {
 
     @Test
     void getProductBySku_shouldReturnProduct() {
-        when(productRepository.findBySkuIgnoreCase("SKU-001")).thenReturn(Optional.of(buildProduct()));
+        Product product = buildProduct();
+        product.setSku("SKU-001");
+        when(productRepository.findBySkuIgnoreCase("SKU-001")).thenReturn(Optional.of(product));
 
-        ProductResponse response = productService.getProductBySku("sku-001");
+        ProductResponse response = productService.getProductBySku("SKU-001");
 
         assertEquals(1L, response.getProductId());
+        assertEquals("SKU-001", response.getSku());
     }
 
     @Test
@@ -257,29 +259,33 @@ class ProductServiceImplTest {
     }
 
     @Test
-    void deleteProduct_shouldDeleteOrRejectSafely() {
+    void deleteProduct_shouldSoftDeleteInactiveProduct() {
         Product existing = buildProduct();
         existing.setIsActive(false);
         when(productRepository.findByProductId(1L)).thenReturn(Optional.of(existing));
-        when(inventoryAvailabilityGateway.hasInventoryUsage(1L)).thenReturn(false);
-        when(purchaseOrderUsageGateway.hasPurchaseOrderUsage(1L)).thenReturn(false);
         when(currentUserContext.getActorId()).thenReturn(10L);
 
         productService.deleteProduct(1L);
 
-        verify(productRepository).delete(existing);
+        assertFalse(existing.getIsActive());
+        assertEquals(10L, existing.getUpdatedBy());
+        verify(productRepository).save(existing);
         verify(productEventPublisher).publishProductDeleted(any(ProductLifecycleEvent.class));
     }
 
     @Test
-    void deleteProduct_shouldReject_whenProductIsStillReferenced() {
+    void deleteProduct_shouldSoftDeleteReferencedProduct() {
         Product existing = buildProduct();
         existing.setIsActive(false);
         when(productRepository.findByProductId(1L)).thenReturn(Optional.of(existing));
-        when(inventoryAvailabilityGateway.hasInventoryUsage(1L)).thenReturn(true);
+        when(currentUserContext.getActorId()).thenReturn(11L);
 
-        assertThrows(InvalidProductDataException.class, () -> productService.deleteProduct(1L));
-        verify(productRepository, never()).delete(any(Product.class));
+        productService.deleteProduct(1L);
+
+        assertFalse(existing.getIsActive());
+        assertEquals(11L, existing.getUpdatedBy());
+        verify(productRepository).save(existing);
+        verify(productEventPublisher).publishProductDeleted(any(ProductLifecycleEvent.class));
     }
 
     private Product buildProduct() {

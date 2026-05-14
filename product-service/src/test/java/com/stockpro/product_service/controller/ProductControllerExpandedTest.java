@@ -191,24 +191,24 @@ class ProductControllerExpandedTest {
                         .contentType(APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.name").exists())
-                .andExpect(jsonPath("$.category").exists())
-                .andExpect(jsonPath("$.unitOfMeasure").exists());
+                .andExpect(jsonPath("$.fieldErrors.name").exists())
+                .andExpect(jsonPath("$.fieldErrors.category").exists())
+                .andExpect(jsonPath("$.fieldErrors.unitOfMeasure").exists());
 
         verify(productService, never()).updateProduct(eq(5L), any(UpdateProductRequest.class), any());
     }
 
     @Test
-    void deleteShouldBeForbiddenForManagerAndAllowedForAdmin() throws Exception {
+    void deleteShouldBeAllowedForManagerAndAdmin() throws Exception {
         mockMvc.perform(delete("/api/v1/products/9")
                         .with(user("manager").roles("MANAGER")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNoContent());
 
         mockMvc.perform(delete("/api/v1/products/9")
                         .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isNoContent());
 
-        verify(productService).deleteProduct(9L);
+        verify(productService, org.mockito.Mockito.times(2)).deleteProduct(9L);
     }
 
     @Test

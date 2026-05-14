@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.lenient;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -23,7 +22,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.security.access.AccessDeniedException;
 
 import com.stockpro.product_service.dto.request.CreateProductRequest;
 import com.stockpro.product_service.dto.request.UpdateProductRequest;
@@ -83,7 +81,7 @@ class ProductServiceImplTest {
     @Test
     void createProduct_shouldCreateProduct_whenValidRequest() {
         CreateProductRequest request = buildCreateRequest();
-        when(productRepository.existsBySkuIgnoreCase("SKU-001")).thenReturn(false);
+        when(productRepository.existsBySkuIgnoreCase("CAN-INK-001")).thenReturn(false);
         when(productRepository.existsByBarcode("BAR-001")).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(invocation -> {
             Product product = invocation.getArgument(0);
@@ -94,7 +92,7 @@ class ProductServiceImplTest {
         ProductResponse result = productService.createProduct(request, 101L);
 
         assertEquals(1L, result.getProductId());
-        assertEquals("SKU-001", result.getSku());
+        assertEquals("CAN-INK-001", result.getSku());
         assertEquals("Laptop", result.getName());
         verify(productRepository).save(any(Product.class));
         verify(productAuditService).record(any(ProductAuditEntry.class));
@@ -102,9 +100,28 @@ class ProductServiceImplTest {
     }
 
     @Test
+    void createProduct_shouldCreateProduct_whenSimpleSkuFormatIsValid() {
+        CreateProductRequest request = buildCreateRequest();
+        request.setSku("SKU-001");
+        when(productRepository.existsBySkuIgnoreCase("SKU-001")).thenReturn(false);
+        when(productRepository.existsByBarcode("BAR-001")).thenReturn(false);
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> {
+            Product product = invocation.getArgument(0);
+            product.setProductId(2L);
+            return product;
+        });
+
+        ProductResponse result = productService.createProduct(request, 101L);
+
+        assertEquals(2L, result.getProductId());
+        assertEquals("SKU-001", result.getSku());
+        verify(productRepository).save(any(Product.class));
+    }
+
+    @Test
     void createProduct_shouldThrowConflict_whenSkuAlreadyExists() {
         CreateProductRequest request = buildCreateRequest();
-        when(productRepository.existsBySkuIgnoreCase("SKU-001")).thenReturn(true);
+        when(productRepository.existsBySkuIgnoreCase("CAN-INK-001")).thenReturn(true);
 
         assertThrows(DuplicateSkuException.class, () -> productService.createProduct(request, 101L));
     }
@@ -112,7 +129,7 @@ class ProductServiceImplTest {
     @Test
     void createProduct_shouldThrowConflict_whenBarcodeAlreadyExists() {
         CreateProductRequest request = buildCreateRequest();
-        when(productRepository.existsBySkuIgnoreCase("SKU-001")).thenReturn(false);
+        when(productRepository.existsBySkuIgnoreCase("CAN-INK-001")).thenReturn(false);
         when(productRepository.existsByBarcode("BAR-001")).thenReturn(true);
 
         assertThrows(DuplicateBarcodeException.class, () -> productService.createProduct(request, 101L));
@@ -128,13 +145,25 @@ class ProductServiceImplTest {
     }
 
     @Test
+    void createProduct_shouldRejectLowercaseSku() {
+        CreateProductRequest request = buildCreateRequest();
+        request.setSku("sku-001");
+
+        InvalidProductDataException exception = assertThrows(
+                InvalidProductDataException.class,
+                () -> productService.createProduct(request, 101L));
+
+        assertEquals("SKU must be valid format like SKU-001 or CAN-INK-001", exception.getMessage());
+    }
+
+    @Test
     void getProductById_shouldReturnProduct_whenProductExists() {
         when(productRepository.findByProductId(1L)).thenReturn(Optional.of(buildProduct()));
 
         ProductResponse result = productService.getProductById(1L);
 
         assertEquals(1L, result.getProductId());
-        assertEquals("SKU-001", result.getSku());
+        assertEquals("CAN-INK-001", result.getSku());
     }
 
     @Test
@@ -146,9 +175,11 @@ class ProductServiceImplTest {
 
     @Test
     void getProductBySku_shouldReturnProduct() {
-        when(productRepository.findBySkuIgnoreCase("SKU-001")).thenReturn(Optional.of(buildProduct()));
+        Product product = buildProduct();
+        product.setSku("SKU-001");
+        when(productRepository.findBySkuIgnoreCase("SKU-001")).thenReturn(Optional.of(product));
 
-        ProductResponse result = productService.getProductBySku(" sku-001 ");
+        ProductResponse result = productService.getProductBySku(" SKU-001 ");
 
         assertEquals("SKU-001", result.getSku());
     }
@@ -167,7 +198,7 @@ class ProductServiceImplTest {
         Product existingProduct = buildProduct();
         UpdateProductRequest request = buildUpdateRequest();
         when(productRepository.findByProductId(1L)).thenReturn(Optional.of(existingProduct));
-        when(productRepository.existsBySkuIgnoreCaseAndProductIdNot("SKU-001", 1L)).thenReturn(false);
+        when(productRepository.existsBySkuIgnoreCaseAndProductIdNot("CAN-INK-001", 1L)).thenReturn(false);
         when(productRepository.existsByBarcodeAndProductIdNot("BAR-002", 1L)).thenReturn(false);
         when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -186,7 +217,7 @@ class ProductServiceImplTest {
         Product existingProduct = buildProduct();
         UpdateProductRequest request = buildUpdateRequest();
         when(productRepository.findByProductId(1L)).thenReturn(Optional.of(existingProduct));
-        when(productRepository.existsBySkuIgnoreCaseAndProductIdNot("SKU-001", 1L)).thenReturn(false);
+        when(productRepository.existsBySkuIgnoreCaseAndProductIdNot("CAN-INK-001", 1L)).thenReturn(false);
         when(productRepository.existsByBarcodeAndProductIdNot("BAR-002", 1L)).thenReturn(true);
 
         assertThrows(DuplicateBarcodeException.class, () -> productService.updateProduct(1L, request, 202L));
@@ -238,29 +269,21 @@ class ProductServiceImplTest {
     }
 
     @Test
-    void deleteProduct_shouldDeleteOrRejectSafely() {
-        Product activeProduct = buildProduct();
-        when(productRepository.findByProductId(1L)).thenReturn(Optional.of(activeProduct));
-
-        assertThrows(InvalidProductDataException.class, () -> productService.deleteProduct(1L));
-
-        Product inactiveProduct = buildProduct();
-        inactiveProduct.setProductId(2L);
-        inactiveProduct.setIsActive(false);
-        when(productRepository.findByProductId(2L)).thenReturn(Optional.of(inactiveProduct));
-        when(inventoryAvailabilityGateway.hasInventoryUsage(2L)).thenReturn(false);
-        when(purchaseOrderUsageGateway.hasPurchaseOrderUsage(2L)).thenReturn(false);
+    void deleteProduct_shouldSoftDeleteProduct() {
+        Product product = buildProduct();
+        when(productRepository.findByProductId(1L)).thenReturn(Optional.of(product));
         when(currentUserContext.getActorId()).thenReturn(505L);
 
-        productService.deleteProduct(2L);
+        productService.deleteProduct(1L);
 
-        verify(productRepository).delete(inactiveProduct);
+        assertFalse(product.getIsActive());
+        verify(productRepository).save(product);
         verify(productAuditService).record(any(ProductAuditEntry.class));
     }
 
     private CreateProductRequest buildCreateRequest() {
         CreateProductRequest request = new CreateProductRequest();
-        request.setSku("SKU-001");
+        request.setSku("CAN-INK-001");
         request.setName("Laptop");
         request.setDescription("Warehouse laptop");
         request.setCategory("Electronics");
@@ -297,7 +320,7 @@ class ProductServiceImplTest {
     private Product buildProduct() {
         return Product.builder()
                 .productId(1L)
-                .sku("SKU-001")
+                .sku("CAN-INK-001")
                 .name("Laptop")
                 .description("Warehouse laptop")
                 .category("Electronics")

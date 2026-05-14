@@ -33,15 +33,13 @@ class ProductRepositoryTest {
 
     private Product alphaLaptop;
     private Product betaMonitor;
-    private Product chair;
-
     @BeforeEach
     void setUp() {
         productRepository.deleteAll();
 
         alphaLaptop = productRepository.save(buildProduct("SKU-001", "Alpha Laptop", "Electronics", "Dell", "BAR-001", true));
         betaMonitor = productRepository.save(buildProduct("SKU-002", "Beta Monitor", "Electronics", "HP", "BAR-002", false));
-        chair = productRepository.save(buildProduct("SKU-003", "Chair", "Furniture", "Ikea", null, true));
+        productRepository.save(buildProduct("SKU-003", "Chair", "Furniture", "Ikea", null, true));
 
         Product blankCategory = buildProduct("SKU-004", "Cable", "   ", "Belkin", "BAR-004", true);
         Product blankBrand = buildProduct("SKU-005", "Mouse", "Electronics", "   ", "BAR-005", true);

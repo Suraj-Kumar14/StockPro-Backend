@@ -15,19 +15,21 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
 
+    private static final String VALIDATION_ERROR = "VALIDATION_ERROR";
+
     @ExceptionHandler(ProductNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleProductNotFoundException(
             ProductNotFoundException ex,
             HttpServletRequest request) {
         log.warn("Product not found: {}", ex.getMessage());
-        return buildErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND", ex.getMessage(), request, null);
     }
 
     @ExceptionHandler({DuplicateSkuException.class, DuplicateBarcodeException.class})
@@ -35,7 +37,8 @@ public class GlobalExceptionHandler {
             RuntimeException ex,
             HttpServletRequest request) {
         log.warn("Conflict detected: {}", ex.getMessage());
-        return buildErrorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+        String errorCode = ex instanceof DuplicateSkuException ? "DUPLICATE_SKU" : "DUPLICATE_BARCODE";
+        return buildErrorResponse(HttpStatus.CONFLICT, errorCode, ex.getMessage(), request, null);
     }
 
     @ExceptionHandler(InvalidProductDataException.class)
@@ -43,26 +46,26 @@ public class GlobalExceptionHandler {
             InvalidProductDataException ex,
             HttpServletRequest request) {
         log.warn("Invalid product data: {}", ex.getMessage());
-        return buildErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, VALIDATION_ERROR, ex.getMessage(), request, null);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
+    public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex, HttpServletRequest request) {
+        Map<String, String> errors = new LinkedHashMap<>();
 
         ex.getBindingResult().getAllErrors().forEach(error -> {
             String fieldName = ((FieldError) error).getField();
             errors.put(fieldName, error.getDefaultMessage());
         });
 
-        return ResponseEntity.badRequest().body(errors);
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, VALIDATION_ERROR, "Validation failed", request, errors);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ErrorResponse> handleConstraintViolationException(
             ConstraintViolationException ex,
             HttpServletRequest request) {
-        return buildErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, VALIDATION_ERROR, ex.getMessage(), request, null);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -70,24 +73,41 @@ public class GlobalExceptionHandler {
             DataIntegrityViolationException ex,
             HttpServletRequest request) {
         log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        String message = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        if (message != null) {
+            String normalized = message.toLowerCase();
+            if (normalized.contains("sku")) {
+                return buildErrorResponse(HttpStatus.CONFLICT, "DUPLICATE_SKU", "Duplicate SKU number", request, Map.of("sku", "Duplicate SKU number"));
+            }
+            if (normalized.contains("barcode")) {
+                return buildErrorResponse(HttpStatus.CONFLICT, "DUPLICATE_BARCODE", "Duplicate barcode", request, Map.of("barcode", "Duplicate barcode"));
+            }
+        }
         return buildErrorResponse(
                 HttpStatus.CONFLICT,
+                "DATA_INTEGRITY_VIOLATION",
                 "Product data conflicts with existing records or database constraints",
-                request);
+                request,
+                null);
     }
 
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationException(
             AuthenticationException ex,
             HttpServletRequest request) {
-        return buildErrorResponse(HttpStatus.UNAUTHORIZED, "Unauthorized", request);
+        return buildErrorResponse(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized", request, null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDeniedException(
             AccessDeniedException ex,
             HttpServletRequest request) {
-        return buildErrorResponse(HttpStatus.FORBIDDEN, "You are not allowed to perform this action", request);
+        return buildErrorResponse(
+                HttpStatus.FORBIDDEN,
+                "ACCESS_DENIED",
+                "You are not allowed to perform this action",
+                request,
+                null);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
@@ -96,7 +116,7 @@ public class GlobalExceptionHandler {
             HttpServletRequest request) {
 
         log.debug("Resource not found: {}", request.getRequestURI());
-        return buildErrorResponse(HttpStatus.NOT_FOUND, "Resource not found", request);
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Resource not found", request, null);
     }
 
     @ExceptionHandler(Exception.class)
@@ -104,20 +124,23 @@ public class GlobalExceptionHandler {
             Exception ex,
             HttpServletRequest request) {
         log.error("Unexpected error: {}", ex.getMessage(), ex);
-        return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", request);
+        return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR", "An unexpected error occurred", request, null);
     }
 
     private ResponseEntity<ErrorResponse> buildErrorResponse(
             HttpStatus status,
+            String errorCode,
             String message,
-            HttpServletRequest request) {
+            HttpServletRequest request,
+            Map<String, String> fieldErrors) {
 
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 status.value(),
-                status.getReasonPhrase(),
+                errorCode,
                 message,
-                request.getRequestURI());
+                request.getRequestURI(),
+                fieldErrors);
 
         return new ResponseEntity<>(error, status);
     }

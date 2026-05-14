@@ -44,7 +44,7 @@ class ServiceSupportComponentsTest {
         ProductValidationService validationService = new ProductValidationService();
 
         CreateProductRequest createRequest = new CreateProductRequest();
-        createRequest.setSku(" sku-001 ");
+        createRequest.setSku(" SKU-001 ");
         createRequest.setName("  Laptop  ");
         createRequest.setDescription("  Warehouse laptop  ");
         createRequest.setCategory(" Electronics ");
@@ -79,6 +79,22 @@ class ServiceSupportComponentsTest {
         assertEquals("Piece", sanitizedUpdate.getUnitOfMeasure());
         assertEquals("BAR-002", sanitizedUpdate.getBarcode());
         assertTrue(sanitizedUpdate.getIsActive());
+    }
+
+    @Test
+    void productValidationService_shouldAcceptSupportedSkuFormatsAndRejectInvalidOnes() {
+        ProductValidationService validationService = new ProductValidationService();
+
+        assertEquals("SKU-001", validationService.normalizeSku(" SKU-001 "));
+        assertEquals("CAN-INK-001", validationService.normalizeSku(" CAN-INK-001 "));
+
+        InvalidProductDataException lowercaseException = assertThrows(
+                InvalidProductDataException.class,
+                () -> validationService.normalizeSku("sku-001"));
+        assertEquals("SKU must be valid format like SKU-001 or CAN-INK-001", lowercaseException.getMessage());
+
+        assertThrows(InvalidProductDataException.class, () -> validationService.normalizeSku("SKU001"));
+        assertThrows(InvalidProductDataException.class, () -> validationService.normalizeSku("SK-001"));
     }
 
     @Test

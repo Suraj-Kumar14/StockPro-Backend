@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigDecimal;
@@ -190,10 +191,24 @@ class ProductControllerTest {
     }
 
     @Test
+    void invalidSkuFormat_returns400WithUpdatedMessage() throws Exception {
+        CreateProductRequest request = buildCreateRequest();
+        request.setSku("sku-001");
+
+        mockMvc.perform(post("/api/v1/products")
+                        .with(user("admin").roles("ADMIN"))
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.sku")
+                        .value("SKU must be valid format like SKU-001 or CAN-INK-001"));
+    }
+
+    @Test
     void duplicateSku_returns409() throws Exception {
         when(currentUserContext.getActorId()).thenReturn(10L);
         when(productService.createProduct(any(CreateProductRequest.class), anyLong()))
-                .thenThrow(new DuplicateSkuException("SKU already exists"));
+                .thenThrow(new DuplicateSkuException("Duplicate SKU number"));
 
         mockMvc.perform(post("/api/v1/products")
                         .with(user("admin").roles("ADMIN"))
@@ -212,7 +227,7 @@ class ProductControllerTest {
 
     private CreateProductRequest buildCreateRequest() {
         CreateProductRequest request = new CreateProductRequest();
-        request.setSku("SKU-001");
+        request.setSku("CAN-INK-001");
         request.setName("Laptop");
         request.setCategory("Electronics");
         request.setBrand("Dell");
@@ -245,7 +260,7 @@ class ProductControllerTest {
     private ProductResponse buildResponse(boolean active) {
         return ProductResponse.builder()
                 .productId(1L)
-                .sku("SKU-001")
+                .sku("CAN-INK-001")
                 .name("Laptop")
                 .description("Warehouse laptop")
                 .category("Electronics")

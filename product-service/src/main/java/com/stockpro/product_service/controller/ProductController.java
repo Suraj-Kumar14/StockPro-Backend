@@ -187,8 +187,8 @@ public class ProductController {
     }
 
     @DeleteMapping("/{productId:\\d+}")
-    @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Delete product", description = "Hard-deletes only if the product is already inactive and safe to remove")
+    @PreAuthorize(MANAGE_ROLES)
+    @Operation(summary = "Delete product", description = "Soft-deactivates the product")
     public ResponseEntity<Void> deleteProduct(@PathVariable Long productId) {
         productService.deleteProduct(productId);
         return ResponseEntity.noContent().build();

@@ -1,8 +1,6 @@
 package com.stockpro.product_service.service;
 
 import java.math.BigDecimal;
-import java.util.Locale;
-
 import org.springframework.stereotype.Component;
 
 import com.stockpro.product_service.dto.request.CreateProductRequest;
@@ -11,6 +9,9 @@ import com.stockpro.product_service.exception.InvalidProductDataException;
 
 @Component
 public class ProductValidationService {
+
+    private static final String SKU_PATTERN = "^([A-Z]{3}-\\d{3}|[A-Z]{3}-[A-Z]{3}-\\d{3})$";
+    private static final String SKU_MESSAGE = "SKU must be valid format like SKU-001 or CAN-INK-001";
 
     public CreateProductRequest sanitize(CreateProductRequest request) {
         CreateProductRequest sanitized = new CreateProductRequest();
@@ -76,7 +77,10 @@ public class ProductValidationService {
 
     public String normalizeSku(String sku) {
         String trimmedSku = trimToNull(sku);
-        return trimmedSku == null ? null : trimmedSku.toUpperCase(Locale.ROOT);
+        if (trimmedSku != null && !trimmedSku.matches(SKU_PATTERN)) {
+            throw new InvalidProductDataException(SKU_MESSAGE);
+        }
+        return trimmedSku;
     }
 
     public String trimToNull(String value) {

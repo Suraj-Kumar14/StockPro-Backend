@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,7 +30,6 @@ import com.stockpro.product_service.dto.response.ProductResponse;
 import com.stockpro.product_service.dto.response.ProductSummaryResponse;
 import com.stockpro.product_service.entity.Product;
 import com.stockpro.product_service.exception.DuplicateSkuException;
-import com.stockpro.product_service.exception.InvalidProductDataException;
 import com.stockpro.product_service.exception.ProductNotFoundException;
 import com.stockpro.product_service.repository.ProductRepository;
 import com.stockpro.product_service.service.CurrentUserContext;
@@ -113,10 +111,10 @@ class ProductServiceImplBehaviorTest {
 
     @Test
     void getProductBySkuAndBarcode_shouldThrowWhenMissing() {
-        when(productRepository.findBySkuIgnoreCase("UNKNOWN")).thenReturn(Optional.empty());
+        when(productRepository.findBySkuIgnoreCase("SKU-999")).thenReturn(Optional.empty());
         when(productRepository.findByBarcode("BAR-404")).thenReturn(Optional.empty());
 
-        assertThrows(ProductNotFoundException.class, () -> productService.getProductBySku(" unknown "));
+        assertThrows(ProductNotFoundException.class, () -> productService.getProductBySku(" SKU-999 "));
         assertThrows(ProductNotFoundException.class, () -> productService.getProductByBarcode(" BAR-404 "));
     }
 
@@ -185,21 +183,26 @@ class ProductServiceImplBehaviorTest {
         when(productRepository.initializeNullVersion(1L)).thenReturn(0);
         when(productRepository.findByProductId(1L)).thenReturn(Optional.of(buildProduct()));
         when(productRepository.existsBySkuIgnoreCaseAndProductIdNot("SKU-001", 1L)).thenReturn(true);
+        UpdateProductRequest request = buildUpdateRequest();
 
-        assertThrows(DuplicateSkuException.class, () -> productService.updateProduct(1L, buildUpdateRequest(), 12L));
+        assertThrows(DuplicateSkuException.class, () -> productService.updateProduct(1L, request, 12L));
         verify(productRepository, never()).save(any(Product.class));
     }
 
     @Test
-    void deleteProduct_shouldRejectWhenReferencedByPurchaseOrders() {
+    void deleteProduct_shouldSoftDeleteEvenWhenReferencedByPurchaseOrders() {
         Product inactive = buildProduct();
         inactive.setIsActive(false);
         when(productRepository.findByProductId(1L)).thenReturn(Optional.of(inactive));
-        when(inventoryAvailabilityGateway.hasInventoryUsage(1L)).thenReturn(false);
-        when(purchaseOrderUsageGateway.hasPurchaseOrderUsage(1L)).thenReturn(true);
+        when(currentUserContext.getActorId()).thenReturn(321L);
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThrows(InvalidProductDataException.class, () -> productService.deleteProduct(1L));
-        verify(productRepository, never()).delete(any(Product.class));
+        productService.deleteProduct(1L);
+
+        assertFalse(inactive.getIsActive());
+        assertEquals(321L, inactive.getUpdatedBy());
+        verify(productRepository).save(inactive);
+        verify(productEventPublisher).publishProductDeleted(any());
     }
 
     @Test
@@ -221,17 +224,18 @@ class ProductServiceImplBehaviorTest {
     }
 
     @Test
-    void deleteProduct_shouldDeleteInactiveUnreferencedProductAndUseCurrentActor() {
+    void deleteProduct_shouldSoftDeleteInactiveProductAndUseCurrentActor() {
         Product inactive = buildProduct();
         inactive.setIsActive(false);
         when(productRepository.findByProductId(1L)).thenReturn(Optional.of(inactive));
-        when(inventoryAvailabilityGateway.hasInventoryUsage(1L)).thenReturn(false);
-        when(purchaseOrderUsageGateway.hasPurchaseOrderUsage(1L)).thenReturn(false);
         when(currentUserContext.getActorId()).thenReturn(321L);
+        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         productService.deleteProduct(1L);
 
-        verify(productRepository).delete(inactive);
+        assertFalse(inactive.getIsActive());
+        assertEquals(321L, inactive.getUpdatedBy());
+        verify(productRepository).save(inactive);
         verify(currentUserContext).getActorId();
         verify(productEventPublisher).publishProductDeleted(any());
     }
