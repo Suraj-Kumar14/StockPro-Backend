@@ -9,15 +9,16 @@ import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.security.Key;
 import java.util.List;
-import java.util.UUID;
 
 @Component
 @Slf4j
@@ -54,29 +55,28 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
-        String correlationId = request.getHeaders().getFirst("X-Correlation-Id");
-        if (correlationId == null || correlationId.isBlank()) {
-            correlationId = UUID.randomUUID().toString();
-        }
-
-        log.debug("Gateway request: {} {} correlationId={}", request.getMethod(), path, correlationId);
+        long startedAt = System.currentTimeMillis();
+        log.debug("Gateway request: {} {}", request.getMethod(), path);
 
         // Handle CORS preflight
         if (request.getMethod().name().equals("OPTIONS")) {
-            return chain.filter(exchange);
+            return chain.filter(exchange)
+                    .doFinally(signalType -> logCompletion(exchange, startedAt));
         }
 
         // Skip JWT check for open paths
         if (isOpenPath(path)) {
             log.debug("Open path - skipping JWT: {}", path);
-            return chain.filter(exchange);
+            return chain.filter(exchange)
+                    .doFinally(signalType -> logCompletion(exchange, startedAt));
         }
 
         // Check Authorization header
         String authHeader = request.getHeaders().getFirst("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             log.warn("Missing or invalid Authorization header for: {}", path);
-            return unauthorized(exchange, "Missing Authorization header");
+            return unauthorized(exchange, "Missing Authorization header")
+                    .doFinally(signalType -> logCompletion(exchange, startedAt));
         }
 
         String token = authHeader.substring(7);
@@ -90,16 +90,17 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
             // Forward user info to downstream services via headers
             ServerHttpRequest mutatedRequest = request.mutate()
-                    .header("X-Correlation-Id", correlationId)
                     .header("X-User-Email", email)
-                    .header("X-User-Role", role != null ? role : "")
+                    .header("X-User-Role", StringUtils.hasText(role) ? role : "")
                     .build();
 
-            return chain.filter(exchange.mutate().request(mutatedRequest).build());
+            return chain.filter(exchange.mutate().request(mutatedRequest).build())
+                    .doFinally(signalType -> logCompletion(exchange, startedAt));
 
         } catch (Exception e) {
             log.warn("JWT validation failed for path {}: {}", path, e.getMessage());
-            return unauthorized(exchange, "Invalid or expired token");
+            return unauthorized(exchange, "Invalid or expired token")
+                    .doFinally(signalType -> logCompletion(exchange, startedAt));
         }
     }
 
@@ -123,6 +124,17 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         byte[] bytes = ("{\"error\":\"" + message + "\"}").getBytes();
         var buffer = response.bufferFactory().wrap(bytes);
         return response.writeWith(Mono.just(buffer));
+    }
+
+    private void logCompletion(ServerWebExchange exchange, long startedAt) {
+        long durationMs = System.currentTimeMillis() - startedAt;
+        HttpStatusCode statusCode = exchange.getResponse().getStatusCode();
+        int status = statusCode != null ? statusCode.value() : 200;
+        log.info("Gateway {} {} -> {} ({} ms)",
+                exchange.getRequest().getMethod(),
+                exchange.getRequest().getURI().getPath(),
+                status,
+                durationMs);
     }
 
     @Override

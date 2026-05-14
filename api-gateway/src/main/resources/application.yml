@@ -242,6 +242,13 @@ management:
     health:
       show-details: always
 
+logging:
+  level:
+    root: INFO
+    com.stockpro: DEBUG
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+
 eureka:
   client:
     service-url:
