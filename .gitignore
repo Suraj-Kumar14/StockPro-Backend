@@ -4,7 +4,8 @@
 logs/
 **/logs/
 *.log
+*.log.gz
 .idea/
 .project
 target/
-target/
+
