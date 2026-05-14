@@ -1,4 +1,4 @@
-package com.stockpro.warehouseservice.config;
+package com.stockpro.purchaseservice.config;
 
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
