@@ -32,7 +32,7 @@ class PaymentRepositoryTest {
     @BeforeEach
     void setUp() {
         paymentRepository.deleteAll();
-        approvedPayment = paymentRepository.save(payment(101L, "PAY-001", PaymentStatus.APPROVED, new BigDecimal("400.00"), "order_1"));
+        approvedPayment = paymentRepository.save(payment(101L, "PAY-001", PaymentStatus.INITIATED, new BigDecimal("400.00"), "order_1"));
         paidPayment = paymentRepository.save(payment(101L, "PAY-002", PaymentStatus.PAID, new BigDecimal("250.00"), "order_2"));
         paymentRepository.save(payment(102L, "PAY-003", PaymentStatus.DRAFT, new BigDecimal("125.00"), null));
     }
@@ -50,9 +50,9 @@ class PaymentRepositoryTest {
         var page = paymentRepository.findByPurchaseOrderId(101L, PageRequest.of(0, 10));
 
         assertEquals(2, page.getTotalElements());
-        assertTrue(paymentRepository.existsByPurchaseOrderIdAndStatusIn(101L, List.of(PaymentStatus.APPROVED, PaymentStatus.PAID)));
+        assertTrue(paymentRepository.existsByPurchaseOrderIdAndStatusIn(101L, List.of(PaymentStatus.INITIATED, PaymentStatus.PAID)));
         assertEquals(new BigDecimal("650.00"),
-                paymentRepository.sumPaymentAmountByPurchaseOrderIdAndStatusIn(101L, List.of(PaymentStatus.APPROVED, PaymentStatus.PAID)));
+                paymentRepository.sumPaymentAmountByPurchaseOrderIdAndStatusIn(101L, List.of(PaymentStatus.INITIATED, PaymentStatus.PAID)));
     }
 
     private Payment payment(Long purchaseOrderId, String paymentNumber, PaymentStatus status, BigDecimal amount, String razorpayOrderId) {

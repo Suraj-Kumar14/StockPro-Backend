@@ -93,8 +93,10 @@ public class PaymentServiceImpl implements PaymentService {
                 .setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal pendingPaymentAmount = payments.stream()
-                .filter(payment -> payment.getStatus() == PaymentStatus.PENDING_APPROVAL
+                .filter(payment -> payment.getStatus() == PaymentStatus.INITIATED
+                        || payment.getStatus() == PaymentStatus.PENDING_APPROVAL
                         || payment.getStatus() == PaymentStatus.APPROVED
+                        || payment.getStatus() == PaymentStatus.FAILED
                         || payment.getStatus() == PaymentStatus.PARTIALLY_PAID)
                 .map(Payment::getPaymentAmount)
                 .filter(amount -> amount != null)

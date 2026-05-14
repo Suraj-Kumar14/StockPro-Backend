@@ -1,11 +1,14 @@
 package com.stockpro.paymentservice.controller;
 
 import com.stockpro.paymentservice.dto.request.RazorpayInitiateRequest;
+import com.stockpro.paymentservice.dto.request.RazorpayPaymentStatusUpdateRequest;
 import com.stockpro.paymentservice.dto.request.RazorpayVerifyRequest;
+import com.stockpro.paymentservice.dto.request.SplitPaymentPlanRequest;
 import com.stockpro.paymentservice.dto.response.PaymentResponse;
 import com.stockpro.paymentservice.dto.response.PaymentSummaryResponse;
 import com.stockpro.paymentservice.dto.response.RazorpayOrderResponse;
 import com.stockpro.paymentservice.dto.response.RemainingAmountResponse;
+import com.stockpro.paymentservice.dto.response.SplitPaymentPlanResponse;
 import com.stockpro.paymentservice.enums.PaymentStatus;
 import com.stockpro.paymentservice.security.AuthenticatedUser;
 import com.stockpro.paymentservice.service.PaymentService;
@@ -125,15 +128,31 @@ public class PaymentController {
             @Valid @RequestBody RazorpayInitiateRequest razorpayRequest,
             Authentication authentication,
             HttpServletRequest request) {
-        log.info("[PaymentController] POST /razorpay/initiate purchaseOrderId={} actorId={}",
-                razorpayRequest.purchaseOrderId(), actorId(authentication));
+        log.info("[PaymentController] POST /razorpay/initiate purchaseOrderId={} actorId={} actorRole={} amount={} action={}",
+                razorpayRequest.purchaseOrderId(), actorId(authentication), actorRole(authentication), razorpayRequest.paymentAmount(),
+                razorpayRequest.paymentAmount() != null ? "SPLIT_OR_REMAINING" : "FULL_PAYMENT");
         RazorpayOrderResponse response = razorpayPaymentService.initiatePayment(
                 razorpayRequest,
                 actorId(authentication),
-                request.getHeader("Authorization"));
+                request.getHeader("Authorization"),
+                canSplitPayments(authentication));
         log.info("[PaymentController] Razorpay order created razorpayOrderId={} purchaseOrderId={}",
                 response.getRazorpayOrderId(), razorpayRequest.purchaseOrderId());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/split-plan")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Generate a split-payment plan for amounts above the Razorpay transaction limit")
+    public ResponseEntity<SplitPaymentPlanResponse> generateSplitPlan(
+            @Valid @RequestBody SplitPaymentPlanRequest splitRequest,
+            Authentication authentication,
+            HttpServletRequest request) {
+        log.info("[PaymentController] POST /split-plan purchaseOrderId={} requestedAmount={} actorId={} actorRole={} action=SPLIT_PLAN",
+                splitRequest.purchaseOrderId(), splitRequest.requestedAmount(), actorId(authentication), actorRole(authentication));
+        return ResponseEntity.ok(razorpayPaymentService.getSplitPaymentPlan(
+                splitRequest,
+                request.getHeader("Authorization")));
     }
 
     @PostMapping("/razorpay/verify")
@@ -143,10 +162,32 @@ public class PaymentController {
             @Valid @RequestBody RazorpayVerifyRequest verifyRequest,
             Authentication authentication,
             HttpServletRequest request) {
-        log.info("[PaymentController] POST /razorpay/verify razorpayOrderId={} actorId={}",
-                verifyRequest.razorpayOrderId(), actorId(authentication));
+        log.info("[PaymentController] POST /razorpay/verify razorpayOrderId={} actorId={} actorRole={} action=VERIFY",
+                verifyRequest.razorpayOrderId(), actorId(authentication), actorRole(authentication));
         return ResponseEntity.ok(
                 razorpayPaymentService.verifyPayment(verifyRequest, actorId(authentication), request.getHeader("Authorization")));
+    }
+
+    @PostMapping("/razorpay/failure")
+    @PreAuthorize("hasAnyRole('ADMIN','OFFICER','MANAGER')")
+    @Operation(summary = "Record a failed Razorpay checkout without marking the purchase order as paid")
+    public ResponseEntity<PaymentResponse> recordRazorpayFailure(
+            @Valid @RequestBody RazorpayPaymentStatusUpdateRequest failureRequest,
+            Authentication authentication) {
+        log.info("[PaymentController] POST /razorpay/failure razorpayOrderId={} actorId={}",
+                failureRequest.razorpayOrderId(), actorId(authentication));
+        return ResponseEntity.ok(razorpayPaymentService.recordFailedPayment(failureRequest, actorId(authentication)));
+    }
+
+    @PostMapping("/razorpay/cancel")
+    @PreAuthorize("hasAnyRole('ADMIN','OFFICER','MANAGER')")
+    @Operation(summary = "Record a cancelled Razorpay checkout without marking the purchase order as paid")
+    public ResponseEntity<PaymentResponse> recordRazorpayCancellation(
+            @Valid @RequestBody RazorpayPaymentStatusUpdateRequest cancellationRequest,
+            Authentication authentication) {
+        log.info("[PaymentController] POST /razorpay/cancel razorpayOrderId={} actorId={}",
+                cancellationRequest.razorpayOrderId(), actorId(authentication));
+        return ResponseEntity.ok(razorpayPaymentService.recordCancelledPayment(cancellationRequest, actorId(authentication)));
     }
 
     // ─── Helper ───────────────────────────────────────────────────────────────
@@ -156,5 +197,19 @@ public class PaymentController {
             return user.userId();
         }
         return null;
+    }
+
+    private boolean canSplitPayments(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser user) {
+            return "ADMIN".equalsIgnoreCase(user.role());
+        }
+        return false;
+    }
+
+    private String actorRole(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser user) {
+            return user.role();
+        }
+        return "UNKNOWN";
     }
 }

@@ -14,14 +14,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stockpro.paymentservice.dto.request.RazorpayInitiateRequest;
+import com.stockpro.paymentservice.dto.request.RazorpayPaymentStatusUpdateRequest;
 import com.stockpro.paymentservice.dto.request.RazorpayVerifyRequest;
+import com.stockpro.paymentservice.dto.request.SplitPaymentPlanRequest;
 import com.stockpro.paymentservice.dto.response.PaymentResponse;
 import com.stockpro.paymentservice.dto.response.PaymentSummaryResponse;
 import com.stockpro.paymentservice.dto.response.RazorpayOrderResponse;
 import com.stockpro.paymentservice.dto.response.RemainingAmountResponse;
+import com.stockpro.paymentservice.dto.response.SplitPaymentPlanResponse;
 import com.stockpro.paymentservice.enums.PaymentMethod;
 import com.stockpro.paymentservice.enums.PaymentStatus;
 import com.stockpro.paymentservice.exception.GlobalExceptionHandler;
+import com.stockpro.paymentservice.publisher.SystemAlertPublisher;
 import com.stockpro.paymentservice.security.AuthenticatedUser;
 import com.stockpro.paymentservice.service.PaymentService;
 import com.stockpro.paymentservice.service.RazorpayPaymentService;
@@ -62,6 +66,9 @@ class PaymentControllerTest {
     @org.springframework.boot.test.mock.mockito.MockBean
     private RazorpayPaymentService razorpayPaymentService;
 
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private SystemAlertPublisher systemAlertPublisher;
+
     @Test
     void getAllPayments_shouldReturnPageForManager() throws Exception {
         when(paymentService.getAllPayments(0, 10, "createdAt", "desc"))
@@ -86,6 +93,8 @@ class PaymentControllerTest {
                         .totalAmount(new BigDecimal("1000.00"))
                         .paidAmount(new BigDecimal("400.00"))
                         .remainingAmount(new BigDecimal("600.00"))
+                        .status(PaymentStatus.PARTIALLY_PAID)
+                        .maxAllowedAmount(new BigDecimal("500000.00"))
                         .currency("INR")
                         .build());
 
@@ -94,6 +103,7 @@ class PaymentControllerTest {
                         .with(user("manager").roles("MANAGER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.remainingAmount").value(600.00))
+                .andExpect(jsonPath("$.status").value("PARTIALLY_PAID"))
                 .andExpect(jsonPath("$.currency").value("INR"));
     }
 
@@ -111,7 +121,7 @@ class PaymentControllerTest {
                         .param("toDate", "2026-05-09")
                         .with(user("manager").roles("MANAGER")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].status").value("APPROVED"));
+                .andExpect(jsonPath("$.content[0].status").value("INITIATED"));
 
         mockMvc.perform(get("/api/v1/payments/1").with(user("staff").roles("STAFF")))
                 .andExpect(status().isOk())
@@ -138,7 +148,7 @@ class PaymentControllerTest {
     void initiateAndVerifyRazorpayPayment_shouldUseAuthenticatedActorId() throws Exception {
         UsernamePasswordAuthenticationToken auth = authenticationToken(77L, "MANAGER");
 
-        when(razorpayPaymentService.initiatePayment(any(RazorpayInitiateRequest.class), eq(77L), eq("Bearer token")))
+        when(razorpayPaymentService.initiatePayment(any(RazorpayInitiateRequest.class), eq(77L), eq("Bearer token"), eq(false)))
                 .thenReturn(RazorpayOrderResponse.builder()
                         .razorpayOrderId("order_123")
                         .paymentNumber("PAY-001")
@@ -155,7 +165,7 @@ class PaymentControllerTest {
                         .with(authentication(auth))
                         .header("Authorization", "Bearer token")
                         .contentType(APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RazorpayInitiateRequest(101L))))
+                        .content(objectMapper.writeValueAsString(new RazorpayInitiateRequest(101L, null))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.razorpayOrderId").value("order_123"));
 
@@ -165,10 +175,63 @@ class PaymentControllerTest {
                         .contentType(APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new RazorpayVerifyRequest("order_123", "pay_123", "sig_123"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("APPROVED"));
+                .andExpect(jsonPath("$.status").value("INITIATED"));
 
-        verify(razorpayPaymentService).initiatePayment(any(RazorpayInitiateRequest.class), eq(77L), eq("Bearer token"));
+        verify(razorpayPaymentService).initiatePayment(any(RazorpayInitiateRequest.class), eq(77L), eq("Bearer token"), eq(false));
         verify(razorpayPaymentService).verifyPayment(any(RazorpayVerifyRequest.class), eq(77L), eq("Bearer token"));
+    }
+
+    @Test
+    void splitPlan_shouldBeAvailableOnlyToAdmin() throws Exception {
+        when(razorpayPaymentService.getSplitPaymentPlan(any(SplitPaymentPlanRequest.class), eq("Bearer token")))
+                .thenReturn(SplitPaymentPlanResponse.builder()
+                        .purchaseOrderId(101L)
+                        .totalAmount(new BigDecimal("600000.00"))
+                        .requestedAmount(new BigDecimal("600000.00"))
+                        .remainingAmount(new BigDecimal("600000.00"))
+                        .maxAllowedAmount(new BigDecimal("500000.00"))
+                        .suggestedSplits(List.of(new BigDecimal("500000.00"), new BigDecimal("100000.00")))
+                        .build());
+
+        mockMvc.perform(post("/api/v1/payments/split-plan")
+                        .with(user("admin").roles("ADMIN"))
+                        .header("Authorization", "Bearer token")
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SplitPaymentPlanRequest(101L, new BigDecimal("600000.00")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maxAllowedAmount").value(500000.00))
+                .andExpect(jsonPath("$.suggestedSplits[0]").value(500000.00));
+
+        mockMvc.perform(post("/api/v1/payments/split-plan")
+                        .with(user("officer").roles("OFFICER"))
+                        .header("Authorization", "Bearer token")
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SplitPaymentPlanRequest(101L, new BigDecimal("600000.00")))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void failureAndCancellationEndpoints_shouldUseAuthenticatedActorId() throws Exception {
+        UsernamePasswordAuthenticationToken auth = authenticationToken(77L, "MANAGER");
+
+        when(razorpayPaymentService.recordFailedPayment(any(RazorpayPaymentStatusUpdateRequest.class), eq(77L)))
+                .thenReturn(paymentResponse());
+        when(razorpayPaymentService.recordCancelledPayment(any(RazorpayPaymentStatusUpdateRequest.class), eq(77L)))
+                .thenReturn(paymentResponse());
+
+        mockMvc.perform(post("/api/v1/payments/razorpay/failure")
+                        .with(authentication(auth))
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RazorpayPaymentStatusUpdateRequest("order_123", "pay_123", "Failed"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paymentNumber").value("PAY-001"));
+
+        mockMvc.perform(post("/api/v1/payments/razorpay/cancel")
+                        .with(authentication(auth))
+                        .contentType(APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RazorpayPaymentStatusUpdateRequest("order_123", null, "Cancelled"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paymentNumber").value("PAY-001"));
     }
 
     @Test
@@ -178,7 +241,8 @@ class PaymentControllerTest {
                         .contentType(APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").exists());
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Invalid or missing purchaseOrderId"));
     }
 
     @Test
@@ -218,7 +282,7 @@ class PaymentControllerTest {
                 .poNumber("PO-101")
                 .supplierId(7L)
                 .supplierName("Acme")
-                .status(PaymentStatus.APPROVED)
+                .status(PaymentStatus.INITIATED)
                 .paymentMethod(PaymentMethod.RAZORPAY)
                 .paymentAmount(new BigDecimal("400.00"))
                 .poTotalAmount(new BigDecimal("1000.00"))

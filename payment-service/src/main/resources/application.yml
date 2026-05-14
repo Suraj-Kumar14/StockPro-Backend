@@ -6,7 +6,7 @@ spring:
     name: PAYMENT-SERVICE
 
   datasource:
-    url: jdbc:mysql://localhost:3306/payment_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/payment_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${PAYMENT_DB_USERNAME}
     password: ${PAYMENT_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -23,6 +23,12 @@ spring:
   mvc:
     pathmatch:
       use-suffix-pattern: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: /
 
 eureka:
   client:
@@ -35,11 +41,10 @@ eureka:
 
 logging:
   level:
+    root: INFO
     com.stockpro: DEBUG
-  file:
-    name: logs/payment-service.log
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
 
 springdoc:
   api-docs:
@@ -59,3 +64,25 @@ purchase-service:
 razorpay:
   key-id: ${RAZORPAY_KEY_ID:rzp_test_SmOdna1Hg1uiom}
   key-secret: ${RAZORPAY_KEY_SECRET:Ez0aqf3zvNr1DLXBYzERNOz2}
+
+payment:
+  razorpay:
+    max-transaction-amount: ${PAYMENT_RAZORPAY_MAX_TRANSACTION_AMOUNT:500000}
+
+stockpro:
+  rabbitmq:
+    payment:
+      exchange: ${PAYMENT_RABBITMQ_EXCHANGE:stockpro.payment.exchange}
+      routing:
+        pending: ${PAYMENT_PENDING_ROUTING_KEY:razorpay.payment.pending}
+        initiated: ${PAYMENT_INITIATED_ROUTING_KEY:razorpay.payment.initiated}
+        success: ${PAYMENT_SUCCESS_ROUTING_KEY:razorpay.payment.success}
+        failed: ${PAYMENT_FAILED_ROUTING_KEY:razorpay.payment.failed}
+        cancelled: ${PAYMENT_CANCELLED_ROUTING_KEY:razorpay.payment.cancelled}
+        limit-exceeded: ${PAYMENT_LIMIT_ROUTING_KEY:razorpay.payment.limit_exceeded}
+        split-recommended: ${PAYMENT_SPLIT_ROUTING_KEY:razorpay.payment.split_recommended}
+    alert:
+      exchange: ${ALERT_RABBITMQ_EXCHANGE:stockpro.alert.exchange}
+      routing:
+        unauthorized: ${ALERT_UNAUTHORIZED_ROUTING_KEY:alert.system.unauthorized}
+        system-error: ${ALERT_SYSTEM_ERROR_ROUTING_KEY:alert.system.error}

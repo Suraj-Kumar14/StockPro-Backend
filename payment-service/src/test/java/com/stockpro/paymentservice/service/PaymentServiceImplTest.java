@@ -44,12 +44,12 @@ class PaymentServiceImplTest {
 
     @Test
     void getPaymentById_shouldReturnMappedPayment() {
-        when(paymentRepository.findByPaymentId(1L)).thenReturn(Optional.of(payment("PAY-001", PaymentStatus.APPROVED, new BigDecimal("400.00"))));
+        when(paymentRepository.findByPaymentId(1L)).thenReturn(Optional.of(payment("PAY-001", PaymentStatus.INITIATED, new BigDecimal("400.00"))));
 
         var response = paymentService.getPaymentById(1L);
 
         assertEquals("PAY-001", response.paymentNumber());
-        assertEquals(PaymentStatus.APPROVED, response.status());
+        assertEquals(PaymentStatus.INITIATED, response.status());
     }
 
     @Test
@@ -62,7 +62,7 @@ class PaymentServiceImplTest {
     @Test
     void getAllPayments_shouldSanitizePagingAndFallbackSortField() {
         when(paymentRepository.findAll(any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(payment("PAY-001", PaymentStatus.APPROVED, new BigDecimal("400.00")))));
+                .thenReturn(new PageImpl<>(List.of(payment("PAY-001", PaymentStatus.INITIATED, new BigDecimal("400.00")))));
 
         var page = paymentService.getAllPayments(-1, 0, "unsupported", "asc");
 
@@ -87,16 +87,17 @@ class PaymentServiceImplTest {
         when(paymentRepository.findAll()).thenReturn(List.of(
                 payment("PAY-001", PaymentStatus.PAID, new BigDecimal("400.00"), new BigDecimal("0.00")),
                 payment("PAY-002", PaymentStatus.PARTIALLY_PAID, new BigDecimal("200.00"), new BigDecimal("300.00")),
-                payment("PAY-003", PaymentStatus.PENDING_APPROVAL, new BigDecimal("100.00"), new BigDecimal("400.00"))));
+                payment("PAY-003", PaymentStatus.INITIATED, new BigDecimal("100.00"), new BigDecimal("400.00")),
+                payment("PAY-004", PaymentStatus.FAILED, new BigDecimal("150.00"), new BigDecimal("250.00"))));
 
         PaymentSummaryResponse response = paymentService.getPaymentSummary();
 
-        assertEquals(3, response.totalPayments());
-        assertEquals(1, response.pendingApprovalCount());
+        assertEquals(4, response.totalPayments());
+        assertEquals(0, response.pendingApprovalCount());
         assertEquals(1, response.partiallyPaidCount());
         assertEquals(new BigDecimal("600.00"), response.totalPaidAmount());
-        assertEquals(new BigDecimal("300.00"), response.pendingPaymentAmount());
-        assertEquals(new BigDecimal("700.00"), response.remainingPaymentAmount());
+        assertEquals(new BigDecimal("450.00"), response.pendingPaymentAmount());
+        assertEquals(new BigDecimal("950.00"), response.remainingPaymentAmount());
     }
 
     @Test

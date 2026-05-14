@@ -1,15 +1,23 @@
 package com.stockpro.paymentservice.exception;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import java.time.LocalDateTime;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.Builder;
 
-@Data
-@AllArgsConstructor
-public class ErrorResponse {
-    private LocalDateTime timestamp;
-    private int status;
-    private String error;
-    private String message;
-    private String path;
+import java.time.LocalDateTime;
+import java.util.Map;
+import java.math.BigDecimal;
+
+@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record ErrorResponse(
+        LocalDateTime timestamp,
+        int status,
+        String errorCode,
+        String message,
+        Map<String, String> fieldErrors,
+        BigDecimal requestedAmount,
+        BigDecimal maxAllowedAmount,
+        BigDecimal remainingAmount,
+        Boolean splitAllowed,
+        String path) {
 }

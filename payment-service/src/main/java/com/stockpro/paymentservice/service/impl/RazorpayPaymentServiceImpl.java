@@ -8,23 +8,31 @@ import com.stockpro.paymentservice.client.PurchaseOrderLookupResponse;
 import com.stockpro.paymentservice.client.PaymentTransitionRequest;
 import com.stockpro.paymentservice.client.PurchaseServiceClient;
 import com.stockpro.paymentservice.dto.request.RazorpayInitiateRequest;
+import com.stockpro.paymentservice.dto.request.RazorpayPaymentStatusUpdateRequest;
 import com.stockpro.paymentservice.dto.request.RazorpayVerifyRequest;
+import com.stockpro.paymentservice.dto.request.SplitPaymentPlanRequest;
 import com.stockpro.paymentservice.dto.response.PaymentResponse;
 import com.stockpro.paymentservice.dto.response.RazorpayOrderResponse;
 import com.stockpro.paymentservice.dto.response.RemainingAmountResponse;
+import com.stockpro.paymentservice.dto.response.SplitPaymentPlanResponse;
 import com.stockpro.paymentservice.entity.Payment;
+import com.stockpro.paymentservice.events.PaymentAlertEvent;
 import com.stockpro.paymentservice.enums.PaymentMethod;
 import com.stockpro.paymentservice.enums.PaymentStatus;
 import com.stockpro.paymentservice.exception.DuplicatePaymentException;
+import com.stockpro.paymentservice.exception.InvalidPaymentRequestException;
+import com.stockpro.paymentservice.exception.PaymentLimitExceededException;
 import com.stockpro.paymentservice.exception.PaymentNotFoundException;
 import com.stockpro.paymentservice.exception.PaymentValidationException;
 import com.stockpro.paymentservice.exception.RazorpayIntegrationException;
 import com.stockpro.paymentservice.mapper.PaymentMapper;
+import com.stockpro.paymentservice.publisher.PaymentAlertPublisher;
 import com.stockpro.paymentservice.repository.PaymentRepository;
 import com.stockpro.paymentservice.service.RazorpayPaymentService;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +42,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -43,12 +52,22 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final Set<PaymentStatus> PAID_STATUSES = EnumSet.of(PaymentStatus.PAID, PaymentStatus.PARTIALLY_PAID);
-    private static final Set<String> ALLOWED_PO_STATUSES = Set.of("PENDING_PAYMENT", "PAYMENT_INITIATED");
+    private static final Set<String> ALLOWED_PO_STATUSES = Set.of("PENDING_PAYMENT", "PAYMENT_INITIATED", "PAID");
     private static final DateTimeFormatter NUMBER_DATE = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final String EVENT_PENDING = "razorpay.payment.pending";
+    private static final String EVENT_INITIATED = "razorpay.payment.initiated";
+    private static final String EVENT_SUCCESS = "razorpay.payment.success";
+    private static final String EVENT_FAILED = "razorpay.payment.failed";
+    private static final String EVENT_CANCELLED = "razorpay.payment.cancelled";
+    private static final String EVENT_LIMIT_EXCEEDED = "razorpay.payment.limit_exceeded";
+    private static final String EVENT_SPLIT_RECOMMENDED = "razorpay.payment.split_recommended";
+    private static final String PAYMENTS_ACTION_URL = "/payments";
+    private static final String SOURCE_SERVICE = "payment-service";
 
     private final PaymentRepository paymentRepository;
     private final PurchaseServiceClient purchaseServiceClient;
     private final PaymentMapper paymentMapper;
+    private final PaymentAlertPublisher paymentAlertPublisher;
 
     @Value("${razorpay.key-id:}")
     private String razorpayKeyId;
@@ -56,22 +75,28 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
     @Value("${razorpay.key-secret:}")
     private String razorpayKeySecret;
 
+    @Value("${payment.razorpay.max-transaction-amount:500000}")
+    private BigDecimal razorpayMaxTransactionAmount;
+
     public RazorpayPaymentServiceImpl(PaymentRepository paymentRepository,
                                       PurchaseServiceClient purchaseServiceClient,
-                                      PaymentMapper paymentMapper) {
+                                      PaymentMapper paymentMapper,
+                                      PaymentAlertPublisher paymentAlertPublisher) {
         this.paymentRepository = paymentRepository;
         this.purchaseServiceClient = purchaseServiceClient;
         this.paymentMapper = paymentMapper;
+        this.paymentAlertPublisher = paymentAlertPublisher;
     }
 
     @Override
     @Transactional
-    public RazorpayOrderResponse initiatePayment(RazorpayInitiateRequest request, Long actorId, String authToken) {
-        log.info("Initiating Razorpay payment for purchaseOrderId={} actorId={}", request.purchaseOrderId(), actorId);
+    public RazorpayOrderResponse initiatePayment(RazorpayInitiateRequest request, Long actorId, String authToken, boolean splitPaymentAllowed) {
+        log.info("Initiating Razorpay payment for purchaseOrderId={} actorId={} requestedAmount={} splitPaymentAllowed={}",
+                request.purchaseOrderId(), actorId, request.paymentAmount(), splitPaymentAllowed);
 
         // Defense-in-depth null guard (should be caught by @Valid, but guards against edge cases)
         if (request.purchaseOrderId() == null) {
-            throw new PaymentValidationException("Purchase order ID must not be null");
+            throw new InvalidPaymentRequestException("Invalid or missing purchaseOrderId");
         }
 
         // 1. Fetch purchase order details
@@ -88,16 +113,26 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
                     "No remaining amount to pay for purchase order ID " + request.purchaseOrderId());
         }
 
+        BigDecimal requestedAmount = resolveRequestedAmount(request, remaining, splitPaymentAllowed);
+        BigDecimal remainingAfterSuccessfulPayment = scale(remaining.subtract(requestedAmount));
+        log.info("Validated payment request before Razorpay call: purchaseOrderId={} requestedAmount={} remainingAmount={} maxAllowedAmount={} isSplitPayment={}",
+                request.purchaseOrderId(),
+                requestedAmount,
+                remaining,
+                scale(razorpayMaxTransactionAmount),
+                request.paymentAmount() != null);
+        validateTransactionLimit(requestedAmount, remaining, request.purchaseOrderId(), po.getPoNumber());
+
         // 4. Create Razorpay order (amount in paise)
-        long amountInPaise = remaining
+        long amountInPaise = requestedAmount
                 .multiply(BigDecimal.valueOf(100))
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValueExact();
         log.info("Creating Razorpay order: poId={}, poNumber={}, amountRupees={}, amountPaise={}",
-                request.purchaseOrderId(), po.getPoNumber(), remaining, amountInPaise);
-        String razorpayOrderId = createRazorpayOrder(amountInPaise, request.purchaseOrderId(), po.getPoNumber(), remaining);
+                request.purchaseOrderId(), po.getPoNumber(), requestedAmount, amountInPaise);
+        String razorpayOrderId = createRazorpayOrder(amountInPaise, request.purchaseOrderId(), po.getPoNumber(), requestedAmount);
 
-        // 5. Persist payment record (PENDING_APPROVAL = waiting for Razorpay verification)
+        // 5. Persist payment record in INITIATED state while backend verification is still pending.
         String paymentNumber = generatePaymentNumber();
         Long supplierId = po.getSupplierId() != null ? po.getSupplierId() : 0L;
         String supplierName = po.getSupplierName();
@@ -108,12 +143,12 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
                 .poNumber(po.getPoNumber())
                 .supplierId(supplierId)
                 .supplierName(supplierName)
-                .status(PaymentStatus.PENDING_APPROVAL)
+                .status(PaymentStatus.INITIATED)
                 .paymentMethod(PaymentMethod.RAZORPAY)
-                .paymentAmount(remaining)
+                .paymentAmount(requestedAmount)
                 .poTotalAmount(poTotal)
                 .previouslyPaidAmount(paidSoFar)
-                .remainingAmount(ZERO)
+                .remainingAmount(remainingAfterSuccessfulPayment.compareTo(ZERO) < 0 ? ZERO : remainingAfterSuccessfulPayment)
                 .currency("INR")
                 .razorpayOrderId(razorpayOrderId)
                 .createdBy(actorId)
@@ -121,6 +156,8 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
 
         Payment savedPendingPayment = paymentRepository.save(payment);
         log.info("Created Razorpay payment record paymentNumber={} razorpayOrderId={}", paymentNumber, razorpayOrderId);
+        publishPaymentAlert(EVENT_PENDING, savedPendingPayment, actorId,
+                "Razorpay payment is pending for Purchase Order " + safe(po.getPoNumber()) + ".");
         purchaseServiceClient.markPaymentInitiated(request.purchaseOrderId(), new PaymentTransitionRequest(
                 savedPendingPayment.getStatus().name(),
                 savedPendingPayment.getPaymentId(),
@@ -129,12 +166,14 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
                 null,
                 null,
                 actorId), authToken);
+        publishPaymentAlert(EVENT_INITIATED, savedPendingPayment, actorId,
+                "Razorpay payment initiated for Purchase Order " + safe(po.getPoNumber()) + ".");
 
         return RazorpayOrderResponse.builder()
                 .razorpayOrderId(razorpayOrderId)
                 .paymentNumber(paymentNumber)
                 .purchaseOrderId(request.purchaseOrderId())
-                .amount(remaining)
+                .amount(requestedAmount)
                 .currency("INR")
                 .keyId(razorpayKeyId)
                 .description("Payment for PO " + (po.getPoNumber() != null ? po.getPoNumber() : request.purchaseOrderId()))
@@ -160,35 +199,76 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
         }
 
         // 3. Verify Razorpay signature on backend (never trust frontend)
-        verifyRazorpaySignature(request.razorpayOrderId(), request.razorpayPaymentId(), request.razorpaySignature());
+        try {
+            verifyRazorpaySignature(request.razorpayOrderId(), request.razorpayPaymentId(), request.razorpaySignature());
+        } catch (RuntimeException ex) {
+            Payment failedPayment = updatePaymentOutcome(payment, PaymentStatus.FAILED, request.razorpayPaymentId(), actorId);
+            publishPaymentAlert(EVENT_FAILED, failedPayment, actorId,
+                    "Razorpay payment failed for Purchase Order " + safe(payment.getPoNumber()) + ". Reason: " + safe(ex.getMessage()) + ".");
+            throw ex;
+        }
 
-        // 4. Mark payment as PAID
-        payment.setStatus(PaymentStatus.PAID);
+        // 4. Compute the overall PO payment state and persist it on the payment record so
+        // downstream consumers do not mistake a successful split payment for a fully paid PO.
+        BigDecimal totalPaidAfterVerification = scale(getPaidAmount(payment.getPurchaseOrderId()).add(scale(payment.getPaymentAmount())));
+        BigDecimal remainingAfterVerification = scale(payment.getPoTotalAmount().subtract(totalPaidAfterVerification));
+        PaymentStatus overallPaymentStatus = remainingAfterVerification.compareTo(ZERO) <= 0
+                ? PaymentStatus.PAID
+                : PaymentStatus.PARTIALLY_PAID;
+
+        payment.setStatus(overallPaymentStatus);
         payment.setRazorpayPaymentId(request.razorpayPaymentId());
         payment.setRazorpaySignature(request.razorpaySignature());
         payment.setTransactionReference(request.razorpayPaymentId());
         payment.setPaidBy(actorId);
         payment.setPaidAt(LocalDateTime.now());
         payment.setPaymentDate(LocalDate.now());
+        payment.setRemainingAmount(remainingAfterVerification.compareTo(ZERO) < 0 ? ZERO : remainingAfterVerification);
 
         Payment saved = paymentRepository.save(payment);
-        log.info("Payment verified and marked PAID paymentId={} paymentNumber={} razorpayPaymentId={}",
-                saved.getPaymentId(), saved.getPaymentNumber(), request.razorpayPaymentId());
+        log.info("Payment verified and marked paymentId={} paymentNumber={} transactionStatus={} overallStatus={} razorpayPaymentId={} remainingAmount={}",
+                saved.getPaymentId(), saved.getPaymentNumber(), saved.getStatus(), overallPaymentStatus, request.razorpayPaymentId(), saved.getRemainingAmount());
         purchaseServiceClient.markPaymentCompleted(saved.getPurchaseOrderId(), new PaymentTransitionRequest(
-                saved.getStatus().name(),
+                overallPaymentStatus.name(),
                 saved.getPaymentId(),
                 saved.getPaymentNumber(),
                 saved.getRazorpayOrderId(),
                 saved.getRazorpayPaymentId(),
                 saved.getPaidAt(),
                 actorId), authToken);
+        publishPaymentAlert(EVENT_SUCCESS, saved, actorId,
+                "Razorpay payment completed successfully for Purchase Order " + safe(saved.getPoNumber()) + ".");
 
         return paymentMapper.toResponse(saved);
     }
 
     @Override
+    @Transactional
+    public PaymentResponse recordFailedPayment(RazorpayPaymentStatusUpdateRequest request, Long actorId) {
+        Payment payment = findNonPaidPayment(request.razorpayOrderId());
+        Payment failedPayment = updatePaymentOutcome(payment, PaymentStatus.FAILED, request.razorpayPaymentId(), actorId);
+        publishPaymentAlert(EVENT_FAILED, failedPayment, actorId,
+                "Razorpay payment failed for Purchase Order " + safe(payment.getPoNumber())
+                        + ". Reason: " + safe(resolveFailureReason(request.failureReason(), "Payment failed")) + ".");
+        return paymentMapper.toResponse(failedPayment);
+    }
+
+    @Override
+    @Transactional
+    public PaymentResponse recordCancelledPayment(RazorpayPaymentStatusUpdateRequest request, Long actorId) {
+        Payment payment = findNonPaidPayment(request.razorpayOrderId());
+        Payment cancelledPayment = updatePaymentOutcome(payment, PaymentStatus.CANCELLED, request.razorpayPaymentId(), actorId);
+        publishPaymentAlert(EVENT_CANCELLED, cancelledPayment, actorId,
+                "Razorpay payment cancelled for Purchase Order " + safe(payment.getPoNumber()) + ".");
+        return paymentMapper.toResponse(cancelledPayment);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public RemainingAmountResponse getRemainingAmount(Long purchaseOrderId, String authToken) {
+        if (purchaseOrderId == null || purchaseOrderId <= 0) {
+            throw new InvalidPaymentRequestException("Invalid or missing purchaseOrderId");
+        }
         PurchaseOrderLookupResponse po = purchaseServiceClient.getPurchaseOrder(purchaseOrderId, authToken);
         BigDecimal total = scale(po.getTotalAmount());
         BigDecimal paid = getPaidAmount(purchaseOrderId);
@@ -199,7 +279,43 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
                 .totalAmount(total)
                 .paidAmount(paid)
                 .remainingAmount(remaining.compareTo(ZERO) < 0 ? ZERO : remaining)
+                .status(resolveOverallPaymentStatus(paid, remaining))
+                .maxAllowedAmount(scale(razorpayMaxTransactionAmount))
                 .currency("INR")
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SplitPaymentPlanResponse getSplitPaymentPlan(SplitPaymentPlanRequest request, String authToken) {
+        if (request.purchaseOrderId() == null || request.purchaseOrderId() <= 0) {
+            throw new InvalidPaymentRequestException("Invalid or missing purchaseOrderId");
+        }
+        PurchaseOrderLookupResponse po = purchaseServiceClient.getPurchaseOrder(request.purchaseOrderId(), authToken);
+        validatePoStatus(po);
+
+        BigDecimal totalAmount = scale(po.getTotalAmount());
+        BigDecimal paidAmount = getPaidAmount(request.purchaseOrderId());
+        BigDecimal remainingAmount = scale(totalAmount.subtract(paidAmount));
+        if (remainingAmount.compareTo(ZERO) <= 0) {
+            throw new DuplicatePaymentException("No remaining amount to pay for purchase order ID " + request.purchaseOrderId());
+        }
+
+        BigDecimal requestedAmount = scale(request.requestedAmount());
+        if (requestedAmount.compareTo(ZERO) <= 0) {
+            throw new InvalidPaymentRequestException("Payment amount must be greater than 0");
+        }
+        if (requestedAmount.compareTo(remainingAmount) > 0) {
+            throw new InvalidPaymentRequestException("Payment amount cannot be greater than remaining amount");
+        }
+
+        return SplitPaymentPlanResponse.builder()
+                .purchaseOrderId(request.purchaseOrderId())
+                .totalAmount(totalAmount)
+                .requestedAmount(requestedAmount)
+                .remainingAmount(remainingAmount)
+                .maxAllowedAmount(scale(razorpayMaxTransactionAmount))
+                .suggestedSplits(buildSuggestedSplits(requestedAmount))
                 .build();
     }
 
@@ -243,8 +359,13 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
                     purchaseOrderId, poNumber, amountInRupees, amountInPaise, errorCode, razorpayError);
 
             if (containsAmountLimitError(razorpayError)) {
-                throw new PaymentValidationException(
-                        "This payment amount exceeds the current Razorpay account limit. Please contact Razorpay/admin to increase the transaction limit.");
+                publishLimitExceededAlert(purchaseOrderId, poNumber, amountInRupees);
+                throw new PaymentLimitExceededException(
+                        "Payment amount exceeds Razorpay transaction limit. Please split the payment or contact admin.",
+                        amountInRupees,
+                        scale(razorpayMaxTransactionAmount),
+                        amountInRupees,
+                        true);
             }
 
             throw new RazorpayIntegrationException("Failed to create Razorpay order: " + razorpayError, e);
@@ -303,6 +424,67 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
         return scale(paid == null ? ZERO : paid);
     }
 
+    private PaymentStatus resolveOverallPaymentStatus(BigDecimal paidAmount, BigDecimal remainingAmount) {
+        if (remainingAmount.compareTo(ZERO) <= 0) {
+            return PaymentStatus.PAID;
+        }
+        if (paidAmount.compareTo(ZERO) > 0) {
+            return PaymentStatus.PARTIALLY_PAID;
+        }
+        return PaymentStatus.INITIATED;
+    }
+
+    private BigDecimal resolveRequestedAmount(RazorpayInitiateRequest request, BigDecimal remainingAmount, boolean splitPaymentAllowed) {
+        if (request.paymentAmount() == null) {
+            return remainingAmount;
+        }
+
+        BigDecimal requestedAmount = scale(request.paymentAmount());
+        if (requestedAmount.compareTo(ZERO) <= 0) {
+            throw new InvalidPaymentRequestException("Payment amount must be greater than 0");
+        }
+        if (requestedAmount.compareTo(remainingAmount) > 0) {
+            throw new InvalidPaymentRequestException("Payment amount cannot be greater than remaining amount");
+        }
+        if (requestedAmount.compareTo(remainingAmount) < 0 && !splitPaymentAllowed) {
+            throw new AccessDeniedException("You are not allowed to split payments.");
+        }
+
+        return requestedAmount;
+    }
+
+    private void validateTransactionLimit(BigDecimal requestedAmount, BigDecimal remainingAmount, Long purchaseOrderId, String poNumber) {
+        BigDecimal maxAllowedAmount = scale(razorpayMaxTransactionAmount);
+        if (requestedAmount.compareTo(maxAllowedAmount) <= 0) {
+            return;
+        }
+
+        publishLimitExceededAlert(purchaseOrderId, poNumber, remainingAmount);
+        throw new PaymentLimitExceededException(
+                "Payment amount exceeds Razorpay transaction limit. Please split the payment or contact admin.",
+                requestedAmount,
+                maxAllowedAmount,
+                remainingAmount,
+                true);
+    }
+
+    private List<BigDecimal> buildSuggestedSplits(BigDecimal requestedAmount) {
+        BigDecimal maxAllowedAmount = scale(razorpayMaxTransactionAmount);
+        java.util.ArrayList<BigDecimal> splits = new java.util.ArrayList<>();
+        BigDecimal remaining = scale(requestedAmount);
+
+        while (remaining.compareTo(maxAllowedAmount) > 0) {
+            splits.add(maxAllowedAmount);
+            remaining = scale(remaining.subtract(maxAllowedAmount));
+        }
+
+        if (remaining.compareTo(ZERO) > 0) {
+            splits.add(remaining);
+        }
+
+        return List.copyOf(splits);
+    }
+
     private BigDecimal scale(BigDecimal value) {
         return (value == null ? ZERO : value).setScale(2, RoundingMode.HALF_UP);
     }
@@ -316,5 +498,104 @@ public class RazorpayPaymentServiceImpl implements RazorpayPaymentService {
             candidate = prefix + String.format("%06d", seq);
         }
         return candidate;
+    }
+
+    private void publishPaymentAlert(String routingKey, Payment payment, Long actorId, String message) {
+        String correlationId = defaultCorrelationId(routingKey, payment.getPaymentId(), payment.getPurchaseOrderId());
+        log.info("Publishing payment alert routingKey={} paymentId={} purchaseOrderId={} correlationId={}",
+                routingKey, payment.getPaymentId(), payment.getPurchaseOrderId(), correlationId);
+        paymentAlertPublisher.publish(routingKey, PaymentAlertEvent.builder()
+                .eventId(java.util.UUID.randomUUID().toString())
+                .eventType(routingKey)
+                .paymentId(payment.getPaymentId())
+                .paymentNumber(payment.getPaymentNumber())
+                .paymentReference(payment.getTransactionReference())
+                .purchaseOrderId(payment.getPurchaseOrderId())
+                .purchaseOrderNumber(payment.getPoNumber())
+                .supplierId(payment.getSupplierId())
+                .supplierName(payment.getSupplierName())
+                .actorId(actorId)
+                .totalAmount(payment.getPoTotalAmount())
+                .paidAmount(payment.getPaymentAmount())
+                .remainingAmount(payment.getRemainingAmount())
+                .currency(payment.getCurrency())
+                .message(message)
+                .actionUrl(PAYMENTS_ACTION_URL)
+                .sourceService(SOURCE_SERVICE)
+                .correlationId(correlationId)
+                .eventTime(LocalDateTime.now())
+                .build());
+    }
+
+    private void publishLimitExceededAlert(Long purchaseOrderId, String poNumber, BigDecimal amount) {
+        String correlationId = defaultCorrelationId(EVENT_LIMIT_EXCEEDED, purchaseOrderId, poNumber);
+        log.warn("Publishing payment limit alert purchaseOrderId={} poNumber={} amount={} correlationId={}",
+                purchaseOrderId, poNumber, amount, correlationId);
+        paymentAlertPublisher.publish(EVENT_LIMIT_EXCEEDED, PaymentAlertEvent.builder()
+                .eventId(java.util.UUID.randomUUID().toString())
+                .eventType(EVENT_LIMIT_EXCEEDED)
+                .purchaseOrderId(purchaseOrderId)
+                .purchaseOrderNumber(poNumber)
+                .totalAmount(amount)
+                .remainingAmount(amount)
+                .currency("INR")
+                .message("Payment amount exceeds Razorpay transaction limit. Please split the payment or contact admin.")
+                .actionUrl(PAYMENTS_ACTION_URL)
+                .sourceService(SOURCE_SERVICE)
+                .correlationId(correlationId)
+                .eventTime(LocalDateTime.now())
+                .build());
+        paymentAlertPublisher.publish(EVENT_SPLIT_RECOMMENDED, PaymentAlertEvent.builder()
+                .eventId(java.util.UUID.randomUUID().toString())
+                .eventType(EVENT_SPLIT_RECOMMENDED)
+                .purchaseOrderId(purchaseOrderId)
+                .purchaseOrderNumber(poNumber)
+                .totalAmount(amount)
+                .remainingAmount(amount)
+                .currency("INR")
+                .message("Payment amount exceeds Razorpay transaction limit. Please split the payment or contact admin.")
+                .actionUrl(PAYMENTS_ACTION_URL)
+                .sourceService(SOURCE_SERVICE)
+                .correlationId(correlationId + ":split")
+                .eventTime(LocalDateTime.now())
+                .build());
+    }
+
+    private String defaultCorrelationId(String eventType, Object primaryRef, Object secondaryRef) {
+        return eventType + ":" + safe(primaryRef) + ":" + safe(secondaryRef);
+    }
+
+    private Payment findNonPaidPayment(String razorpayOrderId) {
+        Payment payment = paymentRepository.findByRazorpayOrderId(razorpayOrderId)
+                .orElseThrow(() -> new PaymentNotFoundException("Payment not found for Razorpay order ID: " + razorpayOrderId));
+        if (payment.getStatus() == PaymentStatus.PAID) {
+            throw new DuplicatePaymentException("Payment already verified for Razorpay order ID: " + razorpayOrderId);
+        }
+        return payment;
+    }
+
+    private Payment updatePaymentOutcome(Payment payment, PaymentStatus status, String razorpayPaymentId, Long actorId) {
+        payment.setStatus(status);
+        if (razorpayPaymentId != null && !razorpayPaymentId.isBlank()) {
+            payment.setRazorpayPaymentId(razorpayPaymentId);
+            payment.setTransactionReference(razorpayPaymentId);
+        }
+        if (actorId != null) {
+            payment.setPaidBy(actorId);
+        }
+        payment.setPaymentDate(LocalDate.now());
+        payment.setPaidAt(LocalDateTime.now());
+        return paymentRepository.save(payment);
+    }
+
+    private String resolveFailureReason(String requestReason, String fallback) {
+        if (requestReason != null && !requestReason.isBlank()) {
+            return requestReason.trim();
+        }
+        return fallback;
+    }
+
+    private String safe(Object value) {
+        return value == null ? "-" : String.valueOf(value);
     }
 }

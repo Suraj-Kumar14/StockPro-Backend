@@ -91,7 +91,7 @@ public class Payment {
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;
-        if (status == null) status = PaymentStatus.PENDING_APPROVAL;
+        if (status == null) status = PaymentStatus.INITIATED;
         if (currency == null || currency.isBlank()) currency = "INR";
     }
 

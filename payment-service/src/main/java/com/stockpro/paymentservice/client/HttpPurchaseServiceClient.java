@@ -102,7 +102,11 @@ public class HttpPurchaseServiceClient implements PurchaseServiceClient {
         } catch (RestClientResponseException ex) {
             log.warn("Purchase-service payment transition failed for purchaseOrderId={} status={} body={}",
                     purchaseOrderId, ex.getStatusCode(), ex.getResponseBodyAsString());
-            throw new ExternalServiceException("Purchase-service payment status update failed", ex);
+            String body = ex.getResponseBodyAsString();
+            String message = (body != null && !body.isBlank())
+                    ? "Purchase-service payment status update failed: " + body
+                    : "Purchase-service payment status update failed";
+            throw new ExternalServiceException(message, ex);
         } catch (RestClientException ex) {
             log.error("Purchase-service payment transition transport failure for purchaseOrderId={}: {}", purchaseOrderId, ex.getMessage());
             throw new ExternalServiceException("Purchase-service unavailable. Please try again later.", ex);
