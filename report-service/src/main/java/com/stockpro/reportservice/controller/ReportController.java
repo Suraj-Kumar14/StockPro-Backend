@@ -2,15 +2,19 @@ package com.stockpro.reportservice.controller;
 
 import com.stockpro.reportservice.dto.request.ReportFilterRequest;
 import com.stockpro.reportservice.dto.response.DeadStockResponse;
+import com.stockpro.reportservice.dto.response.ExecutiveDashboardResponse;
 import com.stockpro.reportservice.dto.response.GeneratedInventoryReportResponse;
 import com.stockpro.reportservice.dto.response.InventoryTurnoverReportResponse;
 import com.stockpro.reportservice.dto.response.InventoryValuationResponse;
 import com.stockpro.reportservice.dto.response.LowStockReportItem;
+import com.stockpro.reportservice.dto.response.OverstockReportItem;
 import com.stockpro.reportservice.dto.response.PurchaseSummaryResponse;
 import com.stockpro.reportservice.dto.response.SlowMovingProductResponse;
+import com.stockpro.reportservice.dto.response.StockMovementReportItem;
 import com.stockpro.reportservice.dto.response.TopMovingProductResponse;
 import com.stockpro.reportservice.dto.response.WarehouseValuationItem;
 import com.stockpro.reportservice.enums.ReportPeriod;
+import com.stockpro.reportservice.security.AuthenticatedUser;
 import com.stockpro.reportservice.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -21,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -77,6 +82,72 @@ public class ReportController {
                 .page(page)
                 .size(size)
                 .build());
+    }
+
+    @GetMapping({"/overstock", "/inventory/overstock"})
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','WAREHOUSE_STAFF','STAFF')")
+    @Operation(summary = "Get overstock report")
+    public Page<OverstockReportItem> getOverstock(
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) Long productId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return reportService.getOverstockReport(ReportFilterRequest.builder()
+                .warehouseId(warehouseId)
+                .productId(productId)
+                .page(page)
+                .size(size)
+                .build());
+    }
+
+    @GetMapping({"/warehouse/summary", "/warehouse/reports"})
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','WAREHOUSE_STAFF','STAFF')")
+    @Operation(summary = "Get warehouse stock summary report")
+    public Page<WarehouseValuationItem> getWarehouseSummary(
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return reportService.getWarehouseStockReport(ReportFilterRequest.builder()
+                .warehouseId(warehouseId)
+                .page(page)
+                .size(size)
+                .build());
+    }
+
+    @GetMapping({"/movements", "/warehouse/movements"})
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','WAREHOUSE_STAFF','STAFF')")
+    @Operation(summary = "Get stock movement report")
+    public Page<StockMovementReportItem> getStockMovements(
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) Long productId,
+            @RequestParam(required = false) String movementType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return reportService.getStockMovementReport(ReportFilterRequest.builder()
+                .warehouseId(warehouseId)
+                .productId(productId)
+                .movementType(movementType)
+                .fromDate(fromDate)
+                .toDate(toDate)
+                .page(page)
+                .size(size)
+                .build());
+    }
+
+    @GetMapping("/dashboard")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER','WAREHOUSE_STAFF','STAFF')")
+    @Operation(summary = "Get role-aware dashboard data")
+    public ExecutiveDashboardResponse getDashboard(Authentication authentication) {
+        return reportService.getRoleDashboard(role(authentication), actorId(authentication));
+    }
+
+    @GetMapping("/dashboard/executive")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER')")
+    @Operation(summary = "Get executive dashboard data")
+    public ExecutiveDashboardResponse getExecutiveDashboard() {
+        return reportService.getExecutiveDashboardReport();
     }
 
     @GetMapping("/topMoving")
@@ -162,5 +233,19 @@ public class ReportController {
         if (value <= 0) {
             throw new IllegalArgumentException(fieldName + " must be greater than zero");
         }
+    }
+
+    private Long actorId(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser principal)) {
+            return null;
+        }
+        return principal.userId();
+    }
+
+    private String role(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser principal)) {
+            return "";
+        }
+        return principal.role();
     }
 }

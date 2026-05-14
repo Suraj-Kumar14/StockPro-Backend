@@ -17,11 +17,16 @@ import com.stockpro.reportservice.dto.response.SlowMovingProductResponse;
 import com.stockpro.reportservice.dto.response.TopMovingProductResponse;
 import com.stockpro.reportservice.dto.response.PurchaseSummaryResponse;
 import com.stockpro.reportservice.dto.response.DeadStockResponse;
+import com.stockpro.reportservice.dto.response.ExecutiveDashboardResponse;
 import com.stockpro.reportservice.dto.response.WarehouseValuationItem;
+import com.stockpro.reportservice.dto.response.OverstockReportItem;
+import com.stockpro.reportservice.dto.response.StockMovementReportItem;
 import com.stockpro.reportservice.exception.ReportGenerationException;
+import com.stockpro.reportservice.security.AuthenticatedUser;
 import com.stockpro.reportservice.service.ReportService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -29,7 +34,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.test.context.support.WithMockUser;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -80,6 +88,49 @@ class ReportControllerTest {
 
         mockMvc.perform(get("/api/v1/reports/byWarehouse"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getOverstock_shouldReturn200ForAdmin() throws Exception {
+        when(reportService.getOverstockReport(any())).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(
+                new OverstockReportItem(1L, "Widget", "SKU-1", 11L, "Main Warehouse", BigDecimal.TEN,
+                        BigDecimal.ONE, BigDecimal.valueOf(8), "WARNING", "Review transfer"))));
+
+        mockMvc.perform(get("/api/v1/reports/overstock"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].productName").value("Widget"));
+    }
+
+    @Test
+    @WithMockUser(roles = "STAFF")
+    void getWarehouseReports_shouldReturn200ForStaff() throws Exception {
+        when(reportService.getWarehouseStockReport(any())).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(
+                new WarehouseValuationItem(11L, "Main Warehouse", BigDecimal.ONE, BigDecimal.TEN))));
+        when(reportService.getStockMovementReport(any())).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(
+                new StockMovementReportItem(1L, "MOV-1", 4L, "SKU-4", "Cable", 11L, "Main Warehouse",
+                        "RECEIPT", "IN", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, "PURCHASE_ORDER", "PO-1", 5L,
+                        LocalDateTime.of(2026, 5, 13, 10, 0)))));
+
+        mockMvc.perform(get("/api/v1/reports/warehouse/reports"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].warehouseName").value("Main Warehouse"));
+
+        mockMvc.perform(get("/api/v1/reports/warehouse/movements"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].movementNumber").value("MOV-1"));
+    }
+
+    @Test
+    void getDashboard_shouldReturn200ForStaff() throws Exception {
+        when(reportService.getRoleDashboard("WAREHOUSE_STAFF", 25L)).thenReturn(new ExecutiveDashboardResponse(
+                1L, 1L, 1L, BigDecimal.TEN, 1L, 1L, 0L, 0L, BigDecimal.ZERO, BigDecimal.ZERO, 0L, 0L,
+                1L, 0L, 0L, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
+
+        mockMvc.perform(get("/api/v1/reports/dashboard")
+                        .with(authentication(auth(25L, "WAREHOUSE_STAFF"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalProducts").value(1));
     }
 
     @Test
@@ -210,5 +261,12 @@ class ReportControllerTest {
         mockMvc.perform(get("/api/v1/reports/generateReport")
                         .param("threshold", "0"))
                 .andExpect(status().isBadRequest());
+    }
+
+    private UsernamePasswordAuthenticationToken auth(Long userId, String role) {
+        return new UsernamePasswordAuthenticationToken(
+                new AuthenticatedUser(userId, "user@example.com", role, "token"),
+                "token",
+                AuthorityUtils.createAuthorityList("ROLE_" + role));
     }
 }
