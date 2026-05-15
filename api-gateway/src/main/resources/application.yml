@@ -18,6 +18,7 @@ spring:
           '[/**]':
             allowedOrigins:
               - "http://localhost:4200"
+              - "http://stockpro-angular-frontend.s3-website.ap-south-1.amazonaws.com"
             allowedMethods:
               - GET
               - POST
@@ -252,15 +253,12 @@ logging:
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka}
     register-with-eureka: true
     fetch-registry: true
     healthcheck:
       enabled: true
   instance:
-    prefer-ip-address: false
-    hostname: localhost
+    prefer-ip-address: true
+    hostname: ${HOSTNAME:${spring.application.name}}
     instance-id: ${spring.application.name}:${server.port}
-    home-page-url: http://localhost:${server.port}/
-    status-page-url: http://localhost:${server.port}/actuator/info
-    health-check-url: http://localhost:${server.port}/actuator/health

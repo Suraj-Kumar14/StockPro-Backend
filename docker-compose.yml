@@ -1,26 +1,20 @@
-version: "3.9"
-
 services:
   mysql:
     image: mysql:8.0
     container_name: stockpro-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: product_db
     ports:
       - "3306:3306"
     volumes:
       - stockpro-mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
-
-  redis:
-    image: redis:7
-    container_name: stockpro-redis
-    ports:
-      - "6379:6379"
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -31,6 +25,11 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   eureka-server:
     build:
@@ -38,10 +37,51 @@ services:
     container_name: stockpro-eureka-server
     ports:
       - "8761:8761"
+
+  admin-server:
+    build:
+      context: ./Admin-server
+    container_name: stockpro-admin-server
+    ports:
+      - "9090:9090"
     environment:
-      EUREKA_SERVER_PORT: 8761
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
-      - mysql
+      eureka-server:
+        condition: service_started
+
+  auth-service:
+    build:
+      context: ./auth-service
+    container_name: stockpro-auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      AUTH_DB_USERNAME: root
+      AUTH_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4200}
+      MAIL_USERNAME: ${MAIL_USERNAME:-dummy@example.com}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-change-me}
+      MAIL_FROM: ${MAIL_FROM:-noreply@stockpro.local}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-dummy-google-client-id}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-dummy-google-client-secret}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8080/login/oauth2/code/google}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
 
   product-service:
     build:
@@ -50,24 +90,131 @@ services:
     ports:
       - "8082:8082"
     environment:
-      PRODUCT_SERVICE_PORT: 8082
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/product_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: root
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      PRODUCT_DB_USERNAME: root
+      PRODUCT_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: guest
       RABBITMQ_PASSWORD: guest
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+      AUTH_SERVICE_BASE_URL: http://auth-service:8081
+      WAREHOUSE_SERVICE_BASE_URL: http://warehouse-service:8083/api/v1/stocks
+      PURCHASE_SERVICE_BASE_URL: http://purchase-service:8084/api/v1/purchase-orders
     depends_on:
       mysql:
         condition: service_healthy
-      redis:
-        condition: service_started
       rabbitmq:
+        condition: service_healthy
+      eureka-server:
         condition: service_started
+
+  warehouse-service:
+    build:
+      context: ./warehouse-service
+    container_name: stockpro-warehouse-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/warehouse_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+      WAREHOUSE_DB_USERNAME: root
+      WAREHOUSE_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+      PRODUCT_SERVICE_BASE_URL: http://product-service:8082/api/v1/products
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  purchase-service:
+    build:
+      context: ./purchase-service
+    container_name: stockpro-purchase-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/purchase_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      PURCHASE_DB_USERNAME: root
+      PURCHASE_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+      PRODUCT_SERVICE_BASE_URL: http://product-service:8082/api/v1/products
+      SUPPLIER_SERVICE_BASE_URL: http://supplier-service:8085/api/v1/suppliers
+      WAREHOUSE_SERVICE_BASE_URL: http://warehouse-service:8083/api/v1/warehouses
+      PAYMENT_SERVICE_BASE_URL: http://payment-service:8089/api/v1/payments
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  supplier-service:
+    build:
+      context: ./supplier-service
+    container_name: stockpro-supplier-service
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/supplier_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SUPPLIER_DB_USERNAME: root
+      SUPPLIER_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  movement-service:
+    build:
+      context: ./movement-service
+    container_name: stockpro-movement-service
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/movement_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+      MOVEMENT_DB_USERNAME: root
+      MOVEMENT_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+      PRODUCT_SERVICE_BASE_URL: http://product-service:8082/api/v1/products
+      WAREHOUSE_SERVICE_BASE_URL: http://warehouse-service:8083/api/v1/warehouses
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       eureka-server:
         condition: service_started
 
@@ -76,22 +223,121 @@ services:
       context: ./alert-service
     container_name: stockpro-alert-service
     ports:
-      - "8089:8089"
+      - "8087:8087"
     environment:
       ALERT_DB_URL: jdbc:mysql://mysql:3306/alert_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       ALERT_DB_USERNAME: root
-      ALERT_DB_PASSWORD: root
+      ALERT_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: guest
       RABBITMQ_PASSWORD: guest
-      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+      MAIL_USERNAME: ${MAIL_USERNAME:-dummy@example.com}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-change-me}
     depends_on:
       mysql:
         condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
       eureka-server:
+        condition: service_started
+
+  report-service:
+    build:
+      context: ./report-service
+    container_name: stockpro-report-service
+    ports:
+      - "8088:8088"
+    environment:
+      REPORT_DB_URL: jdbc:mysql://mysql:3306/report_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      REPORT_DB_USERNAME: root
+      REPORT_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+      PRODUCT_SERVICE_URL: http://product-service:8082
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:8083
+      PURCHASE_SERVICE_URL: http://purchase-service:8084
+      SUPPLIER_SERVICE_URL: http://supplier-service:8085
+      MOVEMENT_SERVICE_URL: http://movement-service:8086
+      ALERT_SERVICE_URL: http://alert-service:8087
+      REPORT_SERVICE_URL: http://report-service:8088
+      PAYMENT_SERVICE_URL: http://payment-service:8089
+      AUTH_SERVICE_URL: http://auth-service:8081
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  payment-service:
+    build:
+      context: ./payment-service
+    container_name: stockpro-payment-service
+    ports:
+      - "8089:8089"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/payment_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      PAYMENT_DB_USERNAME: root
+      PAYMENT_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+      PURCHASE_SERVICE_BASE_URL: http://purchase-service:8084/api/v1/purchase-orders
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-dummy-razorpay-key-id}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-dummy-razorpay-key-secret}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+    container_name: stockpro-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      JWT_SECRET: ${JWT_SECRET:-stockpro-jwt-secret-key-minimum-32-bytes}
+    depends_on:
+      eureka-server:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      product-service:
+        condition: service_started
+      warehouse-service:
+        condition: service_started
+      purchase-service:
+        condition: service_started
+      supplier-service:
+        condition: service_started
+      movement-service:
+        condition: service_started
+      alert-service:
+        condition: service_started
+      report-service:
+        condition: service_started
+      payment-service:
         condition: service_started
 
 volumes:
