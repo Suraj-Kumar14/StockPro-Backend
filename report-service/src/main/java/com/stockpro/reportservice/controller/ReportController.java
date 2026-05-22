@@ -1,18 +1,7 @@
 package com.stockpro.reportservice.controller;
 
 import com.stockpro.reportservice.dto.request.ReportFilterRequest;
-import com.stockpro.reportservice.dto.response.DeadStockResponse;
-import com.stockpro.reportservice.dto.response.ExecutiveDashboardResponse;
-import com.stockpro.reportservice.dto.response.GeneratedInventoryReportResponse;
-import com.stockpro.reportservice.dto.response.InventoryTurnoverReportResponse;
-import com.stockpro.reportservice.dto.response.InventoryValuationResponse;
-import com.stockpro.reportservice.dto.response.LowStockReportItem;
-import com.stockpro.reportservice.dto.response.OverstockReportItem;
-import com.stockpro.reportservice.dto.response.PurchaseSummaryResponse;
-import com.stockpro.reportservice.dto.response.SlowMovingProductResponse;
-import com.stockpro.reportservice.dto.response.StockMovementReportItem;
-import com.stockpro.reportservice.dto.response.TopMovingProductResponse;
-import com.stockpro.reportservice.dto.response.WarehouseValuationItem;
+import com.stockpro.reportservice.dto.response.*;
 import com.stockpro.reportservice.enums.ReportPeriod;
 import com.stockpro.reportservice.security.AuthenticatedUser;
 import com.stockpro.reportservice.service.ReportService;
@@ -217,6 +206,31 @@ public class ReportController {
                 .build());
     }
 
+    @GetMapping("/payments/summary")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    @Operation(summary = "Get payment summary report")
+    public PaymentSummaryReportResponse getPaymentSummaryReport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) Long supplierId,
+            @RequestParam(required = false) ReportPeriod period,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        return reportService.getPaymentSummary(ReportFilterRequest.builder()
+                .fromDate(from != null ? from : fromDate)
+                .toDate(to != null ? to : toDate)
+                .warehouseId(warehouseId)
+                .supplierId(supplierId)
+                .period(period)
+                .page(page)
+                .size(size)
+                .build());
+    }
+
     @GetMapping("/generateReport")
     @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER','WAREHOUSE_STAFF','STAFF')")
     @Operation(summary = "Generate consolidated inventory analytics report")
@@ -247,5 +261,14 @@ public class ReportController {
             return "";
         }
         return principal.role();
+    }
+
+    @GetMapping("/purchase/supplier-performance")
+    @PreAuthorize("hasAnyRole('ADMIN','INVENTORY_MANAGER','MANAGER','PURCHASE_OFFICER','OFFICER')")
+    @Operation(summary = "Get supplier performance report")
+    public Page<SupplierPerformanceReportResponse> getSupplierPerformanceReport(
+            @ModelAttribute ReportFilterRequest request) {
+
+        return reportService.getSupplierPerformanceReport(request);
     }
 }
